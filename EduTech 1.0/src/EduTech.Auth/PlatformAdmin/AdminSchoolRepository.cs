@@ -6,7 +6,7 @@ namespace EduTech.Auth.PlatformAdmin;
 /// <summary>Platform-admin view of schools for KYC review (cross-tenant — admins see all schools).</summary>
 internal interface IAdminSchoolRepository
 {
-    /// <summary>Schools awaiting activation (status = pending_kyc).</summary>
+    /// <summary>Schools whose KYC has been submitted and is awaiting review (kyc_status = under_review).</summary>
     Task<IReadOnlyList<AdminSchoolRow>> ListPendingKycAsync(CancellationToken cancellationToken);
 
     Task<AdminSchoolRow?> GetDetailAsync(Guid schoolId, CancellationToken cancellationToken);
@@ -21,6 +21,10 @@ internal interface IAdminSchoolRepository
     Task RejectAsync(Guid schoolId, IDbTransaction transaction, CancellationToken cancellationToken);
 
     Task SuspendAsync(Guid schoolId, IDbTransaction transaction, CancellationToken cancellationToken);
+
+    /// <summary>Stamps the KYC review outcome on school_kyc (reviewed_at + owner-facing message).</summary>
+    Task MarkKycReviewedAsync(Guid schoolId, string? schoolMessage, IDbTransaction transaction,
+        CancellationToken cancellationToken);
 }
 
 /// <summary>A school as seen in the admin KYC queue/detail (joined with its owner).</summary>
@@ -53,7 +57,7 @@ internal sealed class AdminSchoolRepository : BaseRepository, IAdminSchoolReposi
     public Task<IReadOnlyList<AdminSchoolRow>> ListPendingKycAsync(CancellationToken cancellationToken)
     {
         return QueryAsync<AdminSchoolRow>(
-            SelectSchool + " WHERE s.status = 'pending_kyc' ORDER BY s.created_at",
+            SelectSchool + " WHERE s.kyc_status = 'under_review' ORDER BY s.created_at",
             null, cancellationToken);
     }
 
@@ -104,5 +108,14 @@ internal sealed class AdminSchoolRepository : BaseRepository, IAdminSchoolReposi
         return ExecuteAsync(
             "UPDATE schools SET status = 'suspended', updated_at = NOW() WHERE id = @Id",
             new { Id = schoolId }, cancellationToken, transaction);
+    }
+
+    public Task MarkKycReviewedAsync(Guid schoolId, string? schoolMessage, IDbTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        return ExecuteAsync(
+            "UPDATE school_kyc SET reviewed_at = NOW(), school_message = @Message, updated_at = NOW() " +
+            "WHERE school_id = @Id",
+            new { Id = schoolId, Message = schoolMessage }, cancellationToken, transaction);
     }
 }

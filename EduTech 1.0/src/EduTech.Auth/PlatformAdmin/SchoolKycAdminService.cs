@@ -85,6 +85,7 @@ internal sealed class SchoolKycAdminService : ISchoolKycAdminService
 
         await using DbTransactionScope transaction = await _connectionFactory.BeginTransactionAsync(cancellationToken);
         await _schools.ApproveAsync(schoolId, subdomain, transaction.Transaction, cancellationToken);
+        await _schools.MarkKycReviewedAsync(schoolId, null, transaction.Transaction, cancellationToken);
         await _audit.InsertAsync(adminId, "kyc.approve", "school", schoolId, metadata, ipAddress,
             transaction.Transaction, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
@@ -102,6 +103,7 @@ internal sealed class SchoolKycAdminService : ISchoolKycAdminService
 
         await using DbTransactionScope transaction = await _connectionFactory.BeginTransactionAsync(cancellationToken);
         await _schools.RejectAsync(schoolId, transaction.Transaction, cancellationToken);
+        await _schools.MarkKycReviewedAsync(schoolId, request.Reason.Trim(), transaction.Transaction, cancellationToken);
         await _audit.InsertAsync(adminId, "kyc.reject", "school", schoolId, metadata, ipAddress,
             transaction.Transaction, cancellationToken);
         await transaction.CommitAsync(cancellationToken);

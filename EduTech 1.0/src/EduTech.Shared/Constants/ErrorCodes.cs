@@ -15,6 +15,7 @@ public static class ErrorCodes
     public const int TooManyRequests = 1005;
     public const int AccessDenied    = 1006;
     public const int FeatureDisabled = 1007;
+    public const int MaintenanceMode = 1008;
 
     // ── Account / auth (1100–1199) ───────────────────────────────────────────
     public const int PhoneTaken       = 1100;
@@ -27,6 +28,7 @@ public static class ErrorCodes
     public const int InviteExpired    = 1107;
     public const int InviteInvalid    = 1108;
     public const int SubdomainTaken   = 1109;
+    public const int RegistrationClosed = 1110;
 
     // ── Internal (9000+) ─────────────────────────────────────────────────────
     public const int Unknown = 9000;

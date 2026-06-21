@@ -2,7 +2,9 @@ using System.Text;
 using System.Threading.RateLimiting;
 using EduTech.Api.Hangfire;
 using EduTech.Auth;
+using EduTech.Compliance;
 using EduTech.Notifications;
+using EduTech.School;
 using EduTech.Shared.Caching;
 using EduTech.Shared.Constants;
 using EduTech.Shared.Context;
@@ -10,6 +12,7 @@ using EduTech.Shared.Features;
 using EduTech.Shared.HealthChecks;
 using EduTech.Shared.Middleware;
 using EduTech.Shared.Persistence;
+using EduTech.Shared.Security;
 using Hangfire;
 using Hangfire.Dashboard;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -99,7 +102,10 @@ builder.Services.AddAuthorizationBuilder()
     .AddPolicy("PlatformAdminOnly", policy => policy
         .AddAuthenticationSchemes("PlatformAdminAuth")
         .RequireAuthenticatedUser()
-        .RequireClaim("user_type", UserTypes.PlatformAdmin));
+        .RequireClaim("user_type", UserTypes.PlatformAdmin))
+    .AddPolicy("ComplianceActor", policy => policy
+        .AddAuthenticationSchemes("StaffAuth", "ParentAuth")
+        .RequireAuthenticatedUser());
 
 // ─── Rate limiting ────────────────────────────────────────────────────────────
 int generalWindow = config.GetValue<int>("RateLimit:GeneralWindowSeconds", 60);
@@ -181,10 +187,12 @@ builder.Services.AddSwaggerGen(options =>
 });
 
 // ─── Module registrations (uncomment as each module is built) ─────────────────
+builder.Services.AddSingleton<IFieldEncryptor, AesFieldEncryptor>();
 builder.Services.AddFeatureFlags();
 builder.Services.AddAuthModule();
 builder.Services.AddNotificationsModule(config);
-// builder.Services.AddSchoolModule(config);
+builder.Services.AddSchoolModule(config);
+builder.Services.AddComplianceModule(config);
 // builder.Services.AddStaffModule(config);
 // builder.Services.AddStudentsModule(config);
 // builder.Services.AddGradesModule(config);
@@ -227,6 +235,7 @@ app.Use(async (context, next) =>
 });
 
 // ─── Middleware pipeline (order matters) ──────────────────────────────────────
+app.UseStaticFiles(); // serves the local-disk file-storage fallback (/uploads) in dev
 app.UseCors("EduTechCors");
 app.UseAuthentication();
 app.UseHttpsRedirection();

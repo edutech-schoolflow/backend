@@ -1,3 +1,4 @@
+using EduTech.Shared.Features;
 using EduTech.Shared.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
@@ -25,6 +26,7 @@ public sealed class ParentAuthController : ControllerBase
 
     [HttpPost("register")]
     [EnableRateLimiting("otp")]
+    [SignupGate("parent")]
     public async Task<ActionResult<ServiceResponses<string?>>> Register(
         [FromBody] RegisterParentRequest request, CancellationToken cancellationToken)
     {
@@ -44,6 +46,7 @@ public sealed class ParentAuthController : ControllerBase
 
     [HttpPost("login")]
     [EnableRateLimiting("login")]
+    [MaintenanceGate]
     public async Task<ActionResult<ServiceResponses<ParentAuthResponse>>> Login(
         [FromBody] ParentLoginRequest request, CancellationToken cancellationToken)
     {

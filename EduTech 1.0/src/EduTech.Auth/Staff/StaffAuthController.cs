@@ -1,3 +1,4 @@
+using EduTech.Shared.Features;
 using EduTech.Shared.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
@@ -26,6 +27,7 @@ public sealed class StaffAuthController : ControllerBase
 
     [HttpPost("register")]
     [EnableRateLimiting("otp")]
+    [SignupGate("staff")]
     public async Task<ActionResult<ServiceResponses<string?>>> Register(
         [FromBody] RegisterStaffRequest request, CancellationToken cancellationToken)
     {
@@ -45,6 +47,7 @@ public sealed class StaffAuthController : ControllerBase
 
     [HttpPost("login")]
     [EnableRateLimiting("login")]
+    [MaintenanceGate]
     public async Task<ActionResult<ServiceResponses<StaffAuthResponse>>> Login(
         [FromBody] StaffLoginRequest request, CancellationToken cancellationToken)
     {

@@ -1,0 +1,44 @@
+# ── .NET build output ─────────────────────────────────────────────────────────
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+*.dll
+*.pdb
+
+# ── IDE / tooling ─────────────────────────────────────────────────────────────
+.vs/
+.vscode/
+*.user
+*.suo
+
+# ── NuGet ─────────────────────────────────────────────────────────────────────
+*.nupkg
+*.snupkg
+.nuget/
+packages/
+
+# ── Test output ───────────────────────────────────────────────────────────────
+[Tt]est[Rr]esults/
+*.coverage
+*.trx
+
+# ── Application logs ──────────────────────────────────────────────────────────
+Logs/
+*.log
+
+# ── OS noise ──────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Local secrets (real keys/creds live in user-secrets / env vars, never git) ─
+appsettings.Development.json
+appsettings.Production.json
+
+# ── Database DDL (applied by hand on the DB client; per project decision) ──────
+Database/
+
+# ── Internal docs ─────────────────────────────────────────────────────────────
+docs/

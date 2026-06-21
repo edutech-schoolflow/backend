@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <ProjectReference Include="..\EduTech.Auth\EduTech.Auth.csproj" />
+    <ProjectReference Include="..\EduTech.School\EduTech.School.csproj" />
+    <ProjectReference Include="..\EduTech.Staff\EduTech.Staff.csproj" />
+    <ProjectReference Include="..\EduTech.Students\EduTech.Students.csproj" />
+    <ProjectReference Include="..\EduTech.Grades\EduTech.Grades.csproj" />
+    <ProjectReference Include="..\EduTech.Fees\EduTech.Fees.csproj" />
+    <ProjectReference Include="..\EduTech.Attendance\EduTech.Attendance.csproj" />
+    <ProjectReference Include="..\EduTech.Store\EduTech.Store.csproj" />
+    <ProjectReference Include="..\EduTech.Notifications\EduTech.Notifications.csproj" />
+    <ProjectReference Include="..\EduTech.Compliance\EduTech.Compliance.csproj" />
+    <ProjectReference Include="..\EduTech.PlatformAdmin\EduTech.PlatformAdmin.csproj" />
+    <ProjectReference Include="..\EduTech.Shared\EduTech.Shared.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Hangfire.AspNetCore" Version="1.8.23" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.0" />
+    <PackageReference Include="RedisRateLimiting.AspNetCore" Version="1.2.1" />
+    <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
+    <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.9.0" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+</Project>

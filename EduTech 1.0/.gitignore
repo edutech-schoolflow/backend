@@ -1,0 +1,53 @@
+# ── .NET build output ─────────────────────────────────────────────────────────
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+*.dll
+*.pdb
+
+# ── NuGet ─────────────────────────────────────────────────────────────────────
+*.nupkg
+*.snupkg
+.nuget/
+packages/
+
+# ── IDE / editor ──────────────────────────────────────────────────────────────
+.vs/
+.idea/
+.vscode/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# ── Tests / coverage ──────────────────────────────────────────────────────────
+[Tt]est[Rr]esult*/
+coverage*.json
+*.coverage
+*.trx
+
+# ── Application logs (Serilog writes to Logs/) ────────────────────────────────
+Logs/
+*.log
+
+# ── OS noise ──────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Local secrets ─────────────────────────────────────────────────────────────
+# Real secrets should live in user-secrets / environment variables, never in git.
+
+appsettings.Development.json
+# put real credentials in it, uncomment the next line to keep it out of git:
+# appsettings.Development.json
+
+# ── Database DDL ──────────────────────────────────────────────────────────────
+# Schema is applied by hand on the DB client; the .sql files are kept out of git
+# per project decision. (Trade-off: schema change history is not version-controlled.)
+Database/
+
+# ── Internal docs ─────────────────────────────────────────────────────────────
+docs/

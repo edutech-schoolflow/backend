@@ -1,0 +1,351 @@
+using System.Text;
+using System.Threading.RateLimiting;
+using EduTech.Api.Hangfire;
+using EduTech.Auth;
+using EduTech.Notifications;
+using EduTech.Shared.Caching;
+using EduTech.Shared.Constants;
+using EduTech.Shared.Context;
+using EduTech.Shared.Features;
+using EduTech.Shared.HealthChecks;
+using EduTech.Shared.Middleware;
+using EduTech.Shared.Persistence;
+using Hangfire;
+using Hangfire.Dashboard;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi.Models;
+using RedisRateLimiting;
+using RedisRateLimiting.AspNetCore;
+using Serilog;
+using Serilog.Events;
+using StackExchange.Redis;
+
+// ─── Serilog: bootstrap early so startup errors are captured ──────────────────
+Log.Logger = new LoggerConfiguration()
+    .MinimumLevel.Information()
+    // Override the noisy per-request framework logs, but NOT Microsoft.Hosting.Lifetime —
+    // that's what prints "Now listening on…" / "Application started" to the terminal.
+    .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
+    .MinimumLevel.Override("System", LogEventLevel.Warning)
+    .WriteTo.Console()
+    .WriteTo.File("Logs/edutech-.json", rollingInterval: RollingInterval.Day)
+    .CreateLogger();
+
+WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
+builder.Host.UseSerilog();
+
+// ─── Configuration helpers ────────────────────────────────────────────────────
+ConfigurationManager config = builder.Configuration;
+
+string staffKey    = config["Jwt:StaffSigningKey"]         ?? throw new InvalidOperationException("Jwt:StaffSigningKey is missing");
+string schoolKey   = config["Jwt:SchoolSigningKey"]        ?? throw new InvalidOperationException("Jwt:SchoolSigningKey is missing");
+string parentKey   = config["Jwt:ParentSigningKey"]        ?? throw new InvalidOperationException("Jwt:ParentSigningKey is missing");
+string adminKey    = config["Jwt:PlatformAdminSigningKey"] ?? throw new InvalidOperationException("Jwt:PlatformAdminSigningKey is missing");
+string jwtIssuer   = config["Jwt:Issuer"]                  ?? "EduTech";
+string jwtAudience = config["Jwt:Audience"]                ?? "EduTechApp";
+
+// ─── HTTP context + request context ──────────────────────────────────────────
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<IEduTechRequestContext, EduTechRequestContext>();
+
+// ─── Persistence: Dapper + PostgreSQL connection factory ──────────────────────
+builder.Services.AddEduTechPersistence(config);
+
+// ─── Redis (optional): one shared multiplexer for cache + distributed rate limiting ───
+// Probed once. Reachable → Redis cache/limiter; absent or unreachable → in-memory fallback,
+// so local dev runs with no Redis container.
+IConnectionMultiplexer? redis = TryConnectRedis(config);
+builder.Services.AddEduTechCaching(redis);
+
+// ─── Authentication: one JWT scheme per portal ────────────────────────────────
+builder.Services.AddAuthentication()
+    .AddJwtBearer("StaffAuth", options =>
+    {
+        options.TokenValidationParameters = BuildTokenParams(staffKey, jwtIssuer, jwtAudience);
+        ReadTokenFromCookie(options);
+    })
+    .AddJwtBearer("SchoolAuth", options =>
+    {
+        options.TokenValidationParameters = BuildTokenParams(schoolKey, jwtIssuer, jwtAudience);
+        ReadTokenFromCookie(options);
+    })
+    .AddJwtBearer("ParentAuth", options =>
+    {
+        options.TokenValidationParameters = BuildTokenParams(parentKey, jwtIssuer, jwtAudience);
+        ReadTokenFromCookie(options);
+    })
+    .AddJwtBearer("PlatformAdminAuth", options =>
+    {
+        options.TokenValidationParameters = BuildTokenParams(adminKey, jwtIssuer, jwtAudience);
+        ReadTokenFromCookie(options);
+    });
+
+// ─── Authorization: named policies map portals to schemes ────────────────────
+builder.Services.AddAuthorizationBuilder()
+    .AddPolicy("StaffOnly", policy => policy
+        .AddAuthenticationSchemes("StaffAuth")
+        .RequireAuthenticatedUser()
+        .RequireClaim("user_type", UserTypes.Staff))
+    .AddPolicy("SchoolOnly", policy => policy
+        .AddAuthenticationSchemes("SchoolAuth")
+        .RequireAuthenticatedUser()
+        .RequireClaim("user_type", UserTypes.School))
+    .AddPolicy("ParentOnly", policy => policy
+        .AddAuthenticationSchemes("ParentAuth")
+        .RequireAuthenticatedUser()
+        .RequireClaim("user_type", UserTypes.Parent))
+    .AddPolicy("PlatformAdminOnly", policy => policy
+        .AddAuthenticationSchemes("PlatformAdminAuth")
+        .RequireAuthenticatedUser()
+        .RequireClaim("user_type", UserTypes.PlatformAdmin));
+
+// ─── Rate limiting ────────────────────────────────────────────────────────────
+int generalWindow = config.GetValue<int>("RateLimit:GeneralWindowSeconds", 60);
+int generalMax    = config.GetValue<int>("RateLimit:GeneralMaxRequests", 100);
+int loginWindow   = config.GetValue<int>("RateLimit:LoginWindowSeconds", 60);
+int loginMax      = config.GetValue<int>("RateLimit:LoginMaxRequests", 10);
+int otpWindow     = config.GetValue<int>("RateLimit:OtpWindowSeconds", 300);
+int otpMax        = config.GetValue<int>("RateLimit:OtpMaxRequests", 3);
+
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    // Same policy names as before, so every [EnableRateLimiting(...)] attribute is untouched.
+    // Redis-backed when available (counters shared across instances); in-memory otherwise.
+    AddWindowLimiter(options, "general", generalWindow, generalMax, redis); // 100 req/min per IP
+    AddWindowLimiter(options, "login",   loginWindow,   loginMax,   redis); // 10/min — brute force
+    AddWindowLimiter(options, "otp",     otpWindow,     otpMax,     redis); // 3/5min — OTP bombing
+});
+
+// ─── Health checks ────────────────────────────────────────────────────────────
+IHealthChecksBuilder healthChecks = builder.Services.AddHealthChecks();
+if (redis is not null)
+{
+    healthChecks.AddCheck<RedisHealthCheck>("redis", tags: new[] { "cache" });
+}
+
+// ─── CORS ─────────────────────────────────────────────────────────────────────
+string[] allowedOrigins = config.GetSection("Cors:AllowedOrigins").Get<string[]>()
+    ?? ["http://localhost:3000"];
+
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("EduTechCors", policy =>
+        policy.WithOrigins(allowedOrigins)
+              .AllowAnyHeader()
+              .AllowAnyMethod()
+              .AllowCredentials());
+});
+
+// ─── Controllers ─────────────────────────────────────────────────────────────
+builder.Services.AddControllers();
+
+// ─── Swagger (dev only) ───────────────────────────────────────────────────────
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(options =>
+{
+    options.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title   = "EduTech API",
+        Version = "v1"
+    });
+
+    // Allow pasting a Bearer token in Swagger UI
+    options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Name        = "Authorization",
+        Type        = SecuritySchemeType.Http,
+        Scheme      = "bearer",
+        BearerFormat = "JWT",
+        In          = ParameterLocation.Header,
+        Description = "Enter your JWT token. The 'Bearer ' prefix is added automatically."
+    });
+
+    options.AddSecurityRequirement(new OpenApiSecurityRequirement
+    {
+        {
+            new OpenApiSecurityScheme
+            {
+                Reference = new OpenApiReference
+                {
+                    Type = ReferenceType.SecurityScheme,
+                    Id   = "Bearer"
+                }
+            },
+            Array.Empty<string>()
+        }
+    });
+});
+
+// ─── Module registrations (uncomment as each module is built) ─────────────────
+builder.Services.AddFeatureFlags();
+builder.Services.AddAuthModule();
+builder.Services.AddNotificationsModule(config);
+// builder.Services.AddSchoolModule(config);
+// builder.Services.AddStaffModule(config);
+// builder.Services.AddStudentsModule(config);
+// builder.Services.AddGradesModule(config);
+// builder.Services.AddFeesModule(config);
+// builder.Services.AddAttendanceModule(config);
+// builder.Services.AddStoreModule(config);
+// builder.Services.AddComplianceModule(config);
+// builder.Services.AddPlatformAdminModule(config);
+
+// ─── Build ────────────────────────────────────────────────────────────────────
+WebApplication app = builder.Build();
+
+// ─── Swagger UI (dev only) ────────────────────────────────────────────────────
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI(options =>
+    {
+        options.SwaggerEndpoint("/swagger/v1/swagger.json", "EduTech API v1");
+        options.RoutePrefix = "swagger";
+    });
+
+    // Hangfire dashboard — DEV ONLY (allow-all). Production access gated behind Platform Admin later.
+    app.UseHangfireDashboard("/hangfire", new DashboardOptions
+    {
+        Authorization = new[] { new AllowAllDashboardAuthorizationFilter() }
+    });
+}
+
+// ─── Security headers ─────────────────────────────────────────────────────────
+app.Use(async (context, next) =>
+{
+    context.Response.Headers.XFrameOptions          = "DENY";
+    context.Response.Headers.XContentTypeOptions    = "nosniff";
+    context.Response.Headers.StrictTransportSecurity = "max-age=31536000; includeSubDomains; preload";
+    context.Response.Headers.CacheControl           = "no-store";
+    context.Response.Headers.Pragma                 = "no-cache";
+    context.Response.Headers.ContentSecurityPolicy  = "frame-ancestors 'none'";
+    await next(context);
+});
+
+// ─── Middleware pipeline (order matters) ──────────────────────────────────────
+app.UseCors("EduTechCors");
+app.UseAuthentication();
+app.UseHttpsRedirection();
+app.UseRateLimiter();
+app.UseAuthorization();
+// Logging is OUTERMOST so it logs every request (incl. errors, with IP + final status);
+// the exception handler sits inside it, converting exceptions to responses first.
+app.UseMiddleware<RequestResponseLoggingMiddleware>();
+app.UseMiddleware<GlobalExceptionMiddleware>();
+
+// ─── Module endpoint registrations (uncomment as each module is built) ────────
+// app.MapAuthEndpoints();
+// app.MapSchoolEndpoints();
+// app.MapStaffEndpoints();
+// app.MapStudentsEndpoints();
+// app.MapGradesEndpoints();
+// app.MapFeesEndpoints();
+// app.MapAttendanceEndpoints();
+// app.MapStoreEndpoints();
+// app.MapNotificationsEndpoints();
+// app.MapComplianceEndpoints();
+// app.MapPlatformAdminEndpoints();
+
+// Idempotently ensure the known release feature flags exist (default OFF) so the CMS can list them.
+// Best-effort: a missing table (migration not yet run) logs a warning rather than blocking startup.
+using (IServiceScope scope = app.Services.CreateScope())
+{
+    try
+    {
+        IFeatureFlagService featureFlags = scope.ServiceProvider.GetRequiredService<IFeatureFlagService>();
+        await featureFlags.EnsureSeededAsync();
+    }
+    catch (Exception ex)
+    {
+        Log.Warning(ex, "Feature flag seeding skipped (has 0009_feature_flags.sql been run?).");
+    }
+}
+
+app.MapHealthChecks("/health");
+app.MapControllers();
+app.Run();
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+static TokenValidationParameters BuildTokenParams(string signingKey, string issuer, string audience)
+{
+    return new TokenValidationParameters
+    {
+        ValidateIssuer           = true,
+        ValidIssuer              = issuer,
+        ValidateAudience         = true,
+        ValidAudience            = audience,
+        ValidateLifetime         = true,
+        ValidateIssuerSigningKey = true,
+        IssuerSigningKey         = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(signingKey)),
+        ClockSkew                = TimeSpan.Zero
+    };
+}
+
+// Lets a scheme accept the access token from the httpOnly `sf_access` cookie when there's no
+// Authorization header (Cross-Cutting Auth §X.2). The wrong portal's token simply fails validation.
+static void ReadTokenFromCookie(JwtBearerOptions options)
+{
+    options.Events = new JwtBearerEvents
+    {
+        OnMessageReceived = context =>
+        {
+            if (string.IsNullOrEmpty(context.Token))
+            {
+                context.Token = context.Request.Cookies["sf_access"];
+            }
+
+            return Task.CompletedTask;
+        }
+    };
+}
+
+// One fixed-window policy: Redis-backed (shared across instances) when a multiplexer is available,
+// otherwise the in-process limiter. Same limits either way.
+static void AddWindowLimiter(RateLimiterOptions options, string policyName, int windowSeconds,
+    int permitLimit, IConnectionMultiplexer? redis)
+{
+    if (redis is not null)
+    {
+        options.AddRedisFixedWindowLimiter(policyName, limiterOptions =>
+        {
+            limiterOptions.ConnectionMultiplexerFactory = () => redis;
+            limiterOptions.PermitLimit = permitLimit;
+            limiterOptions.Window = TimeSpan.FromSeconds(windowSeconds);
+        });
+    }
+    else
+    {
+        options.AddFixedWindowLimiter(policyName, limiterOptions =>
+        {
+            limiterOptions.Window = TimeSpan.FromSeconds(windowSeconds);
+            limiterOptions.PermitLimit = permitLimit;
+            limiterOptions.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
+            limiterOptions.QueueLimit = 0;
+        });
+    }
+}
+
+// Connects to Redis if a connection string is present and reachable at startup; otherwise returns
+// null so the app falls back to in-memory cache + rate limiting (no Redis container needed in dev).
+static IConnectionMultiplexer? TryConnectRedis(IConfiguration configuration)
+{
+    string? connectionString = configuration.GetConnectionString("Redis");
+    if (string.IsNullOrWhiteSpace(connectionString))
+    {
+        return null;
+    }
+
+    try
+    {
+        return ConnectionMultiplexer.Connect(connectionString);
+    }
+    catch (Exception ex)
+    {
+        Log.Warning(ex, "Redis configured but unreachable at startup; using in-memory cache + rate limiting.");
+        return null;
+    }
+}

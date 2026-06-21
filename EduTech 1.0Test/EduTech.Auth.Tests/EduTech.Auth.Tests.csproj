@@ -32,6 +32,7 @@
     <ProjectReference Include="..\..\EduTech 1.0\src\EduTech.Auth\EduTech.Auth.csproj" />
     <ProjectReference Include="..\..\EduTech 1.0\src\EduTech.Notifications\EduTech.Notifications.csproj" />
     <ProjectReference Include="..\..\EduTech 1.0\src\EduTech.School\EduTech.School.csproj" />
+    <ProjectReference Include="..\..\EduTech 1.0\src\EduTech.Compliance\EduTech.Compliance.csproj" />
   </ItemGroup>
 
   <ItemGroup>

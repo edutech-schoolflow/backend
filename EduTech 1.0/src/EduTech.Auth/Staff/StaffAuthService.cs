@@ -49,9 +49,9 @@ internal sealed class StaffAuthService : IStaffAuthService
 
     public async Task RegisterAsync(RegisterStaffRequest request, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(request.FullName))
+        if (string.IsNullOrWhiteSpace(request.FirstName) || string.IsNullOrWhiteSpace(request.LastName))
         {
-            throw new AppErrorException("Full name is required.", 400, ErrorCodes.ValidationError);
+            throw new AppErrorException("First and last name are required.", 400, ErrorCodes.ValidationError);
         }
 
         string? phone = PhoneNumber.Normalize(request.Phone);
@@ -86,8 +86,9 @@ internal sealed class StaffAuthService : IStaffAuthService
         Guid staffUserId;
         try
         {
-            staffUserId = await _staffRepository.CreateAsync(request.FullName.Trim(), phone, email,
-                passwordHash, cancellationToken);
+            staffUserId = await _staffRepository.CreateAsync(request.FirstName.Trim(),
+                string.IsNullOrWhiteSpace(request.MiddleName) ? null : request.MiddleName.Trim(),
+                request.LastName.Trim(), phone, email, passwordHash, cancellationToken);
         }
         catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
         {

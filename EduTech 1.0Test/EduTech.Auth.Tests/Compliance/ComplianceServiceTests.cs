@@ -1,4 +1,4 @@
-using EduTech.Compliance.IdentityVerification;
+using EduTech.Shared.Identity;
 using EduTech.Compliance.Nin;
 using EduTech.Shared.Constants;
 using EduTech.Shared.Context;
@@ -21,6 +21,8 @@ public class ComplianceServiceTests
         _context.Setup(c => c.UserType).Returns(UserTypes.Staff);
         _context.Setup(c => c.UserId).Returns(Guid.NewGuid().ToString());
         _encryptor.Setup(e => e.Encrypt(It.IsAny<string>())).Returns<string>(s => "enc:" + s);
+        _repo.Setup(r => r.GetFullNameAsync(It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("Amaka Teacher");
     }
 
     private ComplianceService CreateSut()
@@ -35,14 +37,14 @@ public class ComplianceServiceTests
             () => CreateSut().SubmitNinAsync(new SubmitNinRequest { Nin = "123" }, CancellationToken.None));
 
         Assert.Equal(400, ex.StatusCode);
-        _verifier.Verify(v => v.VerifyNinAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        _verifier.Verify(v => v.VerifyNinAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
     public async Task SubmitNin_VerificationFails_Throws422_AndStoresNothing()
     {
-        _verifier.Setup(v => v.VerifyNinAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(NinVerificationResult.Fail("NIN not found."));
+        _verifier.Setup(v => v.VerifyNinAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(IdentityVerificationResult.Fail("NIN not found."));
 
         AppErrorException ex = await Assert.ThrowsAsync<AppErrorException>(
             () => CreateSut().SubmitNinAsync(new SubmitNinRequest { Nin = "11122233344" }, CancellationToken.None));
@@ -55,8 +57,8 @@ public class ComplianceServiceTests
     [Fact]
     public async Task SubmitNin_Verified_EncryptsAndStoresVerified()
     {
-        _verifier.Setup(v => v.VerifyNinAsync("11122233344", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(NinVerificationResult.Ok());
+        _verifier.Setup(v => v.VerifyNinAsync("11122233344", It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(IdentityVerificationResult.Ok());
         _repo.Setup(r => r.GetAsync(UserTypes.Staff, It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ComplianceStateRow { KycStatus = "verified", HasNin = true });
 

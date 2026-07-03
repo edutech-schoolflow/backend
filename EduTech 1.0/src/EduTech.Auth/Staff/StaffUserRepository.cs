@@ -13,15 +13,15 @@ internal interface IStaffUserRepository
 
     Task<bool> ExistsByEmailAsync(string email, CancellationToken cancellationToken);
 
-    Task<Guid> CreateAsync(string fullName, string phone, string? email, string passwordHash,
-        CancellationToken cancellationToken);
+    Task<Guid> CreateAsync(string firstName, string? middleName, string lastName, string phone,
+        string? email, string passwordHash, CancellationToken cancellationToken);
 
     /// <summary>
     /// Creates a PENDING staff_user (no password yet) for someone invited by a school who has no
     /// account. They set a password + verify their phone when they accept. Runs in the invite transaction.
     /// </summary>
-    Task<Guid> CreatePendingAsync(string fullName, string phone, IDbTransaction transaction,
-        CancellationToken cancellationToken);
+    Task<Guid> CreatePendingAsync(string firstName, string? middleName, string lastName, string phone,
+        IDbTransaction transaction, CancellationToken cancellationToken);
 
     /// <summary>The staff id for a phone, or null if no account exists.</summary>
     Task<Guid?> GetIdByPhoneAsync(string phone, CancellationToken cancellationToken);
@@ -54,6 +54,8 @@ internal interface IStaffUserRepository
 internal sealed class StaffAccountState
 {
     public string Phone { get; init; } = string.Empty;
+    public string FirstName { get; init; } = string.Empty;
+    public string LastName { get; init; } = string.Empty;
     public string KycStatus { get; init; } = string.Empty;
     public bool HasPassword { get; init; }
     public bool PhoneVerified { get; init; }
@@ -112,25 +114,25 @@ internal sealed class StaffUserRepository : BaseRepository, IStaffUserRepository
         return count > 0;
     }
 
-    public async Task<Guid> CreateAsync(string fullName, string phone, string? email, string passwordHash,
-        CancellationToken cancellationToken)
+    public async Task<Guid> CreateAsync(string firstName, string? middleName, string lastName, string phone,
+        string? email, string passwordHash, CancellationToken cancellationToken)
     {
         return await ExecuteScalarAsync<Guid>(
             """
-            INSERT INTO staff_users (full_name, phone, email, password_hash)
-            VALUES (@FullName, @Phone, @Email, @PasswordHash)
+            INSERT INTO staff_users (first_name, middle_name, last_name, phone, email, password_hash)
+            VALUES (@FirstName, @MiddleName, @LastName, @Phone, @Email, @PasswordHash)
             RETURNING id
             """,
-            new { FullName = fullName, Phone = phone, Email = email, PasswordHash = passwordHash },
+            new { FirstName = firstName, MiddleName = middleName, LastName = lastName, Phone = phone, Email = email, PasswordHash = passwordHash },
             cancellationToken);
     }
 
-    public async Task<Guid> CreatePendingAsync(string fullName, string phone, IDbTransaction transaction,
-        CancellationToken cancellationToken)
+    public async Task<Guid> CreatePendingAsync(string firstName, string? middleName, string lastName, string phone,
+        IDbTransaction transaction, CancellationToken cancellationToken)
     {
         return await ExecuteScalarAsync<Guid>(
-            "INSERT INTO staff_users (full_name, phone) VALUES (@FullName, @Phone) RETURNING id",
-            new { FullName = fullName, Phone = phone }, cancellationToken, transaction);
+            "INSERT INTO staff_users (first_name, middle_name, last_name, phone) VALUES (@FirstName, @MiddleName, @LastName, @Phone) RETURNING id",
+            new { FirstName = firstName, MiddleName = middleName, LastName = lastName, Phone = phone }, cancellationToken, transaction);
     }
 
     public Task<Guid?> GetIdByPhoneAsync(string phone, CancellationToken cancellationToken)
@@ -188,7 +190,8 @@ internal sealed class StaffUserRepository : BaseRepository, IStaffUserRepository
     {
         return QuerySingleOrDefaultAsync<StaffAccountState>(
             """
-            SELECT phone, kyc_status, (password_hash IS NOT NULL) AS has_password, phone_verified, is_active
+            SELECT phone, first_name, last_name, kyc_status,
+                   (password_hash IS NOT NULL) AS has_password, phone_verified, is_active
             FROM staff_users
             WHERE id = @Id
             """,
@@ -217,7 +220,7 @@ internal sealed class StaffUserRepository : BaseRepository, IStaffUserRepository
     public Task<StaffProfileRow?> GetProfileAsync(Guid staffUserId, CancellationToken cancellationToken)
     {
         return QuerySingleOrDefaultAsync<StaffProfileRow>(
-            "SELECT full_name, phone, email, phone_verified, kyc_status FROM staff_users WHERE id = @Id",
+            "SELECT concat_ws(' ', first_name, middle_name, last_name) AS full_name, phone, email, phone_verified, kyc_status FROM staff_users WHERE id = @Id",
             new { Id = staffUserId }, cancellationToken);
     }
 }

@@ -3,7 +3,9 @@ namespace EduTech.Auth.PlatformAdmin;
 /// <summary>Dev-only seed of the first super_admin (only works while no admins exist).</summary>
 public sealed class SeedAdminRequest
 {
-    public string FullName { get; init; } = string.Empty;
+    public string FirstName { get; init; } = string.Empty;
+    public string? MiddleName { get; init; }
+    public string LastName { get; init; } = string.Empty;
     public string Email { get; init; } = string.Empty;
     public string Password { get; init; } = string.Empty;
 }

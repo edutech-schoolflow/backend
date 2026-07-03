@@ -6,8 +6,8 @@ internal interface IPlatformAdminRepository
 {
     Task<bool> ExistsAnyAsync(CancellationToken cancellationToken);
 
-    Task<Guid> CreateAsync(string fullName, string email, string passwordHash, string role,
-        Guid? createdBy, CancellationToken cancellationToken);
+    Task<Guid> CreateAsync(string firstName, string? middleName, string lastName, string email,
+        string passwordHash, string role, Guid? createdBy, CancellationToken cancellationToken);
 
     Task<PlatformAdminLoginRow?> GetByEmailForLoginAsync(string email, CancellationToken cancellationToken);
 
@@ -41,18 +41,20 @@ internal sealed class PlatformAdminRepository : BaseRepository, IPlatformAdminRe
         return count > 0;
     }
 
-    public Task<Guid> CreateAsync(string fullName, string email, string passwordHash, string role,
-        Guid? createdBy, CancellationToken cancellationToken)
+    public Task<Guid> CreateAsync(string firstName, string? middleName, string lastName, string email,
+        string passwordHash, string role, Guid? createdBy, CancellationToken cancellationToken)
     {
         return ExecuteScalarAsync<Guid>(
             """
-            INSERT INTO platform_admins (full_name, email, password_hash, role, created_by)
-            VALUES (@FullName, @Email, @PasswordHash, @Role, @CreatedBy)
+            INSERT INTO platform_admins (first_name, middle_name, last_name, email, password_hash, role, created_by)
+            VALUES (@FirstName, @MiddleName, @LastName, @Email, @PasswordHash, @Role, @CreatedBy)
             RETURNING id
             """,
             new
             {
-                FullName = fullName,
+                FirstName = firstName,
+                MiddleName = middleName,
+                LastName = lastName,
                 Email = email,
                 PasswordHash = passwordHash,
                 Role = role,

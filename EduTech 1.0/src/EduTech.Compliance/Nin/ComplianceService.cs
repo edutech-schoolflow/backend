@@ -1,5 +1,5 @@
-using EduTech.Compliance.IdentityVerification;
 using EduTech.Shared.Constants;
+using EduTech.Shared.Identity;
 using EduTech.Shared.Context;
 using EduTech.Shared.Exceptions;
 using EduTech.Shared.Security;
@@ -47,7 +47,13 @@ internal sealed class ComplianceService : IComplianceService
             throw new AppErrorException("NIN must be exactly 11 digits.", 400, ErrorCodes.ValidationError);
         }
 
-        NinVerificationResult result = await _verifier.VerifyNinAsync(nin, cancellationToken);
+        string? fullName = await _repository.GetFullNameAsync(actorType, actorId, cancellationToken);
+        if (string.IsNullOrWhiteSpace(fullName))
+        {
+            throw new AppErrorException("Account not found.", 404, ErrorCodes.NotFound);
+        }
+
+        IdentityVerificationResult result = await _verifier.VerifyNinAsync(nin, fullName, cancellationToken);
         if (!result.Verified)
         {
             throw new AppErrorException(result.Reason ?? "We couldn't verify your NIN.",

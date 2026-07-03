@@ -33,6 +33,10 @@
     <ProjectReference Include="..\..\EduTech 1.0\src\EduTech.Notifications\EduTech.Notifications.csproj" />
     <ProjectReference Include="..\..\EduTech 1.0\src\EduTech.School\EduTech.School.csproj" />
     <ProjectReference Include="..\..\EduTech 1.0\src\EduTech.Compliance\EduTech.Compliance.csproj" />
+    <ProjectReference Include="..\..\EduTech 1.0\src\EduTech.Students\EduTech.Students.csproj" />
+    <ProjectReference Include="..\..\EduTech 1.0\src\EduTech.Attendance\EduTech.Attendance.csproj" />
+    <ProjectReference Include="..\..\EduTech 1.0\src\EduTech.Grades\EduTech.Grades.csproj" />
+    <ProjectReference Include="..\..\EduTech 1.0\src\EduTech.Fees\EduTech.Fees.csproj" />
   </ItemGroup>
 
   <ItemGroup>

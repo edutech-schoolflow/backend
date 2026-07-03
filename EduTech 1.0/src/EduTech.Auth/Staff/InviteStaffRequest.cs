@@ -7,6 +7,7 @@ namespace EduTech.Auth.Staff;
 public sealed class InviteStaffRequest
 {
     public string FirstName { get; init; } = string.Empty;
+    public string? MiddleName { get; init; }
     public string LastName { get; init; } = string.Empty;
     public string Phone { get; init; } = string.Empty;
     public string Role { get; init; } = string.Empty;

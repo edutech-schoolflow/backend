@@ -3,6 +3,8 @@ namespace EduTech.Auth.Staff;
 /// <summary>Invite details shown on the accept/welcome screen.</summary>
 public sealed class InviteDetailsResponse
 {
+    public string? FirstName { get; init; }
+    public string? LastName { get; init; }
     public string? SchoolName { get; init; }
     public required string Role { get; init; }
     public required string EmploymentType { get; init; }

@@ -74,6 +74,8 @@ internal sealed class StaffInviteAcceptService : IStaffInviteAcceptService
 
         return new InviteDetailsResponse
         {
+            FirstName = state?.FirstName,
+            LastName = state?.LastName,
             SchoolName = details?.SchoolName,
             Role = affiliation.Role,
             EmploymentType = affiliation.EmploymentType,

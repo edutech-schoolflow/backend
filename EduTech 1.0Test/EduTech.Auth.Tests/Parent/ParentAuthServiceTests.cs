@@ -39,17 +39,17 @@ public class ParentAuthServiceTests
         _parents.Setup(p => p.ExistsByPhoneAsync("+2348033334444", It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
         _hasher.Setup(h => h.Hash("password123")).Returns("hashed");
-        _parents.Setup(p => p.CreateAsync("John Okafor", "+2348033334444", null, "hashed", It.IsAny<CancellationToken>()))
+        _parents.Setup(p => p.CreateAsync("John", null, "Okafor", "+2348033334444", null, "hashed", It.IsAny<CancellationToken>()))
             .ReturnsAsync(parentId);
         _otp.Setup(o => o.GenerateAsync(OtpPurpose.ParentPhoneVerification, parentId, "+2348033334444",
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync("123456");
 
         await CreateSut().RegisterAsync(
-            new RegisterParentRequest { FullName = "John Okafor", Phone = "08033334444", Password = "password123" },
+            new RegisterParentRequest { FirstName = "John", LastName = "Okafor", Phone = "08033334444", Password = "password123" },
             CancellationToken.None);
 
-        _parents.Verify(p => p.CreateAsync("John Okafor", "+2348033334444", null, "hashed",
+        _parents.Verify(p => p.CreateAsync("John", null, "Okafor", "+2348033334444", null, "hashed",
             It.IsAny<CancellationToken>()), Times.Once);
         _sms.Verify(s => s.SendSmsAsync("+2348033334444", It.Is<string>(m => m.Contains("123456")),
             It.IsAny<CancellationToken>()), Times.Once);
@@ -62,7 +62,7 @@ public class ParentAuthServiceTests
             .ReturnsAsync(true);
 
         AppErrorException ex = await Assert.ThrowsAsync<AppErrorException>(() => CreateSut().RegisterAsync(
-            new RegisterParentRequest { FullName = "John", Phone = "08033334444", Password = "password123" },
+            new RegisterParentRequest { FirstName = "John", LastName = "Doe", Phone = "08033334444", Password = "password123" },
             CancellationToken.None));
 
         Assert.Equal(409, ex.StatusCode);

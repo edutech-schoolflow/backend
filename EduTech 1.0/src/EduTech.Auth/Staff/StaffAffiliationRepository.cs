@@ -29,6 +29,18 @@ internal interface IStaffAffiliationRepository
     /// <summary>All of a staff member's active affiliations + school names (the "My Schools" list).</summary>
     Task<IReadOnlyList<StaffSchoolListRow>> ListSchoolsForStaffAsync(Guid staffUserId, CancellationToken cancellationToken);
 
+    /// <summary>Directory: every staff member at a school (any status) with their identity.</summary>
+    Task<IReadOnlyList<StaffDirectoryRow>> ListForSchoolAsync(Guid schoolId, CancellationToken cancellationToken);
+
+    /// <summary>A single directory row scoped to the school (null if it isn't this school's staff).</summary>
+    Task<StaffDirectoryRow?> GetForSchoolAsync(Guid affiliationId, Guid schoolId, CancellationToken cancellationToken);
+
+    /// <summary>Update role/position for a staff member at this school. Returns rows affected.</summary>
+    Task<int> UpdateRoleAsync(Guid affiliationId, Guid schoolId, string role, string? position, CancellationToken cancellationToken);
+
+    /// <summary>Set affiliation status (active | inactive) at this school. Returns rows affected.</summary>
+    Task<int> SetStatusAsync(Guid affiliationId, Guid schoolId, string status, CancellationToken cancellationToken);
+
     Task<Guid> CreateInvitedAsync(Guid staffUserId, Guid schoolId, string role, string? position,
         string employmentType, Guid? invitedBy, IDbTransaction transaction, CancellationToken cancellationToken);
 
@@ -52,6 +64,24 @@ internal sealed class StaffAffiliationRow
     public string? Position { get; init; }
     public string EmploymentType { get; init; } = string.Empty;
     public string Status { get; init; } = string.Empty;
+}
+
+/// <summary>A staff member as seen in the school's directory (affiliation + identity).</summary>
+internal sealed class StaffDirectoryRow
+{
+    public Guid Id { get; init; }                 // affiliation id (the per-school record)
+    public Guid StaffUserId { get; init; }
+    public string FirstName { get; init; } = string.Empty;
+    public string? MiddleName { get; init; }
+    public string LastName { get; init; } = string.Empty;
+    public string Phone { get; init; } = string.Empty;
+    public string? Email { get; init; }
+    public string Role { get; init; } = string.Empty;
+    public string? Position { get; init; }
+    public string EmploymentType { get; init; } = string.Empty;
+    public string Status { get; init; } = string.Empty;   // invited | active | inactive
+    public DateTime? JoinedAt { get; init; }
+    public DateTime CreatedAt { get; init; }
 }
 
 /// <summary>Affiliation + school name, for the invite welcome screen.</summary>
@@ -167,6 +197,57 @@ internal sealed class StaffAffiliationRepository : BaseRepository, IStaffAffilia
             ORDER BY s.name
             """,
             new { StaffUserId = staffUserId }, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<StaffDirectoryRow>> ListForSchoolAsync(Guid schoolId,
+        CancellationToken cancellationToken)
+    {
+        return await QueryAsync<StaffDirectoryRow>(
+            """
+            SELECT a.id, a.staff_user_id, u.first_name, u.middle_name, u.last_name, u.phone, u.email,
+                   a.role, a.position, a.employment_type, a.status, a.joined_at, a.created_at
+            FROM staff_affiliations a
+            JOIN staff_users u ON u.id = a.staff_user_id
+            WHERE a.school_id = @SchoolId
+            ORDER BY a.created_at DESC
+            """,
+            new { SchoolId = schoolId }, cancellationToken);
+    }
+
+    public Task<StaffDirectoryRow?> GetForSchoolAsync(Guid affiliationId, Guid schoolId,
+        CancellationToken cancellationToken)
+    {
+        return QuerySingleOrDefaultAsync<StaffDirectoryRow>(
+            """
+            SELECT a.id, a.staff_user_id, u.first_name, u.middle_name, u.last_name, u.phone, u.email,
+                   a.role, a.position, a.employment_type, a.status, a.joined_at, a.created_at
+            FROM staff_affiliations a
+            JOIN staff_users u ON u.id = a.staff_user_id
+            WHERE a.id = @Id AND a.school_id = @SchoolId
+            """,
+            new { Id = affiliationId, SchoolId = schoolId }, cancellationToken);
+    }
+
+    public Task<int> UpdateRoleAsync(Guid affiliationId, Guid schoolId, string role, string? position,
+        CancellationToken cancellationToken)
+    {
+        return ExecuteAsync(
+            """
+            UPDATE staff_affiliations SET role = @Role, position = @Position, updated_at = NOW()
+            WHERE id = @Id AND school_id = @SchoolId
+            """,
+            new { Id = affiliationId, SchoolId = schoolId, Role = role, Position = position }, cancellationToken);
+    }
+
+    public Task<int> SetStatusAsync(Guid affiliationId, Guid schoolId, string status,
+        CancellationToken cancellationToken)
+    {
+        return ExecuteAsync(
+            """
+            UPDATE staff_affiliations SET status = @Status, updated_at = NOW()
+            WHERE id = @Id AND school_id = @SchoolId
+            """,
+            new { Id = affiliationId, SchoolId = schoolId, Status = status }, cancellationToken);
     }
 
     public async Task<Guid> CreateInvitedAsync(Guid staffUserId, Guid schoolId, string role, string? position,

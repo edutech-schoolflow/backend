@@ -43,12 +43,13 @@ public class PlatformAdminAuthServiceTests
         _admins.Setup(a => a.ExistsAnyAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
 
         AppErrorException ex = await Assert.ThrowsAsync<AppErrorException>(() => CreateSut().SeedSuperAdminAsync(
-            new SeedAdminRequest { FullName = "Ops", Email = "ops@schoolflow.com", Password = "adminpass1" },
+            new SeedAdminRequest { FirstName = "Ops", LastName = "Admin", Email = "ops@schoolflow.com", Password = "adminpass1" },
             CancellationToken.None));
 
         Assert.Equal(409, ex.StatusCode);
         _admins.Verify(a => a.CreateAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
-            It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()), Times.Never);
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Guid?>(),
+            It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]

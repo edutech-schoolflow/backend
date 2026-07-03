@@ -8,8 +8,8 @@ internal interface IParentRepository
     Task<bool> ExistsByPhoneAsync(string phone, CancellationToken cancellationToken);
     Task<bool> ExistsByEmailAsync(string email, CancellationToken cancellationToken);
 
-    Task<Guid> CreateAsync(string fullName, string phone, string? email, string passwordHash,
-        CancellationToken cancellationToken);
+    Task<Guid> CreateAsync(string firstName, string? middleName, string lastName, string phone,
+        string? email, string passwordHash, CancellationToken cancellationToken);
 
     Task<Guid?> GetIdByPhoneAsync(string phone, CancellationToken cancellationToken);
 
@@ -77,16 +77,16 @@ internal sealed class ParentRepository : BaseRepository, IParentRepository
         return count > 0;
     }
 
-    public Task<Guid> CreateAsync(string fullName, string phone, string? email, string passwordHash,
-        CancellationToken cancellationToken)
+    public Task<Guid> CreateAsync(string firstName, string? middleName, string lastName, string phone,
+        string? email, string passwordHash, CancellationToken cancellationToken)
     {
         return ExecuteScalarAsync<Guid>(
             """
-            INSERT INTO parents (full_name, phone, email, password_hash)
-            VALUES (@FullName, @Phone, @Email, @PasswordHash)
+            INSERT INTO parents (first_name, middle_name, last_name, phone, email, password_hash)
+            VALUES (@FirstName, @MiddleName, @LastName, @Phone, @Email, @PasswordHash)
             RETURNING id
             """,
-            new { FullName = fullName, Phone = phone, Email = email, PasswordHash = passwordHash },
+            new { FirstName = firstName, MiddleName = middleName, LastName = lastName, Phone = phone, Email = email, PasswordHash = passwordHash },
             cancellationToken);
     }
 
@@ -161,7 +161,8 @@ internal sealed class ParentRepository : BaseRepository, IParentRepository
     {
         return QuerySingleOrDefaultAsync<ParentProfileRow>(
             """
-            SELECT full_name, phone, email, phone_verified, (payment_pin_hash IS NOT NULL) AS has_payment_pin
+            SELECT concat_ws(' ', first_name, middle_name, last_name) AS full_name,
+                   phone, email, phone_verified, (payment_pin_hash IS NOT NULL) AS has_payment_pin
             FROM parents
             WHERE id = @Id
             """,

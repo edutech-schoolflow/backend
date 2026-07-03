@@ -24,6 +24,13 @@ public interface IEduTechRequestContext
     string? SchoolId { get; }
 
     /// <summary>
+    /// The staff member's affiliation (staff_affiliations.id) at the active school. Present only on
+    /// SCHOOL-SCOPED staff tokens; null for owners, parents, and platform admins. Used to scope
+    /// staff actions to the records they own (e.g. a class teacher marking only their arm's register).
+    /// </summary>
+    string? AffiliationId { get; }
+
+    /// <summary>
     /// True only for the school account owner (registered the school).
     /// Bypasses all feature flag and role checks.
     /// </summary>

@@ -2,8 +2,10 @@ using System.Text.Json;
 using EduTech.Shared.Constants;
 using EduTech.Shared.Exceptions;
 using EduTech.Shared.Models;
+using EduTech.Shared.Observability;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -63,6 +65,19 @@ public class GlobalExceptionMiddleware
             }
 
             await WriteAsync(context, error);
+
+            // Alert the team on GENUINE 500s only (handled AppErrorExceptions above are expected business
+            // conditions and are deliberately NOT alerted). Resolved lazily so this singleton middleware's
+            // constructor stays scope-safe; the notifier itself is best-effort and never throws.
+            try
+            {
+                ISlackNotifier slack = context.RequestServices.GetRequiredService<ISlackNotifier>();
+                await slack.SendErrorAsync(ex, context);
+            }
+            catch
+            {
+                // Never let alerting break the request.
+            }
         }
     }
 

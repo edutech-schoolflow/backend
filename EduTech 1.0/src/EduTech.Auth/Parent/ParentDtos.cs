@@ -3,7 +3,9 @@ namespace EduTech.Auth.Parent;
 /// <summary>Parent self-registration — phone-first (email optional).</summary>
 public sealed class RegisterParentRequest
 {
-    public string FullName { get; init; } = string.Empty;
+    public string FirstName { get; init; } = string.Empty;
+    public string? MiddleName { get; init; }
+    public string LastName { get; init; } = string.Empty;
     public string Phone { get; init; } = string.Empty;
     public string Password { get; init; } = string.Empty;
     public string? Email { get; init; }

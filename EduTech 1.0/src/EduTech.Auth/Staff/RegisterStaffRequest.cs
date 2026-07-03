@@ -6,7 +6,9 @@ namespace EduTech.Auth.Staff;
 /// </summary>
 public sealed class RegisterStaffRequest
 {
-    public string FullName { get; init; } = string.Empty;
+    public string FirstName { get; init; } = string.Empty;
+    public string? MiddleName { get; init; }
+    public string LastName { get; init; } = string.Empty;
     public string Phone { get; init; } = string.Empty;
     public string Password { get; init; } = string.Empty;
     public string? Email { get; init; }

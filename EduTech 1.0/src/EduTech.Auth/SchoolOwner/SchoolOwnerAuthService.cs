@@ -56,9 +56,9 @@ internal sealed class SchoolOwnerAuthService : ISchoolOwnerAuthService
 
     public async Task RegisterAsync(RegisterSchoolOwnerRequest request, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(request.FullName))
+        if (string.IsNullOrWhiteSpace(request.FirstName) || string.IsNullOrWhiteSpace(request.LastName))
         {
-            throw new AppErrorException("Full name is required.", 400, ErrorCodes.ValidationError);
+            throw new AppErrorException("First and last name are required.", 400, ErrorCodes.ValidationError);
         }
 
         string? phone = PhoneNumber.Normalize(request.Phone);
@@ -98,8 +98,9 @@ internal sealed class SchoolOwnerAuthService : ISchoolOwnerAuthService
             await using (DbTransactionScope transaction = await _connectionFactory.BeginTransactionAsync(cancellationToken))
             {
                 Guid schoolId = await _schoolRepository.CreateShellAsync(transaction.Transaction, cancellationToken);
-                ownerId = await _ownerRepository.CreateAsync(schoolId, request.FullName.Trim(), phone, email,
-                    passwordHash, transaction.Transaction, cancellationToken);
+                ownerId = await _ownerRepository.CreateAsync(schoolId, request.FirstName.Trim(),
+                    string.IsNullOrWhiteSpace(request.MiddleName) ? null : request.MiddleName.Trim(),
+                    request.LastName.Trim(), phone, email, passwordHash, transaction.Transaction, cancellationToken);
 
                 await transaction.CommitAsync(cancellationToken);
             }

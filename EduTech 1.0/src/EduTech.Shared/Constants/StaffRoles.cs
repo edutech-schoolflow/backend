@@ -9,6 +9,14 @@ public static class StaffRoles
     public const string Teacher = "teacher";
     public const string Bursar = "bursar";
     public const string Registrar = "registrar";
+
+    private static readonly HashSet<string> Invitable = new HashSet<string>
+    {
+        SchoolAdmin, Principal, VicePrincipal, Teacher, Bursar, Registrar
+    };
+
+    /// <summary>Roles a school can assign to staff (everything except the platform super_admin).</summary>
+    public static bool IsInvitable(string? role) => role is not null && Invitable.Contains(role);
 }
 
 /// <summary>

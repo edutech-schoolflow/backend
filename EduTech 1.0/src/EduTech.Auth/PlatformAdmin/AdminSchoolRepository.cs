@@ -45,7 +45,8 @@ internal sealed class AdminSchoolRepository : BaseRepository, IAdminSchoolReposi
 {
     private const string SelectSchool = """
         SELECT s.id, s.name, s.subdomain, s.status, s.kyc_status,
-               o.full_name AS owner_name, o.phone AS owner_phone, o.email AS owner_email, s.created_at
+               concat_ws(' ', o.first_name, o.middle_name, o.last_name) AS owner_name,
+               o.phone AS owner_phone, o.email AS owner_email, s.created_at
         FROM schools s
         LEFT JOIN school_owners o ON o.school_id = s.id
         """;

@@ -21,6 +21,7 @@ public static class PersistenceServiceCollectionExtensions
             ?? throw new InvalidOperationException("ConnectionStrings:Default is missing");
 
         services.AddSingleton<IDbConnectionFactory>(new NpgsqlConnectionFactory(connectionString));
+        services.AddScoped<IPlatformSettingsRepository, PlatformSettingsRepository>();
 
         return services;
     }

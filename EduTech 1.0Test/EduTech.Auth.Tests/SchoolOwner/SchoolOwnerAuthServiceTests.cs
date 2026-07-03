@@ -143,7 +143,7 @@ public class SchoolOwnerAuthServiceTests
     public async Task Register_ShortPassword_Throws400()
     {
         AppErrorException ex = await Assert.ThrowsAsync<AppErrorException>(() => CreateSut().RegisterAsync(
-            new RegisterSchoolOwnerRequest { FullName = "Jane Doe", Phone = "08012345678", Password = "short" },
+            new RegisterSchoolOwnerRequest { FirstName = "Jane", LastName = "Doe", Phone = "08012345678", Password = "short" },
             CancellationToken.None));
 
         Assert.Equal(400, ex.StatusCode);
@@ -154,7 +154,7 @@ public class SchoolOwnerAuthServiceTests
     public async Task Register_InvalidPhone_Throws400()
     {
         AppErrorException ex = await Assert.ThrowsAsync<AppErrorException>(() => CreateSut().RegisterAsync(
-            new RegisterSchoolOwnerRequest { FullName = "Jane Doe", Phone = "12345", Password = "password123" },
+            new RegisterSchoolOwnerRequest { FirstName = "Jane", LastName = "Doe", Phone = "12345", Password = "password123" },
             CancellationToken.None));
 
         Assert.Equal(400, ex.StatusCode);
@@ -167,7 +167,7 @@ public class SchoolOwnerAuthServiceTests
             .ReturnsAsync(true);
 
         AppErrorException ex = await Assert.ThrowsAsync<AppErrorException>(() => CreateSut().RegisterAsync(
-            new RegisterSchoolOwnerRequest { FullName = "Jane Doe", Phone = "08012345678", Password = "password123" },
+            new RegisterSchoolOwnerRequest { FirstName = "Jane", LastName = "Doe", Phone = "08012345678", Password = "password123" },
             CancellationToken.None));
 
         Assert.Equal(409, ex.StatusCode);

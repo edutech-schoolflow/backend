@@ -65,9 +65,9 @@ internal sealed class ParentAuthService : IParentAuthService
 
     public async Task RegisterAsync(RegisterParentRequest request, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(request.FullName))
+        if (string.IsNullOrWhiteSpace(request.FirstName) || string.IsNullOrWhiteSpace(request.LastName))
         {
-            throw new AppErrorException("Full name is required.", 400, ErrorCodes.ValidationError);
+            throw new AppErrorException("First and last name are required.", 400, ErrorCodes.ValidationError);
         }
 
         string? phone = PhoneNumber.Normalize(request.Phone);
@@ -101,7 +101,9 @@ internal sealed class ParentAuthService : IParentAuthService
         Guid parentId;
         try
         {
-            parentId = await _parents.CreateAsync(request.FullName.Trim(), phone, email, passwordHash, cancellationToken);
+            parentId = await _parents.CreateAsync(request.FirstName.Trim(),
+                string.IsNullOrWhiteSpace(request.MiddleName) ? null : request.MiddleName.Trim(),
+                request.LastName.Trim(), phone, email, passwordHash, cancellationToken);
         }
         catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
         {

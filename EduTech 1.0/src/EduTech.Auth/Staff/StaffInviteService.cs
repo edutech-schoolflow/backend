@@ -19,6 +19,9 @@ public interface IStaffInviteService
     /// token, and sends the invite link by SMS.
     /// </summary>
     Task<InviteStaffResponse> InviteAsync(InviteStaffRequest request, CancellationToken cancellationToken);
+
+    /// <summary>Re-sends the invite for a still-pending staff member (new token + SMS).</summary>
+    Task<InviteStaffResponse> ResendInviteAsync(Guid affiliationId, CancellationToken cancellationToken);
 }
 
 internal sealed class StaffInviteService : IStaffInviteService
@@ -83,7 +86,6 @@ internal sealed class StaffInviteService : IStaffInviteService
 
         Guid schoolId = CurrentSchoolId();
         Guid? invitedBy = Guid.TryParse(_requestContext.UserId, out Guid inviter) ? inviter : null;
-        string fullName = $"{request.FirstName.Trim()} {request.LastName.Trim()}";
         bool isFullTime = request.EmploymentType == EmploymentTypes.FullTime;
 
         // ── Exclusivity + duplicate pre-checks (against any existing identity) ─
@@ -92,6 +94,17 @@ internal sealed class StaffInviteService : IStaffInviteService
 
         if (existingStaffUserId is Guid existingId)
         {
+            // Same school FIRST — a duplicate in your own school must get the accurate message,
+            // not the cross-school "elsewhere" one (the exclusivity checks below are school-agnostic).
+            existingAffiliation = await _affiliations.GetAsync(existingId, schoolId, cancellationToken);
+            if (existingAffiliation is not null
+                && (existingAffiliation.Status == "active" || existingAffiliation.Status == "invited"))
+            {
+                throw new AppErrorException(
+                    "You already have a staff member with same details.", 409, ErrorCodes.Conflict);
+            }
+
+            // Then cross-school exclusivity (these are genuinely "elsewhere").
             if (await _affiliations.HasActiveFullTimeAsync(existingId, cancellationToken))
             {
                 throw new AppErrorException(
@@ -105,14 +118,6 @@ internal sealed class StaffInviteService : IStaffInviteService
                     "This person already works at another school and can't be added full-time.",
                     409, ErrorCodes.Conflict);
             }
-
-            existingAffiliation = await _affiliations.GetAsync(existingId, schoolId, cancellationToken);
-            if (existingAffiliation is not null
-                && (existingAffiliation.Status == "active" || existingAffiliation.Status == "invited"))
-            {
-                throw new AppErrorException(
-                    "This person is already invited to or part of your school.", 409, ErrorCodes.Conflict);
-            }
         }
 
         // ── Atomic: identity + affiliation + token ────────────────────────────
@@ -122,7 +127,9 @@ internal sealed class StaffInviteService : IStaffInviteService
         await using (DbTransactionScope transaction = await _connectionFactory.BeginTransactionAsync(cancellationToken))
         {
             Guid staffUserId = existingStaffUserId
-                ?? await _staffUsers.CreatePendingAsync(fullName, phone, transaction.Transaction, cancellationToken);
+                ?? await _staffUsers.CreatePendingAsync(request.FirstName.Trim(),
+                    string.IsNullOrWhiteSpace(request.MiddleName) ? null : request.MiddleName.Trim(),
+                    request.LastName.Trim(), phone, transaction.Transaction, cancellationToken);
 
             Guid affiliationId;
             if (existingAffiliation is not null)
@@ -148,6 +155,40 @@ internal sealed class StaffInviteService : IStaffInviteService
         // ── Deliver (after commit) ────────────────────────────────────────────
         string inviteLink = $"{_inviteBaseUrl}?token={rawToken}";
         await _notifications.SendSmsAsync(phone,
+            $"You've been invited to join a school on SchoolFlow. Accept your invite: {inviteLink} " +
+            $"(expires in {InviteExpiryHours} hours).", cancellationToken);
+
+        return new InviteStaffResponse { InviteLink = inviteLink, ExpiresAt = expiresAt };
+    }
+
+    public async Task<InviteStaffResponse> ResendInviteAsync(Guid affiliationId, CancellationToken cancellationToken)
+    {
+        Guid schoolId = CurrentSchoolId();
+
+        StaffDirectoryRow? staff = await _affiliations.GetForSchoolAsync(affiliationId, schoolId, cancellationToken);
+        if (staff is null)
+        {
+            throw new AppErrorException("Staff member not found.", 404, ErrorCodes.NotFound);
+        }
+
+        if (staff.Status != "invited")
+        {
+            throw new AppErrorException("This staff member has already accepted their invite.",
+                409, ErrorCodes.Conflict);
+        }
+
+        string rawToken = GenerateToken();
+        DateTime expiresAt = DateTime.UtcNow.AddHours(InviteExpiryHours);
+
+        await using (DbTransactionScope transaction = await _connectionFactory.BeginTransactionAsync(cancellationToken))
+        {
+            await _inviteTokens.CreateAsync(affiliationId, staff.Phone, HashToken(rawToken), expiresAt,
+                transaction.Transaction, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+
+        string inviteLink = $"{_inviteBaseUrl}?token={rawToken}";
+        await _notifications.SendSmsAsync(staff.Phone,
             $"You've been invited to join a school on SchoolFlow. Accept your invite: {inviteLink} " +
             $"(expires in {InviteExpiryHours} hours).", cancellationToken);
 

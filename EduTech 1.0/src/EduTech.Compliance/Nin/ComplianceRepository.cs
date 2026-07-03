@@ -14,6 +14,9 @@ internal interface IComplianceRepository
         CancellationToken cancellationToken);
 
     Task<ComplianceStateRow?> GetAsync(string actorType, Guid actorId, CancellationToken cancellationToken);
+
+    /// <summary>The actor's registered name, used to match the NIN's registry name. Null if missing.</summary>
+    Task<string?> GetFullNameAsync(string actorType, Guid actorId, CancellationToken cancellationToken);
 }
 
 internal sealed class ComplianceStateRow
@@ -40,6 +43,13 @@ internal sealed class ComplianceRepository : BaseRepository, IComplianceReposito
     {
         return QuerySingleOrDefaultAsync<ComplianceStateRow>(
             $"SELECT kyc_status AS KycStatus, (nin IS NOT NULL) AS HasNin FROM {Table(actorType)} WHERE id = @Id",
+            new { Id = actorId }, cancellationToken);
+    }
+
+    public Task<string?> GetFullNameAsync(string actorType, Guid actorId, CancellationToken cancellationToken)
+    {
+        return QuerySingleOrDefaultAsync<string>(
+            $"SELECT concat_ws(' ', first_name, middle_name, last_name) FROM {Table(actorType)} WHERE id = @Id",
             new { Id = actorId }, cancellationToken);
     }
 

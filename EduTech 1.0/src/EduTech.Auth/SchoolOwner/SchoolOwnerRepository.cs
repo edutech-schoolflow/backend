@@ -13,8 +13,9 @@ internal interface ISchoolOwnerRepository
 
     Task<bool> ExistsByEmailAsync(string email, CancellationToken cancellationToken);
 
-    Task<Guid> CreateAsync(Guid schoolId, string fullName, string phone, string? email,
-        string passwordHash, IDbTransaction transaction, CancellationToken cancellationToken);
+    Task<Guid> CreateAsync(Guid schoolId, string firstName, string? middleName, string lastName,
+        string phone, string? email, string passwordHash, IDbTransaction transaction,
+        CancellationToken cancellationToken);
 
     /// <summary>The owner id for a phone, or null if no account exists.</summary>
     Task<Guid?> GetIdByPhoneAsync(string phone, CancellationToken cancellationToken);
@@ -95,19 +96,22 @@ internal sealed class SchoolOwnerRepository : BaseRepository, ISchoolOwnerReposi
         return count > 0;
     }
 
-    public async Task<Guid> CreateAsync(Guid schoolId, string fullName, string phone, string? email,
-        string passwordHash, IDbTransaction transaction, CancellationToken cancellationToken)
+    public async Task<Guid> CreateAsync(Guid schoolId, string firstName, string? middleName, string lastName,
+        string phone, string? email, string passwordHash, IDbTransaction transaction,
+        CancellationToken cancellationToken)
     {
         return await ExecuteScalarAsync<Guid>(
             """
-            INSERT INTO school_owners (school_id, full_name, phone, email, password_hash)
-            VALUES (@SchoolId, @FullName, @Phone, @Email, @PasswordHash)
+            INSERT INTO school_owners (school_id, first_name, middle_name, last_name, phone, email, password_hash)
+            VALUES (@SchoolId, @FirstName, @MiddleName, @LastName, @Phone, @Email, @PasswordHash)
             RETURNING id
             """,
             new
             {
                 SchoolId = schoolId,
-                FullName = fullName,
+                FirstName = firstName,
+                MiddleName = middleName,
+                LastName = lastName,
                 Phone = phone,
                 Email = email,
                 PasswordHash = passwordHash
@@ -177,7 +181,8 @@ internal sealed class SchoolOwnerRepository : BaseRepository, ISchoolOwnerReposi
     {
         return QuerySingleOrDefaultAsync<SchoolOwnerProfileRow>(
             """
-            SELECT o.full_name, o.phone, o.email, o.phone_verified,
+            SELECT concat_ws(' ', o.first_name, o.middle_name, o.last_name) AS full_name,
+                   o.phone, o.email, o.phone_verified,
                    o.school_id, s.status AS school_status, s.kyc_status, s.subdomain
             FROM school_owners o
             JOIN schools s ON s.id = o.school_id

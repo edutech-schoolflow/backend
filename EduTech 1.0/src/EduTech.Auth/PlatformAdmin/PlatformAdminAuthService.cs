@@ -41,9 +41,9 @@ internal sealed class PlatformAdminAuthService : IPlatformAdminAuthService
 
     public async Task SeedSuperAdminAsync(SeedAdminRequest request, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(request.FullName))
+        if (string.IsNullOrWhiteSpace(request.FirstName) || string.IsNullOrWhiteSpace(request.LastName))
         {
-            throw new AppErrorException("Full name is required.", 400, ErrorCodes.ValidationError);
+            throw new AppErrorException("First and last name are required.", 400, ErrorCodes.ValidationError);
         }
 
         string email = NormalizeEmail(request.Email);
@@ -65,8 +65,9 @@ internal sealed class PlatformAdminAuthService : IPlatformAdminAuthService
         }
 
         string passwordHash = _passwordHasher.Hash(request.Password);
-        await _admins.CreateAsync(request.FullName.Trim(), email, passwordHash,
-            PlatformAdminRoles.SuperAdmin, null, cancellationToken);
+        await _admins.CreateAsync(request.FirstName.Trim(),
+            string.IsNullOrWhiteSpace(request.MiddleName) ? null : request.MiddleName.Trim(),
+            request.LastName.Trim(), email, passwordHash, PlatformAdminRoles.SuperAdmin, null, cancellationToken);
     }
 
     public async Task<AdminTokensResult> LoginAsync(AdminLoginRequest request, string? ipAddress,

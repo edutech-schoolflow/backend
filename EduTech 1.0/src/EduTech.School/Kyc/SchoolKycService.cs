@@ -1,6 +1,7 @@
 using EduTech.Shared.Constants;
 using EduTech.Shared.Context;
 using EduTech.Shared.Exceptions;
+using EduTech.Shared.Identity;
 using EduTech.Shared.Persistence;
 using EduTech.Shared.Security;
 using EduTech.Shared.Storage;
@@ -25,16 +26,13 @@ internal sealed class SchoolKycService : ISchoolKycService
     private static readonly (string Type, Func<SubmitKycRequest, IFormFile?> Selector)[] DocumentSpecs =
     {
         ("registration_cert", r => r.RegistrationCert),
-        ("operating_licence", r => r.OperatingLicence),
-        ("proof_of_address", r => r.ProofOfAddress),
-        ("proprietor_id_front", r => r.ProprietorIdFront),
-        ("proprietor_id_back", r => r.ProprietorIdBack),
     };
 
     private readonly IEduTechRequestContext _requestContext;
     private readonly ISchoolKycRepository _repository;
     private readonly IFileStorage _fileStorage;
     private readonly IFieldEncryptor _encryptor;
+    private readonly IIdentityVerifier _identityVerifier;
     private readonly IDbConnectionFactory _connectionFactory;
 
     public SchoolKycService(
@@ -42,12 +40,14 @@ internal sealed class SchoolKycService : ISchoolKycService
         ISchoolKycRepository repository,
         IFileStorage fileStorage,
         IFieldEncryptor encryptor,
+        IIdentityVerifier identityVerifier,
         IDbConnectionFactory connectionFactory)
     {
         _requestContext = requestContext;
         _repository = repository;
         _fileStorage = fileStorage;
         _encryptor = encryptor;
+        _identityVerifier = identityVerifier;
         _connectionFactory = connectionFactory;
     }
 
@@ -64,6 +64,10 @@ internal sealed class SchoolKycService : ISchoolKycService
         }
 
         ValidateText(request);
+
+        // Auto-verify the proprietor's identity (NIN + BVN) up front — before any upload/commit. This
+        // only proves WHO the proprietor is; the SCHOOL still goes to under_review for admin approval.
+        await VerifyProprietorIdentityAsync(request, cancellationToken);
 
         // Upload files BEFORE the DB transaction (mirrors the OTP-after-commit pattern). If a DB write
         // fails afterwards, the worst case is an orphaned object — never a half-written submission.
@@ -91,15 +95,10 @@ internal sealed class SchoolKycService : ISchoolKycService
 
         KycSubmissionRow submission = new KycSubmissionRow
         {
-            ProprietorName = request.ProprietorName.Trim(),
-            ProprietorIdType = request.ProprietorIdType.Trim(),
-            ProprietorIdNumber = request.ProprietorIdNumber.Trim(),
-            ProprietorPhone = request.ProprietorPhone.Trim(),
-            ProprietorEmail = request.ProprietorEmail.Trim(),
+            ProprietorName = ProprietorFullName(request),
             BankName = request.BankName.Trim(),
             AccountNumber = request.AccountNumber.Trim(),
-            AccountName = request.AccountName.Trim(),
-            AccountType = request.AccountType.Trim()
+            AccountName = request.AccountName.Trim()
         };
 
         SchoolDetails details = new SchoolDetails
@@ -139,33 +138,42 @@ internal sealed class SchoolKycService : ISchoolKycService
 
         string status = await _repository.GetKycStatusAsync(schoolId, cancellationToken) ?? "not_submitted";
         KycSubmissionRow? submission = await _repository.GetSubmissionAsync(schoolId, cancellationToken);
-        IReadOnlyList<KycDocumentRow> documents = await _repository.GetDocumentsAsync(schoolId, cancellationToken);
 
+        // Status metadata only — the submitted PII/financial/document data is never returned.
         return new KycSubmissionResponse
         {
-            SchoolId = schoolId,
             Status = status,
             SubmittedAt = submission?.SubmittedAt,
             ReviewedAt = submission?.ReviewedAt,
-            SchoolMessage = submission?.SchoolMessage,
-            ProprietorName = submission?.ProprietorName,
-            ProprietorIdType = submission?.ProprietorIdType,
-            ProprietorIdNumber = submission?.ProprietorIdNumber,
-            ProprietorPhone = submission?.ProprietorPhone,
-            ProprietorEmail = submission?.ProprietorEmail,
-            BankName = submission?.BankName,
-            AccountNumber = submission?.AccountNumber,
-            AccountName = submission?.AccountName,
-            AccountType = submission?.AccountType,
-            Documents = documents.Select(d => new KycDocumentResponse
-            {
-                Type = d.Type,
-                Url = d.Url,
-                Status = d.Status,
-                Notes = d.Notes
-            }).ToList()
+            SchoolMessage = submission?.SchoolMessage
         };
     }
+
+    private async Task VerifyProprietorIdentityAsync(SubmitKycRequest request, CancellationToken cancellationToken)
+    {
+        string proprietorName = ProprietorFullName(request);
+
+        IdentityVerificationResult nin = await _identityVerifier.VerifyNinAsync(
+            request.ProprietorNin.Trim(), proprietorName, cancellationToken);
+        if (!nin.Verified)
+        {
+            throw new AppErrorException(nin.Reason ?? "Proprietor NIN could not be verified.",
+                422, ErrorCodes.ValidationError);
+        }
+
+        IdentityVerificationResult bvn = await _identityVerifier.VerifyBvnAsync(
+            request.ProprietorBvn.Trim(), proprietorName, cancellationToken);
+        if (!bvn.Verified)
+        {
+            throw new AppErrorException(bvn.Reason ?? "Proprietor BVN could not be verified.",
+                422, ErrorCodes.ValidationError);
+        }
+    }
+
+    private static string ProprietorFullName(SubmitKycRequest request)
+        => string.Join(' ', new[] { request.ProprietorFirstName, request.ProprietorMiddleName, request.ProprietorLastName }
+            .Where(part => !string.IsNullOrWhiteSpace(part))
+            .Select(part => part!.Trim()));
 
     private static void ValidateText(SubmitKycRequest request)
     {
@@ -174,10 +182,11 @@ internal sealed class SchoolKycService : ISchoolKycService
             throw new AppErrorException("School name and type are required.", 400, ErrorCodes.ValidationError);
         }
 
-        if (string.IsNullOrWhiteSpace(request.ProprietorName) ||
-            string.IsNullOrWhiteSpace(request.ProprietorIdNumber))
+        if (string.IsNullOrWhiteSpace(request.ProprietorFirstName) ||
+            string.IsNullOrWhiteSpace(request.ProprietorLastName))
         {
-            throw new AppErrorException("Proprietor name and ID number are required.", 400, ErrorCodes.ValidationError);
+            throw new AppErrorException("Proprietor first and last name are required.",
+                400, ErrorCodes.ValidationError);
         }
 
         if (!IsElevenDigits(request.ProprietorNin))

@@ -37,14 +37,9 @@ internal sealed class SchoolDetails
 internal sealed class KycSubmissionRow
 {
     public string? ProprietorName { get; init; }
-    public string? ProprietorIdType { get; init; }
-    public string? ProprietorIdNumber { get; init; }
-    public string? ProprietorPhone { get; init; }
-    public string? ProprietorEmail { get; init; }
     public string? BankName { get; init; }
     public string? AccountNumber { get; init; }
     public string? AccountName { get; init; }
-    public string? AccountType { get; init; }
     public DateTime? SubmittedAt { get; init; }
     public DateTime? ReviewedAt { get; init; }
     public string? SchoolMessage { get; init; }
@@ -94,33 +89,25 @@ internal sealed class SchoolKycRepository : BaseRepository, ISchoolKycRepository
         return ExecuteAsync(
             """
             INSERT INTO school_kyc
-                (school_id, proprietor_name, proprietor_id_type, proprietor_id_number, proprietor_phone,
-                 proprietor_email, proprietor_nin, proprietor_bvn, bank_name, account_number, account_name,
-                 account_type, submitted_at)
+                (school_id, proprietor_name, proprietor_nin, proprietor_bvn, bank_name, account_number,
+                 account_name, submitted_at)
             VALUES
-                (@SchoolId, @ProprietorName, @ProprietorIdType, @ProprietorIdNumber, @ProprietorPhone,
-                 @ProprietorEmail, @EncryptedNin, @EncryptedBvn, @BankName, @AccountNumber, @AccountName,
-                 @AccountType, NOW())
+                (@SchoolId, @ProprietorName, @EncryptedNin, @EncryptedBvn, @BankName, @AccountNumber,
+                 @AccountName, NOW())
             ON CONFLICT (school_id) DO UPDATE SET
                 proprietor_name = EXCLUDED.proprietor_name,
-                proprietor_id_type = EXCLUDED.proprietor_id_type,
-                proprietor_id_number = EXCLUDED.proprietor_id_number,
-                proprietor_phone = EXCLUDED.proprietor_phone,
-                proprietor_email = EXCLUDED.proprietor_email,
                 proprietor_nin = EXCLUDED.proprietor_nin,
                 proprietor_bvn = EXCLUDED.proprietor_bvn,
                 bank_name = EXCLUDED.bank_name,
                 account_number = EXCLUDED.account_number,
                 account_name = EXCLUDED.account_name,
-                account_type = EXCLUDED.account_type,
                 submitted_at = NOW(), reviewed_at = NULL, admin_notes = NULL, school_message = NULL,
                 updated_at = NOW()
             """,
             new
             {
-                SchoolId = schoolId, row.ProprietorName, row.ProprietorIdType, row.ProprietorIdNumber,
-                row.ProprietorPhone, row.ProprietorEmail, EncryptedNin = encryptedNin, EncryptedBvn = encryptedBvn,
-                row.BankName, row.AccountNumber, row.AccountName, row.AccountType
+                SchoolId = schoolId, row.ProprietorName, EncryptedNin = encryptedNin, EncryptedBvn = encryptedBvn,
+                row.BankName, row.AccountNumber, row.AccountName
             },
             cancellationToken, transaction);
     }
@@ -150,12 +137,9 @@ internal sealed class SchoolKycRepository : BaseRepository, ISchoolKycRepository
     {
         return QuerySingleOrDefaultAsync<KycSubmissionRow>(
             """
-            SELECT proprietor_name AS ProprietorName, proprietor_id_type AS ProprietorIdType,
-                   proprietor_id_number AS ProprietorIdNumber, proprietor_phone AS ProprietorPhone,
-                   proprietor_email AS ProprietorEmail, bank_name AS BankName,
+            SELECT proprietor_name AS ProprietorName, bank_name AS BankName,
                    account_number AS AccountNumber, account_name AS AccountName,
-                   account_type AS AccountType, submitted_at AS SubmittedAt, reviewed_at AS ReviewedAt,
-                   school_message AS SchoolMessage
+                   submitted_at AS SubmittedAt, reviewed_at AS ReviewedAt, school_message AS SchoolMessage
             FROM school_kyc WHERE school_id = @Id
             """,
             new { Id = schoolId }, cancellationToken);

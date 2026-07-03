@@ -46,6 +46,7 @@ public static class AuthServiceCollectionExtensions
         services.AddScoped<IPermissionTemplateRepository, PermissionTemplateRepository>();
         services.AddScoped<IStaffFeatureOverrideRepository, StaffFeatureOverrideRepository>();
         services.AddScoped<IStaffInviteService, StaffInviteService>();
+        services.AddScoped<ISchoolStaffService, SchoolStaffService>();
         services.AddScoped<IStaffInviteAcceptService, StaffInviteAcceptService>();
         services.AddScoped<IStaffSchoolService, StaffSchoolService>();
 
@@ -60,6 +61,7 @@ public static class AuthServiceCollectionExtensions
         services.AddScoped<IPlatformAdminAuthService, PlatformAdminAuthService>();
         services.AddScoped<ISchoolKycAdminService, SchoolKycAdminService>();
         services.AddScoped<IFeatureFlagAdminService, FeatureFlagAdminService>();
+        services.AddScoped<IPlatformSettingsAdminService, PlatformSettingsAdminService>();
 
        
         services.TryAddSingleton<INotificationDispatcher, LoggingNotificationDispatcher>();

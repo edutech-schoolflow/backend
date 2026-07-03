@@ -39,14 +39,14 @@ public class StaffAuthServiceTests
         _staff.Setup(s => s.ExistsByPhoneAsync("+2348055667788", It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
         _hasher.Setup(h => h.Hash("password123")).Returns("hashed");
-        _staff.Setup(s => s.CreateAsync("Amaka Teacher", "+2348055667788", null, "hashed", It.IsAny<CancellationToken>()))
+        _staff.Setup(s => s.CreateAsync("Amaka", null, "Teacher", "+2348055667788", null, "hashed", It.IsAny<CancellationToken>()))
             .ReturnsAsync(staffId);
         _otp.Setup(o => o.GenerateAsync(OtpPurpose.StaffPhoneVerification, staffId, "+2348055667788",
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync("654321");
 
         await CreateSut().RegisterAsync(
-            new RegisterStaffRequest { FullName = "Amaka Teacher", Phone = "08055667788", Password = "password123" },
+            new RegisterStaffRequest { FirstName = "Amaka", LastName = "Teacher", Phone = "08055667788", Password = "password123" },
             CancellationToken.None);
 
         _sms.Verify(s => s.SendSmsAsync("+2348055667788", It.Is<string>(m => m.Contains("654321")),

@@ -1,19 +1,29 @@
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 using EduTech.Api.Hangfire;
+using EduTech.Attendance;
 using EduTech.Auth;
 using EduTech.Compliance;
+using EduTech.Fees;
+using EduTech.Grades;
 using EduTech.Notifications;
+using EduTech.Students;
 using EduTech.School;
 using EduTech.Shared.Caching;
 using EduTech.Shared.Constants;
 using EduTech.Shared.Context;
 using EduTech.Shared.Features;
 using EduTech.Shared.HealthChecks;
+using EduTech.Shared.Identity;
 using EduTech.Shared.Middleware;
+using EduTech.Shared.Models;
+using EduTech.Shared.Observability;
 using EduTech.Shared.Persistence;
 using EduTech.Shared.Security;
 using Hangfire;
+using Microsoft.AspNetCore.Mvc;
 using Hangfire.Dashboard;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
@@ -105,6 +115,11 @@ builder.Services.AddAuthorizationBuilder()
         .RequireClaim("user_type", UserTypes.PlatformAdmin))
     .AddPolicy("ComplianceActor", policy => policy
         .AddAuthenticationSchemes("StaffAuth", "ParentAuth")
+        .RequireAuthenticatedUser())
+    // School-management endpoints (students, classes, calendar): the owner OR a staff member with an
+    // active school. Both tokens carry school_id; per-action [RequireFeature] gates staff (owner bypasses).
+    .AddPolicy("SchoolPortal", policy => policy
+        .AddAuthenticationSchemes("SchoolAuth", "StaffAuth")
         .RequireAuthenticatedUser());
 
 // ─── Rate limiting ────────────────────────────────────────────────────────────
@@ -147,7 +162,39 @@ builder.Services.AddCors(options =>
 });
 
 // ─── Controllers ─────────────────────────────────────────────────────────────
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        // Domain enums travel as their snake_case STRING on the wire (matching the DB + frontend),
+        // never as integers. The naming policy mirrors EnumStringHandler so JSON and storage agree.
+        options.JsonSerializerOptions.Converters.Add(
+            new JsonStringEnumConverter(JsonNamingPolicy.SnakeCaseLower, allowIntegerValues: false));
+    });
+
+// Funnel model-binding / JSON failures (e.g. a malformed enum in a request body) through the same
+// ApiError shape the rest of the app uses, instead of the framework's default ValidationProblem.
+// We surface only field NAMES — never the attempted value — to avoid echoing untrusted input.
+builder.Services.Configure<ApiBehaviorOptions>(options =>
+{
+    options.InvalidModelStateResponseFactory = context =>
+    {
+        List<ValidationError> errors = context.ModelState
+            .Where(entry => entry.Value is { Errors.Count: > 0 })
+            .Select(entry => new ValidationError { Field = entry.Key, Message = "Invalid or missing value." })
+            .ToList();
+
+        ApiError error = new ApiError
+        {
+            StatusCode = StatusCodes.Status400BadRequest,
+            Message = "One or more fields are invalid.",
+            ErrorCode = ErrorCodes.ValidationError,
+            ValidationErrors = errors.Count > 0 ? errors : null,
+            Path = context.HttpContext.Request.Path
+        };
+
+        return new BadRequestObjectResult(error);
+    };
+});
 
 // ─── Swagger (dev only) ───────────────────────────────────────────────────────
 builder.Services.AddEndpointsApiExplorer();
@@ -188,22 +235,42 @@ builder.Services.AddSwaggerGen(options =>
 
 // ─── Module registrations (uncomment as each module is built) ─────────────────
 builder.Services.AddSingleton<IFieldEncryptor, AesFieldEncryptor>();
+builder.Services.AddIdentityVerification(config);   // shared Dojah/stub seam (school KYC + compliance)
 builder.Services.AddFeatureFlags();
+builder.Services.AddSlackNotifications(config);     // error alerts -> Slack (real) or logs (dev)
 builder.Services.AddAuthModule();
 builder.Services.AddNotificationsModule(config);
 builder.Services.AddSchoolModule(config);
 builder.Services.AddComplianceModule(config);
+builder.Services.AddStudentsModule(config);
+builder.Services.AddAttendanceModule(config);
+builder.Services.AddGradesModule(config);
+builder.Services.AddFeesModule(config);
 // builder.Services.AddStaffModule(config);
 // builder.Services.AddStudentsModule(config);
-// builder.Services.AddGradesModule(config);
-// builder.Services.AddFeesModule(config);
-// builder.Services.AddAttendanceModule(config);
 // builder.Services.AddStoreModule(config);
 // builder.Services.AddComplianceModule(config);
 // builder.Services.AddPlatformAdminModule(config);
 
 // ─── Build ────────────────────────────────────────────────────────────────────
 WebApplication app = builder.Build();
+
+// ─── Auto-migrate (DEV only; flip Database:AutoMigrate off for launch) ─────────
+if (config.GetValue<bool>("Database:AutoMigrate"))
+{
+    string? migrationsDir = DatabaseMigrator.ResolveMigrationsDirectory(app.Environment.ContentRootPath);
+    if (migrationsDir is null)
+    {
+        app.Logger.LogWarning("Auto-migrate is on but no Database/*.sql folder was found; skipping.");
+    }
+    else
+    {
+        DatabaseMigrator migrator = new DatabaseMigrator(
+            config.GetConnectionString("Default")!,
+            app.Services.GetRequiredService<ILogger<DatabaseMigrator>>());
+        await migrator.ApplyPendingAsync(migrationsDir, config["Database:BaselineThrough"]);
+    }
+}
 
 // ─── Swagger UI (dev only) ────────────────────────────────────────────────────
 if (app.Environment.IsDevelopment())
@@ -298,6 +365,10 @@ static TokenValidationParameters BuildTokenParams(string signingKey, string issu
 // Authorization header (Cross-Cutting Auth §X.2). The wrong portal's token simply fails validation.
 static void ReadTokenFromCookie(JwtBearerOptions options)
 {
+    // Keep our short claim names ("role", "user_type", …) as-is — without this the handler remaps
+    // "role" to ClaimTypes.Role, so FindFirst("role") returns null and every role check silently fails.
+    options.MapInboundClaims = false;
+
     options.Events = new JwtBearerEvents
     {
         OnMessageReceived = context =>

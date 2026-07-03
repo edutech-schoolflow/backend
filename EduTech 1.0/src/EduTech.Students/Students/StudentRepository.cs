@@ -325,16 +325,18 @@ internal sealed class StudentRepository : TenantRepository, IStudentRepository
 
     public async Task<bool> IsSessionForwardAsync(Guid targetAcademicYearId, CancellationToken cancellationToken)
     {
-        // Forward = no current session yet, or the target session was created after the current one.
-        // (A dedicated session order key would make this exact; created_at is the pragmatic proxy for now.)
+        // Forward = no current session yet, or the target session starts in a later year than the current one
+        // (falling back to created_at only when a session has no parseable start year).
         return await ExecuteScalarAsync<bool>(
             """
             SELECT CASE
               WHEN NOT EXISTS (SELECT 1 FROM academic_years WHERE school_id = @SchoolId AND is_current = TRUE)
                 THEN TRUE
               ELSE COALESCE(
+                (SELECT t.starts_in FROM academic_years t WHERE t.id = @TargetId AND t.school_id = @SchoolId)
+                  > (SELECT c.starts_in FROM academic_years c WHERE c.school_id = @SchoolId AND c.is_current = TRUE),
                 (SELECT t.created_at FROM academic_years t WHERE t.id = @TargetId AND t.school_id = @SchoolId)
-                > (SELECT c.created_at FROM academic_years c WHERE c.school_id = @SchoolId AND c.is_current = TRUE),
+                  > (SELECT c.created_at FROM academic_years c WHERE c.school_id = @SchoolId AND c.is_current = TRUE),
                 FALSE)
             END
             """,

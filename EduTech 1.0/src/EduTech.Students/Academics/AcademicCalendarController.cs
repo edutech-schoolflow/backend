@@ -48,6 +48,23 @@ public sealed class AcademicCalendarController : ControllerBase
         return Ok(ServiceResponses<string?>.Ok(null, "Current academic year set."));
     }
 
+    [HttpPut("api/v1/academic-years/{id:guid}")]
+    [RequireFeature(StaffFeatureFlags.ManageAdmissions)]
+    public async Task<ActionResult<ServiceResponses<string?>>> UpdateYear(Guid id,
+        [FromBody] UpdateAcademicYearRequest request, CancellationToken cancellationToken)
+    {
+        await _service.UpdateYearAsync(id, request, cancellationToken);
+        return Ok(ServiceResponses<string?>.Ok(null, "Session updated."));
+    }
+
+    [HttpDelete("api/v1/academic-years/{id:guid}")]
+    [RequireFeature(StaffFeatureFlags.ManageAdmissions)]
+    public async Task<ActionResult<ServiceResponses<string?>>> DeleteYear(Guid id, CancellationToken cancellationToken)
+    {
+        await _service.DeleteYearAsync(id, cancellationToken);
+        return Ok(ServiceResponses<string?>.Ok(null, "Session deleted."));
+    }
+
     [HttpGet("api/v1/terms")]
     [RequireFeature(StaffFeatureFlags.ViewStudentRecords)]
     public async Task<ActionResult<ServiceResponses<IReadOnlyList<TermResponse>>>> ListTerms(
@@ -73,5 +90,22 @@ public sealed class AcademicCalendarController : ControllerBase
     {
         await _service.SetCurrentTermAsync(id, cancellationToken);
         return Ok(ServiceResponses<string?>.Ok(null, "Current term set."));
+    }
+
+    [HttpPut("api/v1/terms/{id:guid}")]
+    [RequireFeature(StaffFeatureFlags.ManageAdmissions)]
+    public async Task<ActionResult<ServiceResponses<string?>>> UpdateTerm(Guid id,
+        [FromBody] UpdateTermDatesRequest request, CancellationToken cancellationToken)
+    {
+        await _service.UpdateTermDatesAsync(id, request, cancellationToken);
+        return Ok(ServiceResponses<string?>.Ok(null, "Term updated."));
+    }
+
+    [HttpDelete("api/v1/terms/{id:guid}")]
+    [RequireFeature(StaffFeatureFlags.ManageAdmissions)]
+    public async Task<ActionResult<ServiceResponses<string?>>> DeleteTerm(Guid id, CancellationToken cancellationToken)
+    {
+        await _service.DeleteTermAsync(id, cancellationToken);
+        return Ok(ServiceResponses<string?>.Ok(null, "Term deleted."));
     }
 }

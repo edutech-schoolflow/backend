@@ -8,19 +8,26 @@ namespace EduTech.Students.Academics;
 internal interface IAcademicCalendarRepository
 {
     Task<IReadOnlyList<AcademicYearRow>> ListYearsAsync(CancellationToken cancellationToken);
-    Task<(Guid Id, bool IsCurrent)> CreateYearAsync(string name, CancellationToken cancellationToken);
+    Task<(Guid Id, bool IsCurrent)> CreateYearAsync(string name, int? startsIn, CancellationToken cancellationToken);
     Task<bool> YearExistsAsync(Guid yearId, CancellationToken cancellationToken);
-    Task<bool> YearNameExistsAsync(string name, CancellationToken cancellationToken);
+    Task<bool> YearNameExistsAsync(string name, Guid? exceptId, CancellationToken cancellationToken);
     Task SetCurrentYearAsync(Guid yearId, CancellationToken cancellationToken);
+    Task UpdateYearAsync(Guid yearId, string name, int? startsIn, CancellationToken cancellationToken);
+    Task DeleteYearAsync(Guid yearId, CancellationToken cancellationToken);
+    Task<YearDependentsRow> YearDependentsAsync(Guid yearId, CancellationToken cancellationToken);
 
     Task<IReadOnlyList<TermRow>> ListTermsAsync(Guid? academicYearId, CancellationToken cancellationToken);
+    Task<TermRow?> GetTermAsync(Guid termId, CancellationToken cancellationToken);
     Task<(Guid Id, bool IsCurrent)> CreateTermAsync(Guid academicYearId, Term name, DateOnly? startDate,
         DateOnly? endDate, CancellationToken cancellationToken);
     Task<bool> TermExistsAsync(Guid termId, CancellationToken cancellationToken);
     Task<bool> TermNameExistsAsync(Guid academicYearId, Term name, CancellationToken cancellationToken);
+    Task UpdateTermDatesAsync(Guid termId, DateOnly? startDate, DateOnly? endDate, CancellationToken cancellationToken);
+    Task DeleteTermAsync(Guid termId, CancellationToken cancellationToken);
+    Task<TermDependentsRow> TermDependentsAsync(Guid termId, CancellationToken cancellationToken);
 
-    /// <summary>True if [start, end] overlaps any dated term anywhere in the school (a school runs one term at a time).</summary>
-    Task<bool> HasDateOverlapAsync(DateOnly start, DateOnly end, CancellationToken cancellationToken);
+    /// <summary>True if [start, end] overlaps any other dated term in the school (a school runs one term at a time).</summary>
+    Task<bool> HasDateOverlapAsync(DateOnly start, DateOnly end, Guid? exceptTermId, CancellationToken cancellationToken);
     Task SetCurrentTermAsync(Guid termId, CancellationToken cancellationToken);
 }
 
@@ -48,6 +55,26 @@ internal sealed class CreatedCalendarRow
     public bool IsCurrent { get; init; }
 }
 
+/// <summary>What blocks a session from being deleted.</summary>
+internal sealed class YearDependentsRow
+{
+    public int Terms { get; init; }
+    public int Enrollments { get; init; }
+    public bool HasAny => Terms > 0 || Enrollments > 0;
+}
+
+/// <summary>What blocks a term from being deleted (records that would otherwise cascade away).</summary>
+internal sealed class TermDependentsRow
+{
+    public int FeeTypes { get; init; }
+    public int Grades { get; init; }
+    public int ReportCards { get; init; }
+    public int Attendance { get; init; }
+    public int Payments { get; init; }
+
+    public bool HasAny => FeeTypes > 0 || Grades > 0 || ReportCards > 0 || Attendance > 0 || Payments > 0;
+}
+
 internal sealed class AcademicCalendarRepository : TenantRepository, IAcademicCalendarRepository
 {
     public AcademicCalendarRepository(IDbConnectionFactory connectionFactory,
@@ -58,20 +85,25 @@ internal sealed class AcademicCalendarRepository : TenantRepository, IAcademicCa
     public Task<IReadOnlyList<AcademicYearRow>> ListYearsAsync(CancellationToken cancellationToken)
     {
         return QueryAsync<AcademicYearRow>(
-            "SELECT id, name, is_current AS IsCurrent FROM academic_years WHERE school_id = @SchoolId ORDER BY name DESC",
+            """
+            SELECT id, name, is_current AS IsCurrent FROM academic_years
+            WHERE school_id = @SchoolId
+            ORDER BY starts_in DESC NULLS LAST, name DESC
+            """,
             TenantParameters(), cancellationToken);
     }
 
-    public async Task<(Guid Id, bool IsCurrent)> CreateYearAsync(string name, CancellationToken cancellationToken)
+    public async Task<(Guid Id, bool IsCurrent)> CreateYearAsync(string name, int? startsIn,
+        CancellationToken cancellationToken)
     {
         // The very first session a school creates becomes the current one (nothing else competes).
         CreatedCalendarRow row = await QuerySingleOrDefaultAsync<CreatedCalendarRow>(
             """
-            INSERT INTO academic_years (school_id, name, is_current)
-            VALUES (@SchoolId, @Name, NOT EXISTS (SELECT 1 FROM academic_years WHERE school_id = @SchoolId))
+            INSERT INTO academic_years (school_id, name, starts_in, is_current)
+            VALUES (@SchoolId, @Name, @StartsIn, NOT EXISTS (SELECT 1 FROM academic_years WHERE school_id = @SchoolId))
             RETURNING id AS Id, is_current AS IsCurrent
             """,
-            TenantParameters(new { Name = name }), cancellationToken)
+            TenantParameters(new { Name = name, StartsIn = startsIn }), cancellationToken)
             ?? throw new InvalidOperationException("Insert did not return the new academic year.");
         return (row.Id, row.IsCurrent);
     }
@@ -83,11 +115,14 @@ internal sealed class AcademicCalendarRepository : TenantRepository, IAcademicCa
             TenantParameters(new { Id = yearId }), cancellationToken) > 0;
     }
 
-    public async Task<bool> YearNameExistsAsync(string name, CancellationToken cancellationToken)
+    public async Task<bool> YearNameExistsAsync(string name, Guid? exceptId, CancellationToken cancellationToken)
     {
         return await ExecuteScalarAsync<int>(
-            "SELECT COUNT(1) FROM academic_years WHERE school_id = @SchoolId AND lower(name) = lower(@Name)",
-            TenantParameters(new { Name = name }), cancellationToken) > 0;
+            """
+            SELECT COUNT(1) FROM academic_years
+            WHERE school_id = @SchoolId AND lower(name) = lower(@Name) AND (@ExceptId IS NULL OR id <> @ExceptId)
+            """,
+            TenantParameters(new { Name = name, ExceptId = exceptId }), cancellationToken) > 0;
     }
 
     public Task SetCurrentYearAsync(Guid yearId, CancellationToken cancellationToken)
@@ -103,6 +138,31 @@ internal sealed class AcademicCalendarRepository : TenantRepository, IAcademicCa
             TenantParameters(new { Id = yearId }), cancellationToken);
     }
 
+    public Task UpdateYearAsync(Guid yearId, string name, int? startsIn, CancellationToken cancellationToken)
+    {
+        return ExecuteAsync(
+            "UPDATE academic_years SET name = @Name, starts_in = @StartsIn, updated_at = NOW() WHERE id = @Id AND school_id = @SchoolId",
+            TenantParameters(new { Id = yearId, Name = name, StartsIn = startsIn }), cancellationToken);
+    }
+
+    public Task DeleteYearAsync(Guid yearId, CancellationToken cancellationToken)
+    {
+        return ExecuteAsync(
+            "DELETE FROM academic_years WHERE id = @Id AND school_id = @SchoolId",
+            TenantParameters(new { Id = yearId }), cancellationToken);
+    }
+
+    public async Task<YearDependentsRow> YearDependentsAsync(Guid yearId, CancellationToken cancellationToken)
+    {
+        return await QuerySingleOrDefaultAsync<YearDependentsRow>(
+            """
+            SELECT
+              (SELECT COUNT(*) FROM terms t WHERE t.academic_year_id = @Id AND t.school_id = @SchoolId)::int AS Terms,
+              (SELECT COUNT(*) FROM student_enrollments e WHERE e.academic_year_id = @Id AND e.school_id = @SchoolId)::int AS Enrollments
+            """,
+            TenantParameters(new { Id = yearId }), cancellationToken) ?? new YearDependentsRow();
+    }
+
     public Task<IReadOnlyList<TermRow>> ListTermsAsync(Guid? academicYearId, CancellationToken cancellationToken)
     {
         return QueryAsync<TermRow>(
@@ -114,6 +174,17 @@ internal sealed class AcademicCalendarRepository : TenantRepository, IAcademicCa
             ORDER BY academic_year_id, name
             """,
             TenantParameters(new { AcademicYearId = academicYearId }), cancellationToken);
+    }
+
+    public Task<TermRow?> GetTermAsync(Guid termId, CancellationToken cancellationToken)
+    {
+        return QuerySingleOrDefaultAsync<TermRow>(
+            """
+            SELECT id, academic_year_id AS AcademicYearId, name, start_date AS StartDate, end_date AS EndDate,
+                   is_current AS IsCurrent
+            FROM terms WHERE id = @Id AND school_id = @SchoolId
+            """,
+            TenantParameters(new { Id = termId }), cancellationToken);
     }
 
     public async Task<(Guid Id, bool IsCurrent)> CreateTermAsync(Guid academicYearId, Term name,
@@ -155,7 +226,37 @@ internal sealed class AcademicCalendarRepository : TenantRepository, IAcademicCa
             cancellationToken) > 0;
     }
 
-    public async Task<bool> HasDateOverlapAsync(DateOnly start, DateOnly end, CancellationToken cancellationToken)
+    public Task UpdateTermDatesAsync(Guid termId, DateOnly? startDate, DateOnly? endDate,
+        CancellationToken cancellationToken)
+    {
+        return ExecuteAsync(
+            "UPDATE terms SET start_date = @StartDate, end_date = @EndDate WHERE id = @Id AND school_id = @SchoolId",
+            TenantParameters(new { Id = termId, StartDate = startDate, EndDate = endDate }), cancellationToken);
+    }
+
+    public Task DeleteTermAsync(Guid termId, CancellationToken cancellationToken)
+    {
+        return ExecuteAsync(
+            "DELETE FROM terms WHERE id = @Id AND school_id = @SchoolId",
+            TenantParameters(new { Id = termId }), cancellationToken);
+    }
+
+    public async Task<TermDependentsRow> TermDependentsAsync(Guid termId, CancellationToken cancellationToken)
+    {
+        return await QuerySingleOrDefaultAsync<TermDependentsRow>(
+            """
+            SELECT
+              (SELECT COUNT(*) FROM fee_types ft WHERE ft.term_id = @Id AND ft.school_id = @SchoolId)::int AS FeeTypes,
+              (SELECT COUNT(*) FROM grade_records gr WHERE gr.term_id = @Id AND gr.school_id = @SchoolId)::int AS Grades,
+              (SELECT COUNT(*) FROM report_cards rc WHERE rc.term_id = @Id AND rc.school_id = @SchoolId)::int AS ReportCards,
+              (SELECT COUNT(*) FROM attendance_records ar WHERE ar.term_id = @Id AND ar.school_id = @SchoolId)::int AS Attendance,
+              (SELECT COUNT(*) FROM payments p WHERE p.term_id = @Id AND p.school_id = @SchoolId)::int AS Payments
+            """,
+            TenantParameters(new { Id = termId }), cancellationToken) ?? new TermDependentsRow();
+    }
+
+    public async Task<bool> HasDateOverlapAsync(DateOnly start, DateOnly end, Guid? exceptTermId,
+        CancellationToken cancellationToken)
     {
         // Two closed intervals [a,b] and [c,d] overlap iff a <= d AND c <= b.
         return await ExecuteScalarAsync<int>(
@@ -163,8 +264,9 @@ internal sealed class AcademicCalendarRepository : TenantRepository, IAcademicCa
             SELECT COUNT(1) FROM terms
             WHERE school_id = @SchoolId AND start_date IS NOT NULL AND end_date IS NOT NULL
               AND start_date <= @End AND @Start <= end_date
+              AND (@ExceptId IS NULL OR id <> @ExceptId)
             """,
-            TenantParameters(new { Start = start, End = end }), cancellationToken) > 0;
+            TenantParameters(new { Start = start, End = end, ExceptId = exceptTermId }), cancellationToken) > 0;
     }
 
     public Task SetCurrentTermAsync(Guid termId, CancellationToken cancellationToken)

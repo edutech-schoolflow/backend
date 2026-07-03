@@ -14,6 +14,17 @@ public sealed class CreateAcademicYearRequest
     public string Name { get; init; } = string.Empty;   // e.g. "2024/2025"
 }
 
+public sealed class UpdateAcademicYearRequest
+{
+    public string Name { get; init; } = string.Empty;   // e.g. "2024/2025"
+}
+
+public sealed class UpdateTermDatesRequest
+{
+    public DateOnly? StartDate { get; init; }
+    public DateOnly? EndDate { get; init; }
+}
+
 public sealed class TermResponse
 {
     public required Guid Id { get; init; }

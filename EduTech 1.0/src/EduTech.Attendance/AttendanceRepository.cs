@@ -32,6 +32,12 @@ internal interface IAttendanceRepository
     /// <summary>The school's current term id, if one is set.</summary>
     Task<Guid?> GetCurrentTermIdAsync(CancellationToken cancellationToken);
 
+    /// <summary>The term whose date window contains <paramref name="date"/>, if any.</summary>
+    Task<Guid?> GetTermIdForDateAsync(DateOnly date, CancellationToken cancellationToken);
+
+    /// <summary>True if the school has at least one term with dates set.</summary>
+    Task<bool> HasDatedTermsAsync(CancellationToken cancellationToken);
+
     /// <summary>Upsert the register for unit+date and REPLACE its marks. Returns the record id + submit time.</summary>
     Task<(Guid Id, DateTime SubmittedAt)> UpsertRecordAsync(Guid classId, Guid? armId, DateOnly date, Guid? termId,
         Guid? submittedByAffiliationId, IReadOnlyList<(Guid StudentId, AttendanceStatus Status)> marks,
@@ -206,6 +212,28 @@ internal sealed class AttendanceRepository : TenantRepository, IAttendanceReposi
         return QuerySingleOrDefaultAsync<Guid?>(
             "SELECT id FROM terms WHERE school_id = @SchoolId AND is_current = TRUE LIMIT 1",
             TenantParameters(), cancellationToken);
+    }
+
+    public Task<Guid?> GetTermIdForDateAsync(DateOnly date, CancellationToken cancellationToken)
+    {
+        return QuerySingleOrDefaultAsync<Guid?>(
+            """
+            SELECT id FROM terms
+            WHERE school_id = @SchoolId AND start_date IS NOT NULL AND end_date IS NOT NULL
+              AND @Date BETWEEN start_date AND end_date
+            LIMIT 1
+            """,
+            TenantParameters(new { Date = date }), cancellationToken);
+    }
+
+    public async Task<bool> HasDatedTermsAsync(CancellationToken cancellationToken)
+    {
+        return await ExecuteScalarAsync<int>(
+            """
+            SELECT COUNT(1) FROM terms
+            WHERE school_id = @SchoolId AND start_date IS NOT NULL AND end_date IS NOT NULL
+            """,
+            TenantParameters(), cancellationToken) > 0;
     }
 
     public async Task<(Guid Id, DateTime SubmittedAt)> UpsertRecordAsync(Guid classId, Guid? armId, DateOnly date,

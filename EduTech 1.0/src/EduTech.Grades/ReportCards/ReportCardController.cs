@@ -52,9 +52,12 @@ public sealed class ReportCardController : ControllerBase
         return Ok(ServiceResponses<string?>.Ok(null, "Report card saved."));
     }
 
-    /// <summary>Publish one student's report card (releases it + SMSes the guardians).</summary>
+    /// <summary>
+    /// Publish one student's report card (releases it + SMSes the guardians). Releasing results is a
+    /// leadership action, not an admissions one — leadership roles only (the owner bypasses roles).
+    /// </summary>
     [HttpPost("api/v1/report-cards/{studentId:guid}/publish")]
-    [RequireFeature(StaffFeatureFlags.ManageAdmissions)]
+    [RequireRole(StaffRoles.Principal, StaffRoles.VicePrincipal, StaffRoles.SchoolAdmin)]
     public async Task<ActionResult<ServiceResponses<string?>>> Publish(
         Guid studentId, [FromQuery] Guid termId, CancellationToken cancellationToken)
     {
@@ -62,9 +65,9 @@ public sealed class ReportCardController : ControllerBase
         return Ok(ServiceResponses<string?>.Ok(null, "Report card published."));
     }
 
-    /// <summary>Publish every (draft) report card for an arm + term, notifying guardians.</summary>
+    /// <summary>Publish every (draft) report card for an arm + term, notifying guardians. Leadership only.</summary>
     [HttpPost("api/v1/report-cards/publish")]
-    [RequireFeature(StaffFeatureFlags.ManageAdmissions)]
+    [RequireRole(StaffRoles.Principal, StaffRoles.VicePrincipal, StaffRoles.SchoolAdmin)]
     public async Task<ActionResult<ServiceResponses<int>>> PublishArm(
         [FromBody] PublishArmReportsRequest request, CancellationToken cancellationToken)
     {

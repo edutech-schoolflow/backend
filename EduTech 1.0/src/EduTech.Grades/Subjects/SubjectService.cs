@@ -48,8 +48,7 @@ internal sealed class SubjectService : ISubjectService
             throw new AppErrorException("Subject name is required.", 400, ErrorCodes.ValidationError);
         }
 
-        int maxCa = NormalizeMax(request.MaxCa, DefaultMaxCa);
-        int maxExam = NormalizeMax(request.MaxExam, DefaultMaxExam);
+        (int maxCa, int maxExam) = ValidateMaxes(request.MaxCa, request.MaxExam);
 
         if (await _repository.NameExistsAsync(classId, name, cancellationToken))
         {
@@ -97,10 +96,31 @@ internal sealed class SubjectService : ISubjectService
         return SnakeCaseEnum.Parse<ClassLevel>(level);
     }
 
-    private static int NormalizeMax(int? value, int fallback)
+    /// <summary>
+    /// Report-card totals are CA1 + CA2 + Exam resolved against the 0–100 grading scale, so the maxima
+    /// must satisfy 2×MaxCa + MaxExam = 100 — otherwise totals can exceed the scale (or never reach it)
+    /// and the grade prints as "-". Omitted values fall back to the 30/40 defaults; invalid values are
+    /// rejected, never silently replaced.
+    /// </summary>
+    private static (int MaxCa, int MaxExam) ValidateMaxes(int? maxCa, int? maxExam)
     {
-        int resolved = value ?? fallback;
-        return resolved is < 1 or > 100 ? fallback : resolved;
+        int ca = maxCa ?? DefaultMaxCa;
+        int exam = maxExam ?? DefaultMaxExam;
+
+        if (ca is < 1 or > 100 || exam is < 1 or > 100)
+        {
+            throw new AppErrorException("CA and exam maximums must each be between 1 and 100.",
+                400, ErrorCodes.ValidationError);
+        }
+
+        if (2 * ca + exam != 100)
+        {
+            throw new AppErrorException(
+                $"CA and exam maximums must total 100 (2×CA + Exam); {ca}+{ca}+{exam} = {2 * ca + exam}.",
+                400, ErrorCodes.ValidationError);
+        }
+
+        return (ca, exam);
     }
 
     private static SubjectResponse Map(SubjectRow r) => new SubjectResponse

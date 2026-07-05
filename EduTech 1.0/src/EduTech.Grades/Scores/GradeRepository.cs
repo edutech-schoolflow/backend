@@ -19,12 +19,16 @@ internal interface IGradeRepository
     Task<IReadOnlyList<GradeRosterRow>> GetRosterAsync(Guid armId, Guid subjectId, Guid termId,
         AssessmentType assessmentType, CancellationToken cancellationToken);
 
-    /// <summary>Upsert the record (kept in draft) and REPLACE its entries. Returns id + submit time.</summary>
-    Task<(Guid Id, DateTime SubmittedAt)> UpsertRecordAsync(Guid armId, Guid subjectId, Guid termId,
+    /// <summary>
+    /// Upsert the record and REPLACE its entries — guarded so it only touches a DRAFT record. Returns
+    /// id + submit time, or null when the record is already published (nothing was written).
+    /// </summary>
+    Task<(Guid Id, DateTime SubmittedAt)?> UpsertRecordAsync(Guid armId, Guid subjectId, Guid termId,
         AssessmentType assessmentType, int maxScore, Guid? submittedByAffiliationId,
         IReadOnlyList<(Guid StudentId, decimal Score)> entries, CancellationToken cancellationToken);
 
-    Task<string?> GetRecordStatusAsync(Guid recordId, CancellationToken cancellationToken);
+    /// <summary>The record's identity for authorization (arm + subject) and its status; null if not found.</summary>
+    Task<GradeRecordKeyRow?> GetRecordKeyAsync(Guid recordId, CancellationToken cancellationToken);
     /// <summary>Publish only if still draft (race-safe). Returns rows affected.</summary>
     Task<int> PublishRecordIfDraftAsync(Guid recordId, CancellationToken cancellationToken);
     /// <summary>Publish every draft record for a term (optionally one arm). Returns count published.</summary>
@@ -89,6 +93,14 @@ internal sealed class GradeRecordHeaderRow
 {
     public Guid Id { get; init; }
     public int MaxScore { get; init; }
+    public string Status { get; init; } = string.Empty;
+}
+
+internal sealed class GradeRecordKeyRow
+{
+    public Guid Id { get; init; }
+    public Guid ArmId { get; init; }
+    public Guid SubjectId { get; init; }
     public string Status { get; init; } = string.Empty;
 }
 
@@ -209,13 +221,15 @@ internal sealed class GradeRepository : TenantRepository, IGradeRepository
                 Assessment = SnakeCaseEnum.ToWire(assessmentType) }), cancellationToken);
     }
 
-    public async Task<(Guid Id, DateTime SubmittedAt)> UpsertRecordAsync(Guid armId, Guid subjectId, Guid termId,
+    public async Task<(Guid Id, DateTime SubmittedAt)?> UpsertRecordAsync(Guid armId, Guid subjectId, Guid termId,
         AssessmentType assessmentType, int maxScore, Guid? submittedByAffiliationId,
         IReadOnlyList<(Guid StudentId, decimal Score)> entries, CancellationToken cancellationToken)
     {
         await using DbTransactionScope transaction = await _connectionFactory.BeginTransactionAsync(cancellationToken);
 
-        HeaderKeyRow header = await QuerySingleOrDefaultAsync<HeaderKeyRow>(
+        // The DO UPDATE is fenced on status so a submit can never rewrite a record that a concurrent
+        // publish just released; no row back ⇒ published ⇒ nothing (incl. entries) is written.
+        HeaderKeyRow? header = await QuerySingleOrDefaultAsync<HeaderKeyRow>(
             """
             INSERT INTO grade_records
                 (school_id, class_arm_id, subject_id, term_id, assessment_type, max_score,
@@ -226,12 +240,17 @@ internal sealed class GradeRepository : TenantRepository, IGradeRepository
                     submitted_by_affiliation_id = EXCLUDED.submitted_by_affiliation_id,
                     submitted_at = NOW(),
                     updated_at = NOW()
+                WHERE grade_records.status = 'draft'
             RETURNING id, submitted_at AS SubmittedAt
             """,
             TenantParameters(new { ArmId = armId, SubjectId = subjectId, TermId = termId,
                 Assessment = SnakeCaseEnum.ToWire(assessmentType), MaxScore = maxScore, SubmittedBy = submittedByAffiliationId }),
-            cancellationToken, transaction.Transaction)
-            ?? throw new InvalidOperationException("Grade record upsert returned no row.");
+            cancellationToken, transaction.Transaction);
+
+        if (header is null)
+        {
+            return null;
+        }
 
         await ExecuteAsync(
             "DELETE FROM grade_entries WHERE grade_record_id = @RecordId AND school_id = @SchoolId",
@@ -252,10 +271,13 @@ internal sealed class GradeRepository : TenantRepository, IGradeRepository
         return (header.Id, header.SubmittedAt);
     }
 
-    public Task<string?> GetRecordStatusAsync(Guid recordId, CancellationToken cancellationToken)
+    public Task<GradeRecordKeyRow?> GetRecordKeyAsync(Guid recordId, CancellationToken cancellationToken)
     {
-        return QuerySingleOrDefaultAsync<string?>(
-            "SELECT status FROM grade_records WHERE id = @Id AND school_id = @SchoolId",
+        return QuerySingleOrDefaultAsync<GradeRecordKeyRow>(
+            """
+            SELECT id, class_arm_id AS ArmId, subject_id AS SubjectId, status
+            FROM grade_records WHERE id = @Id AND school_id = @SchoolId
+            """,
             TenantParameters(new { Id = recordId }), cancellationToken);
     }
 

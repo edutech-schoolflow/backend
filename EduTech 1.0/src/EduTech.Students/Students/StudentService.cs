@@ -290,6 +290,7 @@ internal sealed class StudentService : IStudentService
         }
 
         List<PromotionCommand> commands = new List<PromotionCommand>();
+        HashSet<Guid> seen = new HashSet<Guid>();
         int promoted = 0, repeated = 0, graduated = 0;
 
         foreach (PromotionItem item in request.Promotions)
@@ -300,9 +301,24 @@ internal sealed class StudentService : IStudentService
                     400, ErrorCodes.ValidationError);
             }
 
-            if (!await _repository.ExistsAsync(item.StudentId, cancellationToken))
+            if (!seen.Add(item.StudentId))
+            {
+                throw new AppErrorException("The same student appears more than once in this promotion.",
+                    400, ErrorCodes.ValidationError);
+            }
+
+            string? status = await _repository.GetStatusAsync(item.StudentId, cancellationToken);
+            if (status is null)
             {
                 throw new AppErrorException("One of the selected students no longer exists.", 404, ErrorCodes.NotFound);
+            }
+
+            // Only ACTIVE students move between sessions — a withdrawn/graduated student has no open
+            // enrollment to close, so "promoting" them would corrupt their history.
+            if (status != "active")
+            {
+                throw new AppErrorException(
+                    $"A selected student is {status} and can't be promoted.", 409, ErrorCodes.Conflict);
             }
 
             if (action == PromotionAction.Graduate)

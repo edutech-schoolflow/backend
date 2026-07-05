@@ -30,6 +30,9 @@ internal interface IAcademicCalendarRepository
     /// <summary>True if [start, end] overlaps any other dated term in the school (a school runs one term at a time).</summary>
     Task<bool> HasDateOverlapAsync(DateOnly start, DateOnly end, Guid? exceptTermId, CancellationToken cancellationToken);
     Task SetCurrentTermAsync(Guid termId, CancellationToken cancellationToken);
+
+    /// <summary>Active students with no enrollment in the given session — the promotion gate count.</summary>
+    Task<int> CountActiveStudentsNotInYearAsync(Guid academicYearId, CancellationToken cancellationToken);
 }
 
 internal sealed class AcademicYearRow
@@ -292,5 +295,18 @@ internal sealed class AcademicCalendarRepository : TenantRepository, IAcademicCa
              WHERE school_id = @SchoolId;
             """,
             TenantParameters(new { Id = termId }), cancellationToken);
+    }
+
+    public async Task<int> CountActiveStudentsNotInYearAsync(Guid academicYearId, CancellationToken cancellationToken)
+    {
+        return await ExecuteScalarAsync<int>(
+            """
+            SELECT COUNT(*) FROM students s
+            WHERE s.school_id = @SchoolId AND s.status = 'active'
+              AND NOT EXISTS (
+                    SELECT 1 FROM student_enrollments e
+                    WHERE e.student_id = s.id AND e.academic_year_id = @YearId)
+            """,
+            TenantParameters(new { YearId = academicYearId }), cancellationToken);
     }
 }

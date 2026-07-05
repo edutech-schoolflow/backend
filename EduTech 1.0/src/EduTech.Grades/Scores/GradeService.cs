@@ -120,7 +120,9 @@ internal sealed class GradeService : IGradeService
 
         Guid? submittedBy = _context.IsOwner ? null : CurrentAffiliation();
         (Guid id, DateTime submittedAt) = await _repository.UpsertRecordAsync(
-            request.ArmId, request.SubjectId, request.TermId, assessment, maxScore, submittedBy, entries, cancellationToken);
+                request.ArmId, request.SubjectId, request.TermId, assessment, maxScore, submittedBy, entries, cancellationToken)
+            ?? throw new AppErrorException("These grades are published and can't be edited.", 409, ErrorCodes.Conflict,
+                logReason: "Grade submit lost the race with a publish; guarded upsert wrote nothing.");
 
         return new GradeRecordSummaryResponse
         {
@@ -139,14 +141,17 @@ internal sealed class GradeService : IGradeService
 
     public async Task PublishAsync(Guid recordId, CancellationToken cancellationToken)
     {
-        string? raw = await _repository.GetRecordStatusAsync(recordId, cancellationToken)
+        GradeRecordKeyRow key = await _repository.GetRecordKeyAsync(recordId, cancellationToken)
             ?? throw new AppErrorException("Grade record not found.", 404, ErrorCodes.NotFound);
 
-        GradeStatus current = SnakeCaseEnum.Parse<GradeStatus>(raw);
+        GradeStatus current = SnakeCaseEnum.Parse<GradeStatus>(key.Status);
         if (current == GradeStatus.Published)
         {
             return;   // idempotent
         }
+
+        // Same grading-authority rule as entry: a teacher may release only their own record.
+        await AuthorizeAsync(key.ArmId, key.SubjectId, cancellationToken);
 
         GradeLifecycle.Rules.Require(current, GradeStatus.Published);
 

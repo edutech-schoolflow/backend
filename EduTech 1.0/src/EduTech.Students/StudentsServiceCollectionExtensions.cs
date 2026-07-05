@@ -1,5 +1,6 @@
 using EduTech.Shared.Events;
 using EduTech.Students.Academics;
+using EduTech.Students.Academics.Transition;
 using EduTech.Students.Admissions;
 using EduTech.Students.Admissions.Events;
 using EduTech.Students.Classes;
@@ -19,6 +20,9 @@ public static class StudentsServiceCollectionExtensions
     {
         services.AddScoped<IAcademicCalendarRepository, AcademicCalendarRepository>();
         services.AddScoped<IAcademicCalendarService, AcademicCalendarService>();
+        services.AddScoped<IAcademicTransitionService, AcademicTransitionService>();
+        services.AddScoped<ICalendarRollForwardRepository, CalendarRollForwardRepository>();
+        services.AddScoped<CalendarRollForwardJob>();   // daily sweep; scheduled in Program.cs
         services.AddScoped<IClassRepository, ClassRepository>();
         services.AddScoped<IClassService, ClassService>();
         services.AddScoped<IStudentRepository, StudentRepository>();

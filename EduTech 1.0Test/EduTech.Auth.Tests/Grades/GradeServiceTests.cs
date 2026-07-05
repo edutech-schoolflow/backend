@@ -192,13 +192,36 @@ public class GradeServiceTests
         Assert.Equal(400, ex.StatusCode);
     }
 
+    // The service-side published check races a concurrent publish; the guarded upsert reports it
+    // (null) and the submit must fail with a conflict instead of rewriting released scores.
+    [Fact]
+    public async Task Submit_ConcurrentlyPublished_Throws409()
+    {
+        AsOwner(); Arm_Is("primary", Guid.NewGuid()); Subject_Is(ClassId); CommonSetup();
+        _repo.Setup(r => r.UpsertRecordAsync(Arm, Subject, TermId, It.IsAny<AssessmentType>(), It.IsAny<int>(),
+                It.IsAny<Guid?>(), It.IsAny<IReadOnlyList<(Guid, decimal)>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(((Guid, DateTime)?)null);
+
+        AppErrorException ex = await Assert.ThrowsAsync<AppErrorException>(
+            () => CreateSut().SubmitAsync(ValidSubmit(), CancellationToken.None));
+        Assert.Equal(409, ex.StatusCode);
+    }
+
     // ---- publish lifecycle ----
+
+    private Guid RecordExists(string status)
+    {
+        Guid rec = Guid.NewGuid();
+        _repo.Setup(r => r.GetRecordKeyAsync(rec, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new GradeRecordKeyRow { Id = rec, ArmId = Arm, SubjectId = Subject, Status = status });
+        return rec;
+    }
 
     [Fact]
     public async Task Publish_Draft_Publishes()
     {
-        Guid rec = Guid.NewGuid();
-        _repo.Setup(r => r.GetRecordStatusAsync(rec, It.IsAny<CancellationToken>())).ReturnsAsync("draft");
+        AsOwner(); Arm_Is("primary", Guid.NewGuid()); Subject_Is(ClassId);
+        Guid rec = RecordExists("draft");
         _repo.Setup(r => r.PublishRecordIfDraftAsync(rec, It.IsAny<CancellationToken>())).ReturnsAsync(1);
 
         await CreateSut().PublishAsync(rec, CancellationToken.None);
@@ -209,8 +232,8 @@ public class GradeServiceTests
     [Fact]
     public async Task Publish_AlreadyPublished_IsNoOp()
     {
-        Guid rec = Guid.NewGuid();
-        _repo.Setup(r => r.GetRecordStatusAsync(rec, It.IsAny<CancellationToken>())).ReturnsAsync("published");
+        AsOwner();
+        Guid rec = RecordExists("published");
 
         await CreateSut().PublishAsync(rec, CancellationToken.None);
 
@@ -220,9 +243,38 @@ public class GradeServiceTests
     [Fact]
     public async Task Publish_NotFound_Throws404()
     {
-        _repo.Setup(r => r.GetRecordStatusAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync((string?)null);
+        AsOwner();
+        _repo.Setup(r => r.GetRecordKeyAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((GradeRecordKeyRow?)null);
         AppErrorException ex = await Assert.ThrowsAsync<AppErrorException>(
             () => CreateSut().PublishAsync(Guid.NewGuid(), CancellationToken.None));
         Assert.Equal(404, ex.StatusCode);
+    }
+
+    // Publishing a record is subject to the same grading-authority rule as entering it — a teacher
+    // can release only their own record, never a colleague's.
+    [Fact]
+    public async Task Publish_Secondary_NotSubjectTeacher_Throws403()
+    {
+        AsStaff(TeacherAff); Arm_Is("junior_secondary", Guid.NewGuid()); Subject_Is(ClassId);
+        Guid rec = RecordExists("draft");
+        _repo.Setup(r => r.IsSubjectTeacherAsync(Arm, "Mathematics", TeacherAff, It.IsAny<CancellationToken>())).ReturnsAsync(false);
+
+        AppErrorException ex = await Assert.ThrowsAsync<AppErrorException>(
+            () => CreateSut().PublishAsync(rec, CancellationToken.None));
+        Assert.Equal(403, ex.StatusCode);
+        _repo.Verify(r => r.PublishRecordIfDraftAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Publish_Primary_ClassTeacher_Succeeds()
+    {
+        AsStaff(TeacherAff); Arm_Is("primary", TeacherAff); Subject_Is(ClassId);
+        Guid rec = RecordExists("draft");
+        _repo.Setup(r => r.PublishRecordIfDraftAsync(rec, It.IsAny<CancellationToken>())).ReturnsAsync(1);
+
+        await CreateSut().PublishAsync(rec, CancellationToken.None);
+
+        _repo.Verify(r => r.PublishRecordIfDraftAsync(rec, It.IsAny<CancellationToken>()), Times.Once);
     }
 }

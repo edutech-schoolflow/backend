@@ -15,17 +15,19 @@ internal static class GradingScale
         new GradeBoundaryDto { MinScore = 0,  MaxScore = 39,  Grade = "F", Remark = "Fail" }
     };
 
-    /// <summary>The grade + remark whose band contains <paramref name="total"/>; ("-", "") if none match.</summary>
+    /// <summary>
+    /// The band for <paramref name="total"/>: the highest band whose MinScore ≤ total. Bands are stored
+    /// with integer edges but totals are decimal (half-marks), so a total in the crack between two bands
+    /// (e.g. 59.5 against …-59 | 60-…) belongs to the band below it, never to no band. ("-", "") only
+    /// when the total is below every band.
+    /// </summary>
     public static (string Grade, string Remark) Resolve(decimal total, IReadOnlyList<GradeBoundaryDto> bands)
     {
-        foreach (GradeBoundaryDto band in bands)
-        {
-            if (total >= band.MinScore && total <= band.MaxScore)
-            {
-                return (band.Grade, band.Remark);
-            }
-        }
+        GradeBoundaryDto? band = bands
+            .Where(b => total >= b.MinScore)
+            .OrderByDescending(b => b.MinScore)
+            .FirstOrDefault();
 
-        return ("-", string.Empty);
+        return band is null ? ("-", string.Empty) : (band.Grade, band.Remark);
     }
 }

@@ -118,6 +118,56 @@ public class AttendanceServiceTests
     // "No current term → blocked" is enforced at the edge by [RequiresCurrentTerm]
     // (see RequiresCurrentTermAttributeTests), so the service no longer re-checks it.
 
+    // ---- term attribution: the register belongs to the term CONTAINING the date, ----
+    // ---- not whichever term happens to be current when it is (back)entered.      ----
+
+    [Fact]
+    public async Task Submit_BackdatedIntoEarlierTerm_BooksToThatTerm()
+    {
+        AsOwner(); UnitExists(TeacherAffiliation); RosterHas(StudentA, StudentB);
+        Guid earlierTerm = Guid.NewGuid();
+        _repo.Setup(r => r.GetTermIdForDateAsync(Yesterday, It.IsAny<CancellationToken>())).ReturnsAsync(earlierTerm);
+        _repo.Setup(r => r.UpsertRecordAsync(Cls, Arm, Yesterday, earlierTerm, null,
+                It.IsAny<IReadOnlyList<(Guid, AttendanceStatus)>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Guid.NewGuid(), DateTime.UtcNow));
+
+        await CreateSut().SubmitAsync(ValidSubmit(), CancellationToken.None);
+
+        _repo.Verify(r => r.UpsertRecordAsync(Cls, Arm, Yesterday, earlierTerm, null,
+            It.IsAny<IReadOnlyList<(Guid, AttendanceStatus)>>(), It.IsAny<CancellationToken>()), Times.Once);
+        _repo.Verify(r => r.GetCurrentTermIdAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Submit_DateInHolidayGap_Throws400()
+    {
+        AsOwner(); UnitExists(TeacherAffiliation); RosterHas(StudentA, StudentB);
+        _repo.Setup(r => r.GetTermIdForDateAsync(Yesterday, It.IsAny<CancellationToken>())).ReturnsAsync((Guid?)null);
+        _repo.Setup(r => r.HasDatedTermsAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
+
+        AppErrorException ex = await Assert.ThrowsAsync<AppErrorException>(
+            () => CreateSut().SubmitAsync(ValidSubmit(), CancellationToken.None));
+        Assert.Equal(400, ex.StatusCode);
+    }
+
+    // Legacy schools may not have set term dates yet — the current term remains the fallback there.
+    [Fact]
+    public async Task Submit_NoDatedTerms_FallsBackToCurrentTerm()
+    {
+        AsOwner(); UnitExists(TeacherAffiliation); RosterHas(StudentA, StudentB);
+        _repo.Setup(r => r.GetTermIdForDateAsync(Yesterday, It.IsAny<CancellationToken>())).ReturnsAsync((Guid?)null);
+        _repo.Setup(r => r.HasDatedTermsAsync(It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        _repo.Setup(r => r.GetCurrentTermIdAsync(It.IsAny<CancellationToken>())).ReturnsAsync(Term);
+        _repo.Setup(r => r.UpsertRecordAsync(Cls, Arm, Yesterday, Term, null,
+                It.IsAny<IReadOnlyList<(Guid, AttendanceStatus)>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Guid.NewGuid(), DateTime.UtcNow));
+
+        await CreateSut().SubmitAsync(ValidSubmit(), CancellationToken.None);
+
+        _repo.Verify(r => r.UpsertRecordAsync(Cls, Arm, Yesterday, Term, null,
+            It.IsAny<IReadOnlyList<(Guid, AttendanceStatus)>>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
     // ---- validation ----
 
     [Fact]

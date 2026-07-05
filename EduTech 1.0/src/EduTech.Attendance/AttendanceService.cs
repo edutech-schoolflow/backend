@@ -105,8 +105,23 @@ internal sealed class AttendanceService : IAttendanceService
             marks.Add((mark.StudentId, status));
         }
 
-        // The [RequiresCurrentTerm] filter guarantees a current term exists before we get here.
-        Guid? termId = await _repository.GetCurrentTermIdAsync(cancellationToken);
+        // A register belongs to the term CONTAINING its date — a backdated entry for last term must
+        // never be booked to the current one (it feeds report-card attendance totals via term_id).
+        // Schools that haven't set term dates yet fall back to the current term ([RequiresCurrentTerm]
+        // guarantees one exists).
+        Guid? termId = await _repository.GetTermIdForDateAsync(request.Date, cancellationToken);
+        if (termId is null)
+        {
+            if (await _repository.HasDatedTermsAsync(cancellationToken))
+            {
+                throw new AppErrorException(
+                    "That date falls outside every term. Attendance can only be marked for school days within a term.",
+                    400, ErrorCodes.ValidationError);
+            }
+
+            termId = await _repository.GetCurrentTermIdAsync(cancellationToken);
+        }
+
         Guid? submittedBy = _context.IsOwner ? null : CurrentAffiliation();
 
         (Guid id, DateTime submittedAt) = await _repository.UpsertRecordAsync(
@@ -195,7 +210,9 @@ internal sealed class AttendanceService : IAttendanceService
     private Guid? CurrentAffiliation() =>
         Guid.TryParse(_context.AffiliationId, out Guid id) ? id : (Guid?)null;
 
-    private static DateOnly Today => DateOnly.FromDateTime(DateTime.UtcNow);
+    // School days are West Africa Time (UTC+1, no DST) — plain UTC would make "today" roll over at
+    // 1 a.m. WAT, defaulting rosters to yesterday and rejecting just-after-midnight marks as future.
+    private static DateOnly Today => DateOnly.FromDateTime(DateTime.UtcNow.AddHours(1));
 
     private static int Percent(int part, int whole) =>
         whole > 0 ? (int)Math.Round(100.0 * part / whole) : 0;

@@ -65,9 +65,12 @@ public sealed class GradeController : ControllerBase
         return Ok(ServiceResponses<string?>.Ok(null, "Grades published."));
     }
 
-    /// <summary>Publish every draft record for a term (optionally scoped to one arm).</summary>
+    /// <summary>
+    /// Publish every draft record for a term (optionally scoped to one arm). A school- or arm-wide
+    /// release crosses other teachers' records, so it is a leadership action (owner bypasses roles).
+    /// </summary>
     [HttpPost("api/v1/grades/publish")]
-    [RequireFeature(StaffFeatureFlags.EnterGrades)]
+    [RequireRole(StaffRoles.Principal, StaffRoles.VicePrincipal, StaffRoles.SchoolAdmin)]
     public async Task<ActionResult<ServiceResponses<int>>> PublishAll(
         [FromBody] PublishAllRequest request, CancellationToken cancellationToken)
     {

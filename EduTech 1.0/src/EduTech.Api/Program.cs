@@ -345,6 +345,19 @@ using (IServiceScope scope = app.Services.CreateScope())
     {
         Log.Warning(ex, "Feature flag seeding skipped (has 0009_feature_flags.sql been run?).");
     }
+
+    // Daily calendar sweep: provisions first calendars and PREPARES term/session transitions (the
+    // school confirms the actual move). 02:00 UTC = 03:00 WAT, before any school day starts.
+    try
+    {
+        IRecurringJobManager recurringJobs = scope.ServiceProvider.GetRequiredService<IRecurringJobManager>();
+        recurringJobs.AddOrUpdate<EduTech.Students.Academics.Transition.CalendarRollForwardJob>(
+            "calendar-roll-forward", job => job.RunAsync(CancellationToken.None), Cron.Daily(2));
+    }
+    catch (Exception ex)
+    {
+        Log.Warning(ex, "Calendar roll-forward job not scheduled (is Hangfire storage reachable?).");
+    }
 }
 
 app.MapHealthChecks("/health");

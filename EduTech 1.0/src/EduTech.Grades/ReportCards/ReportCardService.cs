@@ -18,13 +18,15 @@ internal sealed class ReportCardService : IReportCardService
     private readonly IReportCardRepository _repository;
     private readonly IGradingScaleService _gradingScale;
     private readonly INotificationDispatcher _notifications;
+    private readonly Scores.IGradeRepository _gradeRepository;
 
     public ReportCardService(IReportCardRepository repository, IGradingScaleService gradingScale,
-        INotificationDispatcher notifications)
+        INotificationDispatcher notifications, Scores.IGradeRepository gradeRepository)
     {
         _repository = repository;
         _gradingScale = gradingScale;
         _notifications = notifications;
+        _gradeRepository = gradeRepository;
     }
 
     public async Task<ReportCardResponse> GetReportAsync(Guid studentId, Guid termId, CancellationToken cancellationToken)
@@ -34,7 +36,12 @@ internal sealed class ReportCardService : IReportCardService
         TermInfoRow term = await _repository.GetTermAsync(termId, cancellationToken)
             ?? throw new AppErrorException("Term not found.", 404, ErrorCodes.NotFound);
 
-        IReadOnlyList<SubjectScoreRow> scores = student.ClassArmId is Guid armId
+        ReportMetaRow? meta = await _repository.GetMetaAsync(studentId, termId, cancellationToken);
+
+        // The arm stored on the report wins: the student's CURRENT arm changes on promotion/transfer,
+        // and reading scores through it would blank out every earlier term's report.
+        Guid? reportArm = meta?.ClassArmId ?? student.ClassArmId;
+        IReadOnlyList<SubjectScoreRow> scores = reportArm is Guid armId
             ? await _repository.GetSubjectScoresAsync(studentId, armId, termId, cancellationToken)
             : Array.Empty<SubjectScoreRow>();
 
@@ -50,7 +57,6 @@ internal sealed class ReportCardService : IReportCardService
 
         AttendanceSummaryRow attendance = await _repository.GetAttendanceSummaryAsync(studentId, termId, cancellationToken);
 
-        ReportMetaRow? meta = await _repository.GetMetaAsync(studentId, termId, cancellationToken);
         IReadOnlyList<BehavioralRatingDto> behavioral = Array.Empty<BehavioralRatingDto>();
         if (meta is not null)
         {
@@ -136,9 +142,14 @@ internal sealed class ReportCardService : IReportCardService
             behavioral.Add((rating.Trait, rating.Score));
         }
 
-        await _repository.UpsertMetaAsync(studentId, termId, student.ClassArmId,
+        Guid? saved = await _repository.UpsertMetaAsync(studentId, termId, student.ClassArmId,
             Trim(request.TeacherComment), Trim(request.PrincipalComment), request.NextTermResumption,
             behavioral, cancellationToken);
+        if (saved is null)
+        {
+            throw new AppErrorException("This report card is published and can't be edited.", 409, ErrorCodes.Conflict,
+                logReason: "Report meta save lost the race with a publish; guarded upsert wrote nothing.");
+        }
     }
 
     public async Task PublishStudentAsync(Guid studentId, Guid termId, CancellationToken cancellationToken)
@@ -148,18 +159,33 @@ internal sealed class ReportCardService : IReportCardService
         TermInfoRow term = await _repository.GetTermAsync(termId, cancellationToken)
             ?? throw new AppErrorException("Term not found.", 404, ErrorCodes.NotFound);
 
-        string? status = await _repository.GetStatusAsync(studentId, termId, cancellationToken);
-        if (status == "published")
+        ReportMetaRow? meta = await _repository.GetMetaAsync(studentId, termId, cancellationToken);
+        if (meta?.Status == "published")
         {
             return;   // idempotent — already released
         }
 
-        if (status is not null)
+        if (meta is not null)
         {
-            ReportLifecycle.Rules.Require(SnakeCaseEnum.Parse<GradeStatus>(status), GradeStatus.Published);
+            ReportLifecycle.Rules.Require(SnakeCaseEnum.Parse<GradeStatus>(meta.Status), GradeStatus.Published);
         }
 
-        Guid? published = await _repository.PublishStudentAsync(studentId, termId, student.ClassArmId, cancellationToken);
+        // A report with no scores at all is a data-entry gap, not a releasable document.
+        Guid? reportArm = meta?.ClassArmId ?? student.ClassArmId;
+        IReadOnlyList<SubjectScoreRow> scores = reportArm is Guid armId
+            ? await _repository.GetSubjectScoresAsync(studentId, armId, termId, cancellationToken)
+            : Array.Empty<SubjectScoreRow>();
+        if (scores.Count == 0)
+        {
+            throw new AppErrorException("No grades have been recorded for this student this term.",
+                409, ErrorCodes.Conflict);
+        }
+
+        // Freeze the numbers being released: once the report is out, the arm's grade records for the
+        // term are published too, so a later edit can't silently change what parents already saw.
+        await _gradeRepository.PublishAllDraftAsync(termId, reportArm, cancellationToken);
+
+        Guid? published = await _repository.PublishStudentAsync(studentId, termId, reportArm, cancellationToken);
         if (published is not null)
         {
             await NotifyGuardiansAsync(new[] { studentId }, term, cancellationToken);
@@ -170,6 +196,9 @@ internal sealed class ReportCardService : IReportCardService
     {
         TermInfoRow term = await _repository.GetTermAsync(request.TermId, cancellationToken)
             ?? throw new AppErrorException("Term not found.", 404, ErrorCodes.NotFound);
+
+        // Freeze first (see PublishStudentAsync) — then release the arm's reports.
+        await _gradeRepository.PublishAllDraftAsync(request.TermId, request.ArmId, cancellationToken);
 
         IReadOnlyList<Guid> published = await _repository.PublishArmAsync(request.ArmId, request.TermId, cancellationToken);
         if (published.Count > 0)

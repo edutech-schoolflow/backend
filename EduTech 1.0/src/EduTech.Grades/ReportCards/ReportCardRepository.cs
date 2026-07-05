@@ -14,8 +14,11 @@ internal interface IReportCardRepository
     Task<IReadOnlyList<BehavioralRow>> GetBehavioralAsync(Guid reportCardId, CancellationToken cancellationToken);
     Task<IReadOnlyList<ReportListRow>> ListForArmAsync(Guid armId, Guid termId, CancellationToken cancellationToken);
 
-    /// <summary>Upsert the report's stored fields and REPLACE its behavioral ratings. Status is left untouched.</summary>
-    Task UpsertMetaAsync(Guid studentId, Guid termId, Guid? classArmId, string? teacherComment,
+    /// <summary>
+    /// Upsert the report's stored fields and REPLACE its behavioral ratings — guarded so it only touches
+    /// a DRAFT report. Returns the report id, or null when the report is already published (no write).
+    /// </summary>
+    Task<Guid?> UpsertMetaAsync(Guid studentId, Guid termId, Guid? classArmId, string? teacherComment,
         string? principalComment, DateOnly? nextTermResumption,
         IReadOnlyList<(BehavioralTrait Trait, int Score)> behavioral, CancellationToken cancellationToken);
 
@@ -69,6 +72,9 @@ internal sealed class AttendanceSummaryRow
 internal sealed class ReportMetaRow
 {
     public Guid Id { get; init; }
+    /// <summary>The arm the report was issued under — wins over the student's CURRENT arm on read,
+    /// so historical reports survive promotions and arm transfers.</summary>
+    public Guid? ClassArmId { get; init; }
     public string? TeacherComment { get; init; }
     public string? PrincipalComment { get; init; }
     public DateOnly? NextTermResumption { get; init; }
@@ -170,7 +176,8 @@ internal sealed class ReportCardRepository : TenantRepository, IReportCardReposi
     {
         return QuerySingleOrDefaultAsync<ReportMetaRow>(
             """
-            SELECT id, teacher_comment AS TeacherComment, principal_comment AS PrincipalComment,
+            SELECT id, class_arm_id AS ClassArmId, teacher_comment AS TeacherComment,
+                   principal_comment AS PrincipalComment,
                    next_term_resumption AS NextTermResumption, status, published_at AS PublishedAt
             FROM report_cards
             WHERE student_id = @StudentId AND term_id = @TermId AND school_id = @SchoolId
@@ -210,13 +217,15 @@ internal sealed class ReportCardRepository : TenantRepository, IReportCardReposi
             TenantParameters(new { ArmId = armId, TermId = termId }), cancellationToken);
     }
 
-    public async Task UpsertMetaAsync(Guid studentId, Guid termId, Guid? classArmId, string? teacherComment,
+    public async Task<Guid?> UpsertMetaAsync(Guid studentId, Guid termId, Guid? classArmId, string? teacherComment,
         string? principalComment, DateOnly? nextTermResumption,
         IReadOnlyList<(BehavioralTrait Trait, int Score)> behavioral, CancellationToken cancellationToken)
     {
         await using DbTransactionScope transaction = await _connectionFactory.BeginTransactionAsync(cancellationToken);
 
-        Guid reportId = await ExecuteScalarAsync<Guid>(
+        // Fenced on status so a meta edit can never land on a report a concurrent publish just
+        // released; no row back ⇒ published ⇒ nothing (incl. behavioral ratings) is written.
+        Guid? reportId = await QuerySingleOrDefaultAsync<Guid?>(
             """
             INSERT INTO report_cards
                 (school_id, student_id, term_id, class_arm_id, teacher_comment, principal_comment, next_term_resumption)
@@ -227,11 +236,17 @@ internal sealed class ReportCardRepository : TenantRepository, IReportCardReposi
                     principal_comment = EXCLUDED.principal_comment,
                     next_term_resumption = EXCLUDED.next_term_resumption,
                     updated_at = NOW()
+                WHERE report_cards.status = 'draft'
             RETURNING id
             """,
             TenantParameters(new { StudentId = studentId, TermId = termId, ArmId = classArmId,
                 Teacher = teacherComment, Principal = principalComment, Resumption = nextTermResumption }),
             cancellationToken, transaction.Transaction);
+
+        if (reportId is null)
+        {
+            return null;
+        }
 
         await ExecuteAsync(
             "DELETE FROM report_behavioral_ratings WHERE report_card_id = @Id AND school_id = @SchoolId",
@@ -249,6 +264,7 @@ internal sealed class ReportCardRepository : TenantRepository, IReportCardReposi
         }
 
         await transaction.CommitAsync(cancellationToken);
+        return reportId;
     }
 
     public Task<string?> GetStatusAsync(Guid studentId, Guid termId, CancellationToken cancellationToken)
@@ -280,6 +296,11 @@ internal sealed class ReportCardRepository : TenantRepository, IReportCardReposi
             SELECT @SchoolId, s.id, @TermId, @ArmId, 'published', NOW()
             FROM students s
             WHERE s.school_id = @SchoolId AND s.class_arm_id = @ArmId AND s.status = 'active'
+              -- Never release an empty report: skip students with no scores at all this term.
+              AND EXISTS (
+                    SELECT 1 FROM grade_records r
+                    JOIN grade_entries e ON e.grade_record_id = r.id AND e.student_id = s.id
+                    WHERE r.school_id = @SchoolId AND r.class_arm_id = @ArmId AND r.term_id = @TermId)
             ON CONFLICT (student_id, term_id) DO UPDATE
                 SET status = 'published', published_at = NOW(), updated_at = NOW()
                 WHERE report_cards.status = 'draft'

@@ -18,6 +18,20 @@ public sealed class ParentChildResponse
     public bool HasNewResult { get; init; }
 }
 
+/// <summary>Full child profile for prefilling the edit/enrol form.</summary>
+public sealed class ChildProfileResponse
+{
+    public required Guid Id { get; init; }
+    public required string FirstName { get; init; }
+    public string? MiddleName { get; init; }
+    public required string LastName { get; init; }
+    public DateOnly DateOfBirth { get; init; }
+    public Gender? Gender { get; init; }
+    public string? PhotoUrl { get; init; }
+    public string? PreviousSchool { get; init; }
+    public string? MedicalInfo { get; init; }
+}
+
 public sealed class UpsertChildProfileRequest
 {
     public Guid? Id { get; init; }                   // present => update an owned profile

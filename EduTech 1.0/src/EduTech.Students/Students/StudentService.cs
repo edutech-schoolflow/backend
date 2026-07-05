@@ -1,6 +1,9 @@
+using EduTech.Shared.Audit;
 using EduTech.Shared.Constants;
+using EduTech.Shared.Events;
 using EduTech.Shared.Exceptions;
 using EduTech.Shared.Phone;
+using EduTech.Students.Students.Commands;
 
 namespace EduTech.Students.Students;
 
@@ -9,20 +12,29 @@ public interface IStudentService
     Task<StudentListResponse> ListAsync(Guid? classId, string? status, int page, int limit, CancellationToken cancellationToken);
     Task<StudentResponse> GetAsync(Guid studentId, CancellationToken cancellationToken);
     Task<StudentResponse> CreateAsync(CreateStudentRequest request, CancellationToken cancellationToken);
+    Task<ParentLookupResponse> LookupParentAsync(string? phone, CancellationToken cancellationToken);
     Task UpdateGuardiansAsync(Guid studentId, UpdateGuardiansRequest request, CancellationToken cancellationToken);
     Task WithdrawAsync(Guid studentId, CancellationToken cancellationToken);
     Task ReAdmitAsync(Guid studentId, CancellationToken cancellationToken);
     Task TransferAsync(Guid studentId, TransferStudentRequest request, CancellationToken cancellationToken);
+    Task<string> UndoLastAsync(Guid studentId, CancellationToken cancellationToken);
     Task<PromotionResultResponse> PromoteAsync(PromoteStudentsRequest request, CancellationToken cancellationToken);
 }
 
 internal sealed class StudentService : IStudentService
 {
     private readonly IStudentRepository _repository;
+    private readonly StudentCommandInvoker _invoker;
+    private readonly IDomainEventPublisher _events;
+    private readonly IAuditLogRepository _audit;
 
-    public StudentService(IStudentRepository repository)
+    public StudentService(IStudentRepository repository, StudentCommandInvoker invoker,
+        IDomainEventPublisher events, IAuditLogRepository audit)
     {
         _repository = repository;
+        _invoker = invoker;
+        _events = events;
+        _audit = audit;
     }
 
     public async Task<StudentListResponse> ListAsync(Guid? classId, string? status, int page, int limit,
@@ -40,6 +52,32 @@ internal sealed class StudentService : IStudentService
         {
             Data = rows.Select(r => Map(r, Array.Empty<GuardianDto>())).ToList(),
             Total = total
+        };
+    }
+
+    public async Task<ParentLookupResponse> LookupParentAsync(string? phone, CancellationToken cancellationToken)
+    {
+        string? normalized = PhoneNumber.Normalize(phone);
+        if (normalized is null)
+        {
+            throw new AppErrorException("Enter a valid Nigerian phone number.", 400, ErrorCodes.ValidationError);
+        }
+
+        ParentLookupRow? row = await _repository.LookupParentByPhoneAsync(normalized, cancellationToken);
+        if (row is null)
+        {
+            return new ParentLookupResponse { Found = false };
+        }
+
+        string name = string.Join(' ',
+            new[] { row.FirstName, row.MiddleName, row.LastName }
+                .Where(part => !string.IsNullOrWhiteSpace(part)));
+
+        return new ParentLookupResponse
+        {
+            Found = true,
+            Name = name,
+            Status = row.HasPassword ? "registered" : "pending",
         };
     }
 
@@ -133,25 +171,96 @@ internal sealed class StudentService : IStudentService
         await _repository.ReplaceGuardiansAsync(studentId, guardians, cancellationToken);
     }
 
+    // Lifecycle actions are Command objects run through the invoker, so each is applied uniformly and
+    // recorded in the audit trail (and can be reversed by UndoLastAsync).
+
     public Task WithdrawAsync(Guid studentId, CancellationToken cancellationToken)
-        => SetStatusAsync(studentId, StudentStatus.Withdrawn, cancellationToken);
+        => _invoker.RunAsync(new WithdrawStudentCommand(_repository, studentId), cancellationToken);
 
     public Task ReAdmitAsync(Guid studentId, CancellationToken cancellationToken)
-        => SetStatusAsync(studentId, StudentStatus.Active, cancellationToken);
+        => _invoker.RunAsync(new ReAdmitStudentCommand(_repository, studentId), cancellationToken);
 
     public async Task TransferAsync(Guid studentId, TransferStudentRequest request, CancellationToken cancellationToken)
+    {
+        if (!await _repository.ClassArmExistsAsync(request.ClassArmId, cancellationToken))
+        {
+            throw new AppErrorException("The selected class/arm doesn't exist.", 400, ErrorCodes.ValidationError);
+        }
+
+        await _invoker.RunAsync(new TransferStudentCommand(_repository, studentId, request.ClassArmId), cancellationToken);
+    }
+
+    /// <summary>Reverses the student's most recent lifecycle action (single-level undo) from the audit trail.</summary>
+    public async Task<string> UndoLastAsync(Guid studentId, CancellationToken cancellationToken)
     {
         if (!await _repository.ExistsAsync(studentId, cancellationToken))
         {
             throw new AppErrorException("Student not found.", 404, ErrorCodes.NotFound);
         }
 
-        if (!await _repository.ClassArmExistsAsync(request.ClassArmId, cancellationToken))
+        IReadOnlyList<AuditLogEntry> recent = await _audit.ListAsync("student", studentId, 0, 1, cancellationToken);
+        AuditLogEntry? last = recent.Count > 0 ? recent[0] : null;
+
+        // Nothing to undo if there's no history, or the most recent action was itself a revert.
+        if (last is null || last.Action == "student.reverted")
         {
-            throw new AppErrorException("The selected class/arm doesn't exist.", 400, ErrorCodes.ValidationError);
+            throw new AppErrorException("There's no recent action to undo for this student.", 409, ErrorCodes.Conflict);
         }
 
-        await _repository.SetClassArmAsync(studentId, request.ClassArmId, cancellationToken);
+        string summary;
+        switch (last.Action)
+        {
+            case "student.withdrawn":
+                await _repository.SetStatusIfAsync(studentId, StudentStatus.Withdrawn, StudentStatus.Active, cancellationToken);
+                summary = "Reverted a withdrawal — the student is active again.";
+                break;
+
+            case "student.readmitted":
+                await _repository.SetStatusIfAsync(studentId, StudentStatus.Active, StudentStatus.Withdrawn, cancellationToken);
+                summary = "Reverted a re-admission — the student is withdrawn again.";
+                break;
+
+            case "student.transferred":
+                await _repository.SetClassArmAsync(studentId, ParseBeforeArm(last.Metadata), cancellationToken);
+                summary = "Reverted a transfer — the student is back in their previous arm.";
+                break;
+
+            default:
+                throw new AppErrorException("That action can't be undone.", 409, ErrorCodes.Conflict);
+        }
+
+        await _events.PublishAsync(new StudentLifecycleEvent
+        {
+            StudentId = studentId, Action = "student.reverted", Summary = summary
+        }, cancellationToken);
+
+        return summary;
+    }
+
+    // Reads {"beforeArmId":"<guid>"|null} from a transfer's audit metadata.
+    private static Guid? ParseBeforeArm(string? metadata)
+    {
+        if (string.IsNullOrWhiteSpace(metadata))
+        {
+            return null;
+        }
+
+        try
+        {
+            using System.Text.Json.JsonDocument doc = System.Text.Json.JsonDocument.Parse(metadata);
+            if (doc.RootElement.TryGetProperty("beforeArmId", out System.Text.Json.JsonElement el)
+                && el.ValueKind == System.Text.Json.JsonValueKind.String
+                && Guid.TryParse(el.GetString(), out Guid armId))
+            {
+                return armId;
+            }
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            // Malformed metadata → treat as "no arm".
+        }
+
+        return null;
     }
 
     public async Task<PromotionResultResponse> PromoteAsync(PromoteStudentsRequest request,
@@ -238,29 +347,6 @@ internal sealed class StudentService : IStudentService
         return new PromotionResultResponse { Promoted = promoted, Repeated = repeated, Graduated = graduated };
     }
 
-    private async Task SetStatusAsync(Guid studentId, StudentStatus target, CancellationToken cancellationToken)
-    {
-        string? raw = await _repository.GetStatusAsync(studentId, cancellationToken);
-        if (raw is null)
-        {
-            throw new AppErrorException("Student not found.", 404, ErrorCodes.NotFound);
-        }
-
-        StudentStatus current = SnakeCaseEnum.Parse<StudentStatus>(raw);
-        if (current == target)
-        {
-            return;   // already there — idempotent
-        }
-
-        // Business rule (readable 409 on an illegal move) + race-safe enforcement (conditional UPDATE).
-        StudentLifecycle.Rules.Require(current, target);
-
-        int changed = await _repository.SetStatusIfAsync(studentId, current, target, cancellationToken);
-        if (changed == 0)
-        {
-            throw new AppErrorException("Student status changed, please retry.", 409, ErrorCodes.Conflict);
-        }
-    }
 
     private static StudentStatus? NormalizeStatusFilter(string? status)
         => SnakeCaseEnum.TryParse(status, out StudentStatus parsed) ? parsed : null;   // "all"/empty/unknown → no filter

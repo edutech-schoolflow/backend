@@ -105,3 +105,15 @@ public sealed class PromotionResultResponse
     public required int Repeated { get; init; }
     public required int Graduated { get; init; }
 }
+
+/// <summary>
+/// Result of searching for a parent by phone on the Add-Student modal. When <see cref="Found"/> the
+/// guardian is an existing account and will be linked (name is read-only); <see cref="Status"/> is
+/// <c>registered</c> (has activated) or <c>pending</c> (school-seeded, not yet claimed).
+/// </summary>
+public sealed class ParentLookupResponse
+{
+    public required bool Found { get; init; }
+    public string? Name { get; init; }
+    public string? Status { get; init; }
+}

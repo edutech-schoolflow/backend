@@ -1,8 +1,11 @@
+using EduTech.Shared.Events;
 using EduTech.Students.Academics;
 using EduTech.Students.Admissions;
+using EduTech.Students.Admissions.Events;
 using EduTech.Students.Classes;
 using EduTech.Students.ParentFacing;
 using EduTech.Students.Students;
+using EduTech.Students.Students.Commands;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -19,13 +22,21 @@ public static class StudentsServiceCollectionExtensions
         services.AddScoped<IClassRepository, ClassRepository>();
         services.AddScoped<IClassService, ClassService>();
         services.AddScoped<IStudentRepository, StudentRepository>();
+        services.AddScoped<StudentCommandInvoker>();   // Command: runs lifecycle actions + audits them
         services.AddScoped<IStudentService, StudentService>();
         services.AddScoped<IParentChildrenRepository, ParentChildrenRepository>();
         services.AddScoped<IParentChildrenService, ParentChildrenService>();
         services.AddScoped<IParentApplicationRepository, ParentApplicationRepository>();
         services.AddScoped<IParentApplicationService, ParentApplicationService>();
+        services.AddScoped<IParentSchoolDirectoryRepository, ParentSchoolDirectoryRepository>();
+        services.AddScoped<IParentSchoolDirectoryService, ParentSchoolDirectoryService>();
         services.AddScoped<ISchoolApplicationRepository, SchoolApplicationRepository>();
         services.AddScoped<ISchoolApplicationService, SchoolApplicationService>();
+
+        // Observers for admission decisions (the audit observer is registered globally via AddAuditLog).
+        services.AddScoped<IDomainEventHandler<ExamScheduledEvent>, AdmissionNotificationHandler>();
+        services.AddScoped<IDomainEventHandler<ApplicationAdmittedEvent>, AdmissionNotificationHandler>();
+        services.AddScoped<IDomainEventHandler<ApplicationRejectedEvent>, AdmissionNotificationHandler>();
 
         services.AddControllers()
             .AddApplicationPart(typeof(StudentsServiceCollectionExtensions).Assembly);

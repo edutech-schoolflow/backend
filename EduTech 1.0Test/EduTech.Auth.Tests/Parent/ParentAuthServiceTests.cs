@@ -36,8 +36,8 @@ public class ParentAuthServiceTests
     public async Task Register_Valid_CreatesParentNormalizesPhoneAndSendsOtp()
     {
         Guid parentId = Guid.NewGuid();
-        _parents.Setup(p => p.ExistsByPhoneAsync("+2348033334444", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(false);
+        _parents.Setup(p => p.GetClaimStateByPhoneAsync("+2348033334444", It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ParentClaimState?)null);
         _hasher.Setup(h => h.Hash("password123")).Returns("hashed");
         _parents.Setup(p => p.CreateAsync("John", null, "Okafor", "+2348033334444", null, "hashed", It.IsAny<CancellationToken>()))
             .ReturnsAsync(parentId);
@@ -56,10 +56,11 @@ public class ParentAuthServiceTests
     }
 
     [Fact]
-    public async Task Register_DuplicatePhone_Throws409WithGenericMessage()
+    public async Task Register_AlreadyRegisteredPhone_Throws409WithGenericMessage()
     {
-        _parents.Setup(p => p.ExistsByPhoneAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
+        // Phone already belongs to a parent that has set a password → genuine duplicate.
+        _parents.Setup(p => p.GetClaimStateByPhoneAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ParentClaimState { Id = Guid.NewGuid(), HasPassword = true });
 
         AppErrorException ex = await Assert.ThrowsAsync<AppErrorException>(() => CreateSut().RegisterAsync(
             new RegisterParentRequest { FirstName = "John", LastName = "Doe", Phone = "08033334444", Password = "password123" },
@@ -67,6 +68,57 @@ public class ParentAuthServiceTests
 
         Assert.Equal(409, ex.StatusCode);
         Assert.Equal(ErrorCodes.PhoneTaken, ex.ErrorCode);
+        _parents.Verify(p => p.ClaimAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(),
+            It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Register_PendingUnclaimedPhone_ClaimsAccountAdoptsNameAndSendsOtp()
+    {
+        // School pre-created this parent (pending, no password). Registering with the same phone
+        // should CLAIM that row — set the password, adopt the parent's own name — not 409, not insert.
+        Guid parentId = Guid.NewGuid();
+        _parents.Setup(p => p.GetClaimStateByPhoneAsync("+2348033334444", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ParentClaimState { Id = parentId, HasPassword = false });
+        _hasher.Setup(h => h.Hash("password123")).Returns("hashed");
+        _parents.Setup(p => p.ClaimAsync(parentId, "Ada", null, "Obi", null, "hashed", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
+        _otp.Setup(o => o.GenerateAsync(OtpPurpose.ParentPhoneVerification, parentId, "+2348033334444",
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync("123456");
+
+        await CreateSut().RegisterAsync(
+            new RegisterParentRequest { FirstName = "Ada", LastName = "Obi", Phone = "08033334444", Password = "password123" },
+            CancellationToken.None);
+
+        _parents.Verify(p => p.ClaimAsync(parentId, "Ada", null, "Obi", null, "hashed",
+            It.IsAny<CancellationToken>()), Times.Once);
+        _parents.Verify(p => p.CreateAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string>(),
+            It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        _sms.Verify(s => s.SendSmsAsync("+2348033334444", It.Is<string>(m => m.Contains("123456")),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Register_PendingPhoneClaimedConcurrently_Throws409()
+    {
+        // Two people race to claim the same pending account; the guarded UPDATE affects 0 rows.
+        Guid parentId = Guid.NewGuid();
+        _parents.Setup(p => p.GetClaimStateByPhoneAsync("+2348033334444", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ParentClaimState { Id = parentId, HasPassword = false });
+        _hasher.Setup(h => h.Hash("password123")).Returns("hashed");
+        _parents.Setup(p => p.ClaimAsync(parentId, It.IsAny<string>(), It.IsAny<string?>(),
+                It.IsAny<string>(), It.IsAny<string?>(), "hashed", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0);
+
+        AppErrorException ex = await Assert.ThrowsAsync<AppErrorException>(() => CreateSut().RegisterAsync(
+            new RegisterParentRequest { FirstName = "Ada", LastName = "Obi", Phone = "08033334444", Password = "password123" },
+            CancellationToken.None));
+
+        Assert.Equal(409, ex.StatusCode);
+        Assert.Equal(ErrorCodes.PhoneTaken, ex.ErrorCode);
+        _otp.Verify(o => o.GenerateAsync(It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<string>(),
+            It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]

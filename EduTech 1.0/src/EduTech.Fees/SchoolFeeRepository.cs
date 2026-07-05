@@ -13,6 +13,8 @@ internal interface ISchoolFeeRepository
     Task<FeeTypeRow?> GetFeeTypeAsync(Guid feeTypeId, CancellationToken cancellationToken);
     /// <summary>True once the fee type has billed anyone (a payment/subscription references it) — then immutable.</summary>
     Task<bool> FeeTypeIsUsedAsync(Guid feeTypeId, CancellationToken cancellationToken);
+    /// <summary>True if any payment has been recorded against this fee (permanent financial history).</summary>
+    Task<bool> FeeTypeHasPaymentsAsync(Guid feeTypeId, CancellationToken cancellationToken);
     /// <summary>Update + reset approval to pending_approval (edits need re-approval). Clears any rejection.</summary>
     Task UpdateFeeTypeAsync(Guid feeTypeId, string name, decimal amount, string category, IReadOnlyList<Guid> classIds, CancellationToken cancellationToken);
     Task DeleteFeeTypeAsync(Guid feeTypeId, CancellationToken cancellationToken);
@@ -133,6 +135,13 @@ internal sealed class SchoolFeeRepository : TenantRepository, ISchoolFeeReposito
             "SELECT COUNT(1) FROM payments WHERE fee_type_id = @Id", new { Id = feeTypeId }, cancellationToken) > 0
             || await ExecuteScalarAsync<int>(
                 "SELECT COUNT(1) FROM fee_subscriptions WHERE fee_type_id = @Id", new { Id = feeTypeId }, cancellationToken) > 0;
+    }
+
+    public async Task<bool> FeeTypeHasPaymentsAsync(Guid feeTypeId, CancellationToken cancellationToken)
+    {
+        // A payment recorded against this fee makes it permanent financial history.
+        return await ExecuteScalarAsync<int>(
+            "SELECT COUNT(1) FROM payments WHERE fee_type_id = @Id", new { Id = feeTypeId }, cancellationToken) > 0;
     }
 
     public async Task UpdateFeeTypeAsync(Guid feeTypeId, string name, decimal amount, string category,

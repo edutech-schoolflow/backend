@@ -48,6 +48,7 @@ public sealed class GradeController : ControllerBase
     /// <summary>Submit (or re-submit, replacing) the scores for an assessment column.</summary>
     [HttpPost("api/v1/grades")]
     [RequireFeature(StaffFeatureFlags.EnterGrades)]
+    [RequiresCurrentTerm]
     public async Task<ActionResult<ServiceResponses<GradeRecordSummaryResponse>>> Submit(
         [FromBody] SubmitGradesRequest request, CancellationToken cancellationToken)
     {

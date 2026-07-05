@@ -7,6 +7,7 @@ namespace EduTech.Students.ParentFacing;
 public interface IParentChildrenService
 {
     Task<IReadOnlyList<ParentChildResponse>> GetChildrenAsync(CancellationToken cancellationToken);
+    Task<ChildProfileResponse> GetChildAsync(Guid childProfileId, CancellationToken cancellationToken);
     Task<Guid> UpsertChildAsync(UpsertChildProfileRequest request, CancellationToken cancellationToken);
     Task<IReadOnlyList<ChildReportCardSummary>> GetReportCardsAsync(Guid childProfileId, CancellationToken cancellationToken);
     Task<IReadOnlyList<ChildCaScoreResponse>> GetCaScoresAsync(Guid childProfileId, Guid? termId, CancellationToken cancellationToken);
@@ -34,6 +35,26 @@ internal sealed class ParentChildrenService : IParentChildrenService
             ClassName = r.ClassName, AdmissionNumber = r.AdmissionNumber, EnrollmentStatus = r.EnrollmentStatus,
             OutstandingFees = r.OutstandingFees, HasNewResult = r.HasNewResult
         }).ToList();
+    }
+
+    public async Task<ChildProfileResponse> GetChildAsync(Guid childProfileId, CancellationToken cancellationToken)
+    {
+        await EnsureOwnsAsync(childProfileId, cancellationToken);
+        ChildProfileDetailRow row = await _repository.GetChildProfileAsync(childProfileId, cancellationToken)
+            ?? throw new AppErrorException("Child not found.", 404, ErrorCodes.NotFound);
+
+        return new ChildProfileResponse
+        {
+            Id = row.Id,
+            FirstName = row.FirstName,
+            MiddleName = row.MiddleName,
+            LastName = row.LastName,
+            DateOfBirth = row.DateOfBirth,
+            Gender = SnakeCaseEnum.TryParse<Gender>(row.Gender, out Gender g) ? g : null,
+            PhotoUrl = row.PhotoUrl,
+            PreviousSchool = row.PreviousSchool,
+            MedicalInfo = row.MedicalInfo
+        };
     }
 
     public async Task<Guid> UpsertChildAsync(UpsertChildProfileRequest request, CancellationToken cancellationToken)

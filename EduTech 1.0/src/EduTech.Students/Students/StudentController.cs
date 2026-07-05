@@ -46,6 +46,19 @@ public sealed class StudentController : ControllerBase
         return Ok(ServiceResponses<StudentResponse>.Ok(student, "Student admitted."));
     }
 
+    /// <summary>Search for an existing guardian by phone while admitting a student (link vs create).</summary>
+    [HttpGet("parent-lookup")]
+    [RequireFeature(StaffFeatureFlags.ManageAdmissions)]
+    public async Task<ActionResult<ServiceResponses<ParentLookupResponse>>> LookupParent(
+        [FromQuery] string phone, CancellationToken cancellationToken)
+    {
+        ParentLookupResponse result = await _service.LookupParentAsync(phone, cancellationToken);
+        string message = result.Found
+            ? "Existing guardian — this student will be linked to their account."
+            : "No account with this number yet — a new guardian will be created.";
+        return Ok(ServiceResponses<ParentLookupResponse>.Ok(result, message));
+    }
+
     [HttpPut("{id:guid}/contact")]
     [RequireFeature(StaffFeatureFlags.ManageAdmissions)]
     public async Task<ActionResult<ServiceResponses<string?>>> UpdateContact(Guid id,
@@ -69,6 +82,15 @@ public sealed class StudentController : ControllerBase
     {
         await _service.ReAdmitAsync(id, cancellationToken);
         return Ok(ServiceResponses<string?>.Ok(null, "Student re-admitted."));
+    }
+
+    /// <summary>Undo the student's most recent lifecycle action (withdraw / re-admit / transfer).</summary>
+    [HttpPost("{id:guid}/undo-last")]
+    [RequireFeature(StaffFeatureFlags.ManageAdmissions)]
+    public async Task<ActionResult<ServiceResponses<string?>>> UndoLast(Guid id, CancellationToken cancellationToken)
+    {
+        string summary = await _service.UndoLastAsync(id, cancellationToken);
+        return Ok(ServiceResponses<string?>.Ok(null, summary));
     }
 
     [HttpPost("{id:guid}/transfer")]

@@ -10,6 +10,7 @@ internal interface IAcademicCalendarRepository
     Task<IReadOnlyList<AcademicYearRow>> ListYearsAsync(CancellationToken cancellationToken);
     Task<(Guid Id, bool IsCurrent)> CreateYearAsync(string name, int? startsIn, CancellationToken cancellationToken);
     Task<bool> YearExistsAsync(Guid yearId, CancellationToken cancellationToken);
+    Task<AcademicYearRow?> GetYearAsync(Guid yearId, CancellationToken cancellationToken);
     Task<bool> YearNameExistsAsync(string name, Guid? exceptId, CancellationToken cancellationToken);
     Task SetCurrentYearAsync(Guid yearId, CancellationToken cancellationToken);
     Task UpdateYearAsync(Guid yearId, string name, int? startsIn, CancellationToken cancellationToken);
@@ -36,6 +37,7 @@ internal sealed class AcademicYearRow
     public Guid Id { get; init; }
     public string Name { get; init; } = string.Empty;
     public bool IsCurrent { get; init; }
+    public int? StartsIn { get; init; }   // calendar year the session starts (anchor for term bounds)
 }
 
 internal sealed class TermRow
@@ -113,6 +115,14 @@ internal sealed class AcademicCalendarRepository : TenantRepository, IAcademicCa
         return await ExecuteScalarAsync<int>(
             "SELECT COUNT(1) FROM academic_years WHERE id = @Id AND school_id = @SchoolId",
             TenantParameters(new { Id = yearId }), cancellationToken) > 0;
+    }
+
+    public Task<AcademicYearRow?> GetYearAsync(Guid yearId, CancellationToken cancellationToken)
+    {
+        return QuerySingleOrDefaultAsync<AcademicYearRow?>(
+            "SELECT id, name, is_current AS IsCurrent, starts_in AS StartsIn " +
+            "FROM academic_years WHERE id = @Id AND school_id = @SchoolId",
+            TenantParameters(new { Id = yearId }), cancellationToken);
     }
 
     public async Task<bool> YearNameExistsAsync(string name, Guid? exceptId, CancellationToken cancellationToken)

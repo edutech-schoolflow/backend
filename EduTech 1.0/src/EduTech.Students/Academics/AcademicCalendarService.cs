@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using EduTech.Shared.Constants;
 using EduTech.Shared.Exceptions;
+using EduTech.Students.Academics.Domain;
 
 namespace EduTech.Students.Academics;
 
@@ -31,14 +32,24 @@ internal sealed class AcademicCalendarService : IAcademicCalendarService
     public async Task<IReadOnlyList<AcademicYearResponse>> ListYearsAsync(CancellationToken cancellationToken)
     {
         IReadOnlyList<AcademicYearRow> rows = await _repository.ListYearsAsync(cancellationToken);
-        return rows.Select(r => new AcademicYearResponse { Id = r.Id, Name = r.Name, IsCurrent = r.IsCurrent }).ToList();
+        return rows.Select(r => MapAcademicYear(r)).ToList();
     }
 
     public async Task<AcademicYearResponse> CreateYearAsync(CreateAcademicYearRequest request,
         CancellationToken cancellationToken)
     {
-        string name = (request.Name ?? string.Empty).Trim();
-        int? startsIn = RequireStartYear(name);
+        if (request.StartYear <= 0 || request.EndYear <= 0)
+        {
+            throw new AppErrorException("Session start and end years are required.", 400, ErrorCodes.ValidationError);
+        }
+
+        if (request.EndYear != request.StartYear + 1)
+        {
+            throw new AppErrorException("Session duration must be exactly 1 year.", 400, ErrorCodes.ValidationError);
+        }
+
+        string name = BuildSessionName(request.StartYear, request.EndYear);
+        int? startsIn = request.StartYear;
 
         if (await _repository.YearNameExistsAsync(name, null, cancellationToken))
         {
@@ -46,7 +57,7 @@ internal sealed class AcademicCalendarService : IAcademicCalendarService
         }
 
         (Guid id, bool isCurrent) = await _repository.CreateYearAsync(name, startsIn, cancellationToken);
-        return new AcademicYearResponse { Id = id, Name = name, IsCurrent = isCurrent };
+        return new AcademicYearResponse { Id = id, Name = name, StartYear = request.StartYear, EndYear = request.EndYear, IsCurrent = isCurrent };
     }
 
     public async Task SetCurrentYearAsync(Guid yearId, CancellationToken cancellationToken)
@@ -61,13 +72,35 @@ internal sealed class AcademicCalendarService : IAcademicCalendarService
 
     public async Task UpdateYearAsync(Guid yearId, UpdateAcademicYearRequest request, CancellationToken cancellationToken)
     {
-        if (!await _repository.YearExistsAsync(yearId, cancellationToken))
+        AcademicYearRow year = await _repository.GetYearAsync(yearId, cancellationToken)
+            ?? throw new AppErrorException("Academic year not found.", 404, ErrorCodes.NotFound);
+
+        // The aggregate owns the identity lock: a session that's ongoing or already has terms can't be
+        // re-dated (it would misalign the terms/results/fees anchored to it).
+        IReadOnlyList<TermRow> yearTerms = await _repository.ListTermsAsync(yearId, cancellationToken);
+        AcademicSession session = BuildSession(year.Id, year.StartsIn, year.IsCurrent, yearTerms);
+        session.EnsureYearsEditable();
+
+        // Enrolment history is cross-aggregate — it lives outside the session, so the service checks it.
+        YearDependentsRow dependents = await _repository.YearDependentsAsync(yearId, cancellationToken);
+        if (dependents.Enrollments > 0)
         {
-            throw new AppErrorException("Academic year not found.", 404, ErrorCodes.NotFound);
+            throw new AppErrorException(
+                "This session has enrolment records, so its dates are locked.", 409, ErrorCodes.Conflict);
         }
 
-        string name = (request.Name ?? string.Empty).Trim();
-        int? startsIn = RequireStartYear(name);
+        if (request.StartYear <= 0 || request.EndYear <= 0)
+        {
+            throw new AppErrorException("Session start and end years are required.", 400, ErrorCodes.ValidationError);
+        }
+
+        if (request.EndYear != request.StartYear + 1)
+        {
+            throw new AppErrorException("Session duration must be exactly 1 year.", 400, ErrorCodes.ValidationError);
+        }
+
+        string name = BuildSessionName(request.StartYear, request.EndYear);
+        int? startsIn = request.StartYear;
 
         if (await _repository.YearNameExistsAsync(name, yearId, cancellationToken))
         {
@@ -116,39 +149,19 @@ internal sealed class AcademicCalendarService : IAcademicCalendarService
             throw new AppErrorException("Term must be 'first', 'second', or 'third'.", 400, ErrorCodes.ValidationError);
         }
 
-        if (!await _repository.YearExistsAsync(request.AcademicYearId, cancellationToken))
-        {
-            throw new AppErrorException("Academic year not found.", 404, ErrorCodes.NotFound);
-        }
-
-        // One of each term per session (DB-enforced) — friendly 409 instead of a 500.
-        if (await _repository.TermNameExistsAsync(request.AcademicYearId, term, cancellationToken))
-        {
-            throw new AppErrorException($"{term} term already exists for this session.", 409, ErrorCodes.Conflict);
-        }
+        AcademicYearRow year = await _repository.GetYearAsync(request.AcademicYearId, cancellationToken)
+            ?? throw new AppErrorException("Academic year not found.", 404, ErrorCodes.NotFound);
 
         IReadOnlyList<TermRow> existing = await _repository.ListTermsAsync(request.AcademicYearId, cancellationToken);
+        AcademicSession session = BuildSession(year.Id, year.StartsIn, year.IsCurrent, existing);
 
-        // Terms run in order (First → Second → Third). A school may START at any term (they can onboard
-        // mid-year), but after that each new term must be the next one — no skipping, no going backward.
-        if (existing.Count > 0)
-        {
-            Term highest = existing.Select(t => SnakeCaseEnum.Parse<Term>(t.Name)).Max();
-            if (highest == Term.Third)
-            {
-                throw new AppErrorException("This session already has all three terms.", 409, ErrorCodes.Conflict);
-            }
-
-            Term next = highest + 1;
-            if (term != next)
-            {
-                throw new AppErrorException($"Terms are added in order — add {next} term next.", 409, ErrorCodes.Conflict);
-            }
-        }
+        // Ordering + one-of-each are invariants of the session aggregate.
+        session.EnsureCanAddTerm(term);
 
         if (request.StartDate is DateOnly start && request.EndDate is DateOnly end)
         {
-            await ValidateTermDatesAsync(start, end, existing, term, excludeTermId: null, cancellationToken);
+            session.EnsureTermDatesValid(term, start, end, excludeTermId: null);
+            await EnsureNoSchoolWideOverlapAsync(start, end, excludeTermId: null, cancellationToken);
         }
 
         (Guid id, bool isCurrent) = await _repository.CreateTermAsync(request.AcademicYearId, term,
@@ -159,6 +172,7 @@ internal sealed class AcademicCalendarService : IAcademicCalendarService
             Id = id,
             AcademicYearId = request.AcademicYearId,
             Name = term,
+            Season = AcademicSession.SeasonOf(term),
             StartDate = request.StartDate,
             EndDate = request.EndDate,
             IsCurrent = isCurrent
@@ -183,8 +197,11 @@ internal sealed class AcademicCalendarService : IAcademicCalendarService
         if (request.StartDate is DateOnly start && request.EndDate is DateOnly end)
         {
             IReadOnlyList<TermRow> siblings = await _repository.ListTermsAsync(term.AcademicYearId, cancellationToken);
-            Term self = SnakeCaseEnum.Parse<Term>(term.Name);
-            await ValidateTermDatesAsync(start, end, siblings, self, excludeTermId: termId, cancellationToken);
+            AcademicYearRow? year = await _repository.GetYearAsync(term.AcademicYearId, cancellationToken);
+            AcademicSession session = BuildSession(term.AcademicYearId, year?.StartsIn, year?.IsCurrent ?? false, siblings);
+
+            session.EnsureTermDatesValid(SnakeCaseEnum.Parse<Term>(term.Name), start, end, excludeTermId: termId);
+            await EnsureNoSchoolWideOverlapAsync(start, end, excludeTermId: termId, cancellationToken);
         }
 
         await _repository.UpdateTermDatesAsync(termId, request.StartDate, request.EndDate, cancellationToken);
@@ -195,16 +212,10 @@ internal sealed class AcademicCalendarService : IAcademicCalendarService
         TermRow term = await _repository.GetTermAsync(termId, cancellationToken)
             ?? throw new AppErrorException("Term not found.", 404, ErrorCodes.NotFound);
 
-        // Terms are removed in reverse order so the sequence stays contiguous (no First + Third gaps).
+        // Reverse-order removal is a structural invariant of the session aggregate.
         IReadOnlyList<TermRow> siblings = await _repository.ListTermsAsync(term.AcademicYearId, cancellationToken);
-        Term self = SnakeCaseEnum.Parse<Term>(term.Name);
-        Term highest = siblings.Select(t => SnakeCaseEnum.Parse<Term>(t.Name)).Max();
-        if (self != highest)
-        {
-            throw new AppErrorException(
-                $"Delete {highest} term first — terms are removed in reverse order to stay in sequence.",
-                409, ErrorCodes.Conflict);
-        }
+        AcademicSession session = BuildSession(term.AcademicYearId, startYear: null, isCurrent: false, siblings);
+        session.EnsureCanRemoveTerm(termId);
 
         // Deleting a term would cascade its grades, report cards and fee types — block it while it holds data.
         TermDependentsRow dep = await _repository.TermDependentsAsync(termId, cancellationToken);
@@ -226,37 +237,22 @@ internal sealed class AcademicCalendarService : IAcademicCalendarService
         await _repository.DeleteTermAsync(termId, cancellationToken);
     }
 
-    /// <summary>Shared date rules: end ≥ start, starts after the prior term, ends before the next, no overlap.</summary>
-    private async Task ValidateTermDatesAsync(DateOnly start, DateOnly end, IReadOnlyList<TermRow> sessionTerms,
-        Term self, Guid? excludeTermId, CancellationToken cancellationToken)
+    /// <summary>Rebuild the <see cref="AcademicSession"/> aggregate from persisted rows.</summary>
+    private static AcademicSession BuildSession(Guid yearId, int? startYear, bool isCurrent,
+        IReadOnlyList<TermRow> terms)
     {
-        if (end < start)
-        {
-            throw new AppErrorException("End date cannot be before the start date.", 400, ErrorCodes.ValidationError);
-        }
+        IEnumerable<SessionTerm> sessionTerms = (terms ?? Array.Empty<TermRow>())
+            .Select(t => new SessionTerm(t.Id, SnakeCaseEnum.Parse<Term>(t.Name), t.StartDate, t.EndDate, t.IsCurrent));
+        return new AcademicSession(yearId, startYear, isCurrent, sessionTerms);
+    }
 
-        List<(Term Ord, TermRow Row)> others = sessionTerms
-            .Where(t => t.Id != excludeTermId)
-            .Select(t => (SnakeCaseEnum.Parse<Term>(t.Name), t))
-            .ToList();
-
-        // Must start after every earlier term in this session ends.
-        DateOnly? priorEnd = others.Where(o => o.Ord < self && o.Row.EndDate is not null).Select(o => o.Row.EndDate).Max();
-        if (priorEnd is DateOnly pe && start <= pe)
-        {
-            throw new AppErrorException(
-                $"This term must start after the previous term ends ({pe:yyyy-MM-dd}).", 409, ErrorCodes.Conflict);
-        }
-
-        // Must end before every later term in this session starts.
-        DateOnly? nextStart = others.Where(o => o.Ord > self && o.Row.StartDate is not null).Select(o => o.Row.StartDate).Min();
-        if (nextStart is DateOnly ns && end >= ns)
-        {
-            throw new AppErrorException(
-                $"This term must end before the next term starts ({ns:yyyy-MM-dd}).", 409, ErrorCodes.Conflict);
-        }
-
-        // A school runs one session/term at a time — reject any overlap with another dated term.
+    /// <summary>
+    /// Cross-aggregate rule: a school runs one term at a time, so a term's dates must not overlap any other
+    /// dated term across the whole school (not just this session) — which only the database can see.
+    /// </summary>
+    private async Task EnsureNoSchoolWideOverlapAsync(DateOnly start, DateOnly end, Guid? excludeTermId,
+        CancellationToken cancellationToken)
+    {
         if (await _repository.HasDateOverlapAsync(start, end, excludeTermId, cancellationToken))
         {
             throw new AppErrorException(
@@ -265,33 +261,49 @@ internal sealed class AcademicCalendarService : IAcademicCalendarService
         }
     }
 
-    // Sessions are ordered by the calendar year they start (e.g. 2024 for "2024/2025"), so promotion and
-    // progression have a real chronology — require a 4-digit year in the name.
-    private static int? RequireStartYear(string name)
+    private static string BuildSessionName(int startYear, int endYear)
     {
-        if (name.Length == 0)
-        {
-            throw new AppErrorException("Session name is required.", 400, ErrorCodes.ValidationError);
-        }
-
-        Match m = Regex.Match(name, @"\d{4}");
-        if (!m.Success)
-        {
-            throw new AppErrorException(
-                "Use a year-based session name like \"2024/2025\" so sessions stay in order.",
-                400, ErrorCodes.ValidationError);
-        }
-
-        return int.Parse(m.Value);
+        return $"{startYear}/{endYear % 100:00}";
     }
 
-    private static TermResponse Map(TermRow r) => new TermResponse
+    private static AcademicYearResponse MapAcademicYear(AcademicYearRow r)
     {
-        Id = r.Id,
-        AcademicYearId = r.AcademicYearId,
-        Name = SnakeCaseEnum.Parse<Term>(r.Name),
-        StartDate = r.StartDate,
-        EndDate = r.EndDate,
-        IsCurrent = r.IsCurrent
-    };
+        string[] parts = r.Name.Split('/', 2, StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        int startYear = parts.Length > 0 ? ParseYearValue(parts[0]) : 0;
+        int endYear = parts.Length > 1 ? ParseYearValue(parts[1]) : 0;
+
+        return new AcademicYearResponse
+        {
+            Id = r.Id,
+            Name = r.Name,
+            StartYear = startYear,
+            EndYear = endYear,
+            IsCurrent = r.IsCurrent
+        };
+    }
+
+    private static int ParseYearValue(string value)
+    {
+        if (int.TryParse(value, out int parsed))
+        {
+            return value.Length <= 2 ? 2000 + parsed : parsed;
+        }
+
+        return 0;
+    }
+
+    private static TermResponse Map(TermRow r)
+    {
+        Term name = SnakeCaseEnum.Parse<Term>(r.Name);
+        return new TermResponse
+        {
+            Id = r.Id,
+            AcademicYearId = r.AcademicYearId,
+            Name = name,
+            Season = AcademicSession.SeasonOf(name),
+            StartDate = r.StartDate,
+            EndDate = r.EndDate,
+            IsCurrent = r.IsCurrent
+        };
+    }
 }

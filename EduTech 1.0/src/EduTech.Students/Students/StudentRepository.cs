@@ -21,6 +21,12 @@ internal interface IStudentRepository
     Task<(Guid Id, string AdmissionNumber)> CreateAsync(StudentInsert student,
         IReadOnlyList<GuardianDto> extraGuardians, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Look up an existing parent account by phone so the Add-Student modal can show whether the
+    /// guardian is already known (link) or new (create). Null when the phone is unknown.
+    /// </summary>
+    Task<ParentLookupRow?> LookupParentByPhoneAsync(string phone, CancellationToken cancellationToken);
+
     Task<bool> ExistsAsync(Guid studentId, CancellationToken cancellationToken);
     Task<bool> ClassArmExistsAsync(Guid classArmId, CancellationToken cancellationToken);
     Task<bool> ClassExistsAsync(Guid classId, CancellationToken cancellationToken);
@@ -35,7 +41,7 @@ internal interface IStudentRepository
     /// <summary>Race-safe status change: flips only if still in <paramref name="from"/>. Returns rows affected.</summary>
     Task<int> SetStatusIfAsync(Guid studentId, StudentStatus from, StudentStatus to, CancellationToken cancellationToken);
 
-    Task SetClassArmAsync(Guid studentId, Guid classArmId, CancellationToken cancellationToken);
+    Task SetClassArmAsync(Guid studentId, Guid? classArmId, CancellationToken cancellationToken);
 
     Task<bool> YearExistsAsync(Guid academicYearId, CancellationToken cancellationToken);
 
@@ -114,6 +120,14 @@ internal sealed class GuardianRow
     public string Phone { get; init; } = string.Empty;
     public string Relationship { get; init; } = string.Empty;
     public string? Email { get; init; }
+}
+
+internal sealed class ParentLookupRow
+{
+    public string FirstName { get; init; } = string.Empty;
+    public string? MiddleName { get; init; }
+    public string LastName { get; init; } = string.Empty;
+    public bool HasPassword { get; init; }
 }
 
 internal sealed class StudentRepository : TenantRepository, IStudentRepository
@@ -288,6 +302,21 @@ internal sealed class StudentRepository : TenantRepository, IStudentRepository
             cancellationToken, tx);
     }
 
+    public Task<ParentLookupRow?> LookupParentByPhoneAsync(string phone, CancellationToken cancellationToken)
+    {
+        // parents is a GLOBAL table keyed by phone (a parent can have children in many schools), so this
+        // is intentionally not tenant-scoped. HasPassword distinguishes a claimed/registered account from
+        // a school-seeded pending one.
+        return QuerySingleOrDefaultAsync<ParentLookupRow?>(
+            """
+            SELECT first_name AS FirstName, middle_name AS MiddleName, last_name AS LastName,
+                   (password_hash IS NOT NULL) AS HasPassword
+            FROM parents
+            WHERE phone = @Phone
+            """,
+            new { Phone = phone }, cancellationToken);
+    }
+
     public async Task<bool> ExistsAsync(Guid studentId, CancellationToken cancellationToken)
     {
         return await ExecuteScalarAsync<int>(
@@ -429,7 +458,7 @@ internal sealed class StudentRepository : TenantRepository, IStudentRepository
             cancellationToken);
     }
 
-    public Task SetClassArmAsync(Guid studentId, Guid classArmId, CancellationToken cancellationToken)
+    public Task SetClassArmAsync(Guid studentId, Guid? classArmId, CancellationToken cancellationToken)
     {
         return ExecuteAsync(
             "UPDATE students SET class_arm_id = @ArmId, updated_at = NOW() WHERE id = @Id AND school_id = @SchoolId",

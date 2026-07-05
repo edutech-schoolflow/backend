@@ -170,7 +170,16 @@ internal sealed class SchoolFeeService : ISchoolFeeService
             throw new AppErrorException("Fee type not found.", 404, ErrorCodes.NotFound);
         }
 
-        // Already billed someone -> archive (keep the record + audit link). Never used -> safe to hard delete.
+        // Once a payment has been recorded against a fee it is permanent financial history — archiving it
+        // would silently drop it from what students owe, so it can be neither archived nor deleted.
+        if (await _repository.FeeTypeHasPaymentsAsync(feeTypeId, cancellationToken))
+        {
+            throw new AppErrorException(
+                "This fee already has payments recorded against it, so it can't be archived or deleted.",
+                409, ErrorCodes.Conflict);
+        }
+
+        // Subscribed but not yet paid -> archive (keep the record + audit link). Never used -> hard delete.
         if (await _repository.FeeTypeIsUsedAsync(feeTypeId, cancellationToken))
         {
             await _repository.ArchiveFeeTypeAsync(feeTypeId, cancellationToken);

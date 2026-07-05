@@ -11,6 +11,7 @@ internal interface IParentChildrenRepository
 {
     Task<bool> OwnsChildAsync(Guid parentId, Guid childProfileId, CancellationToken cancellationToken);
     Task<IReadOnlyList<ParentChildRow>> GetChildrenAsync(Guid parentId, CancellationToken cancellationToken);
+    Task<ChildProfileDetailRow?> GetChildProfileAsync(Guid childProfileId, CancellationToken cancellationToken);
     Task<Guid> InsertChildProfileAsync(Guid parentId, ChildProfileInsert insert, string? relationship, CancellationToken cancellationToken);
     Task UpdateChildProfileAsync(Guid childProfileId, ChildProfileInsert insert, CancellationToken cancellationToken);
     Task<IReadOnlyList<ChildReportCardRow>> GetReportCardsAsync(Guid childProfileId, CancellationToken cancellationToken);
@@ -43,6 +44,19 @@ internal sealed class ParentChildRow
     public string? EnrollmentStatus { get; init; }
     public decimal OutstandingFees { get; init; }
     public bool HasNewResult { get; init; }
+}
+
+internal sealed class ChildProfileDetailRow
+{
+    public Guid Id { get; init; }
+    public string FirstName { get; init; } = string.Empty;
+    public string? MiddleName { get; init; }
+    public string LastName { get; init; } = string.Empty;
+    public DateOnly DateOfBirth { get; init; }
+    public string? Gender { get; init; }   // snake_case wire string
+    public string? PhotoUrl { get; init; }
+    public string? PreviousSchool { get; init; }
+    public string? MedicalInfo { get; init; }
 }
 
 internal sealed class ChildReportCardRow
@@ -123,6 +137,19 @@ internal sealed class ParentChildrenRepository : BaseRepository, IParentChildren
             ORDER BY cp.first_name, cp.last_name
             """,
             new { ParentId = parentId }, cancellationToken);
+    }
+
+    public Task<ChildProfileDetailRow?> GetChildProfileAsync(Guid childProfileId, CancellationToken cancellationToken)
+    {
+        return QuerySingleOrDefaultAsync<ChildProfileDetailRow?>(
+            """
+            SELECT id AS Id, first_name AS FirstName, middle_name AS MiddleName, last_name AS LastName,
+                   date_of_birth AS DateOfBirth, gender AS Gender, photo_url AS PhotoUrl,
+                   previous_school AS PreviousSchool, medical_info AS MedicalInfo
+            FROM child_profiles
+            WHERE id = @Id
+            """,
+            new { Id = childProfileId }, cancellationToken);
     }
 
     public async Task<Guid> InsertChildProfileAsync(Guid parentId, ChildProfileInsert insert, string? relationship,

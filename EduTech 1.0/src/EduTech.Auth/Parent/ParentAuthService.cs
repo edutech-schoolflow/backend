@@ -84,7 +84,9 @@ internal sealed class ParentAuthService : IParentAuthService
 
         string? email = string.IsNullOrWhiteSpace(request.Email) ? null : request.Email.Trim();
 
-        if (await _parents.ExistsByPhoneAsync(phone, cancellationToken))
+       
+        ParentClaimState? existing = await _parents.GetClaimStateByPhoneAsync(phone, cancellationToken);
+        if (existing is not null && existing.HasPassword)
         {
             throw new AppErrorException(RegistrationFailed, 409, ErrorCodes.PhoneTaken,
                 logReason: "Parent registration blocked: phone already registered.");
@@ -97,17 +99,33 @@ internal sealed class ParentAuthService : IParentAuthService
         }
 
         string passwordHash = _passwordHasher.Hash(request.Password);
+        string firstName = request.FirstName.Trim();
+        string? middleName = string.IsNullOrWhiteSpace(request.MiddleName) ? null : request.MiddleName.Trim();
+        string lastName = request.LastName.Trim();
 
         Guid parentId;
-        try
+        if (existing is not null)
         {
-            parentId = await _parents.CreateAsync(request.FirstName.Trim(),
-                string.IsNullOrWhiteSpace(request.MiddleName) ? null : request.MiddleName.Trim(),
-                request.LastName.Trim(), phone, email, passwordHash, cancellationToken);
+            int claimed = await _parents.ClaimAsync(existing.Id, firstName, middleName, lastName,
+                email, passwordHash, cancellationToken);
+            if (claimed == 0)
+            {
+                throw new AppErrorException(RegistrationFailed, 409, ErrorCodes.PhoneTaken,
+                    logReason: "Parent registration blocked: pending account was claimed concurrently.");
+            }
+            parentId = existing.Id;
         }
-        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
+        else
         {
-            throw MapUniqueViolation(ex);
+            try
+            {
+                parentId = await _parents.CreateAsync(firstName, middleName, lastName, phone, email,
+                    passwordHash, cancellationToken);
+            }
+            catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
+            {
+                throw MapUniqueViolation(ex);
+            }
         }
 
         string code = await _otpService.GenerateAsync(

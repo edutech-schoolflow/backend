@@ -49,6 +49,7 @@ public sealed class AttendanceController : ControllerBase
     /// <summary>Submit (or re-submit, replacing) a day's register for an arm.</summary>
     [HttpPost("api/v1/attendance")]
     [RequireFeature(StaffFeatureFlags.MarkStudentAttendance)]
+    [RequiresCurrentTerm]
     public async Task<ActionResult<ServiceResponses<AttendanceRecordResponse>>> Submit(
         [FromBody] SubmitAttendanceRequest request, CancellationToken cancellationToken)
     {

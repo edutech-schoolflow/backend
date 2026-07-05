@@ -164,14 +164,30 @@ public class SchoolFeeServiceTests
     }
 
     [Fact]
-    public async Task Delete_Billed_ArchivesInstead()
+    public async Task Delete_SubscribedButNotPaid_ArchivesInstead()
     {
         _repo.Setup(r => r.GetFeeTypeAsync(Fee, It.IsAny<CancellationToken>())).ReturnsAsync(Row("approved"));
+        _repo.Setup(r => r.FeeTypeHasPaymentsAsync(Fee, It.IsAny<CancellationToken>())).ReturnsAsync(false);
         _repo.Setup(r => r.FeeTypeIsUsedAsync(Fee, It.IsAny<CancellationToken>())).ReturnsAsync(true);
 
         bool archived = await CreateSut().DeleteFeeTypeAsync(Fee, CancellationToken.None);
 
         Assert.True(archived);
         _repo.Verify(r => r.ArchiveFeeTypeAsync(Fee, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Delete_WithPaymentsRecorded_Throws409()
+    {
+        // A fee somebody has paid toward is permanent — it can't be archived or deleted.
+        _repo.Setup(r => r.GetFeeTypeAsync(Fee, It.IsAny<CancellationToken>())).ReturnsAsync(Row("approved"));
+        _repo.Setup(r => r.FeeTypeHasPaymentsAsync(Fee, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+
+        AppErrorException ex = await Assert.ThrowsAsync<AppErrorException>(
+            () => CreateSut().DeleteFeeTypeAsync(Fee, CancellationToken.None));
+
+        Assert.Equal(409, ex.StatusCode);
+        _repo.Verify(r => r.ArchiveFeeTypeAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+        _repo.Verify(r => r.DeleteFeeTypeAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 }

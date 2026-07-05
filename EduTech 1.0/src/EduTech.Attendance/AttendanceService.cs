@@ -105,6 +105,7 @@ internal sealed class AttendanceService : IAttendanceService
             marks.Add((mark.StudentId, status));
         }
 
+        // The [RequiresCurrentTerm] filter guarantees a current term exists before we get here.
         Guid? termId = await _repository.GetCurrentTermIdAsync(cancellationToken);
         Guid? submittedBy = _context.IsOwner ? null : CurrentAffiliation();
 

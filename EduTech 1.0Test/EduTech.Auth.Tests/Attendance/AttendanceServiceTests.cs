@@ -13,7 +13,9 @@ public class AttendanceServiceTests
 
     private AttendanceService CreateSut() => new(_repo.Object, _context.Object);
 
+    private static readonly Guid Cls = Guid.NewGuid();
     private static readonly Guid Arm = Guid.NewGuid();
+    private static readonly Guid Term = Guid.NewGuid();
     private static readonly Guid TeacherAffiliation = Guid.NewGuid();
     private static readonly Guid StudentA = Guid.NewGuid();
     private static readonly Guid StudentB = Guid.NewGuid();
@@ -31,12 +33,14 @@ public class AttendanceServiceTests
         _context.SetupGet(c => c.AffiliationId).Returns(affiliation.ToString());
     }
 
-    private void ArmExists(Guid? classTeacher) =>
-        _repo.Setup(r => r.GetArmAsync(Arm, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new ArmInfoRow { Id = Arm, ArmName = "JSS 1A", ClassTeacherAffiliationId = classTeacher });
+    // The register unit is a class with an optional arm; the class teacher of the unit may mark it.
+    private void UnitExists(Guid? classTeacher) =>
+        _repo.Setup(r => r.GetUnitAsync(Cls, Arm, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new UnitInfoRow { ClassId = Cls, ArmId = Arm, UnitName = "JSS 1A", ClassTeacherAffiliationId = classTeacher });
 
     private static SubmitAttendanceRequest ValidSubmit() => new SubmitAttendanceRequest
     {
+        ClassId = Cls,
         ArmId = Arm,
         Date = Yesterday,
         Marks = new List<AttendanceMarkInput>
@@ -47,16 +51,16 @@ public class AttendanceServiceTests
     };
 
     private void RosterHas(params Guid[] studentIds) =>
-        _repo.Setup(r => r.GetActiveStudentIdsAsync(Arm, It.IsAny<CancellationToken>()))
+        _repo.Setup(r => r.GetActiveStudentIdsAsync(Cls, Arm, It.IsAny<CancellationToken>()))
             .ReturnsAsync(studentIds);
 
     // ---- authorization ----
 
     [Fact]
-    public async Task Submit_ArmNotFound_Throws404()
+    public async Task Submit_UnitNotFound_Throws404()
     {
         AsOwner();
-        _repo.Setup(r => r.GetArmAsync(Arm, It.IsAny<CancellationToken>())).ReturnsAsync((ArmInfoRow?)null);
+        _repo.Setup(r => r.GetUnitAsync(Cls, Arm, It.IsAny<CancellationToken>())).ReturnsAsync((UnitInfoRow?)null);
 
         AppErrorException ex = await Assert.ThrowsAsync<AppErrorException>(
             () => CreateSut().SubmitAsync(ValidSubmit(), CancellationToken.None));
@@ -67,7 +71,7 @@ public class AttendanceServiceTests
     public async Task Submit_NotClassTeacher_Throws403()
     {
         AsClassTeacher(Guid.NewGuid());           // some other affiliation
-        ArmExists(TeacherAffiliation);            // arm owned by a different teacher
+        UnitExists(TeacherAffiliation);           // unit owned by a different teacher
 
         AppErrorException ex = await Assert.ThrowsAsync<AppErrorException>(
             () => CreateSut().SubmitAsync(ValidSubmit(), CancellationToken.None));
@@ -75,14 +79,14 @@ public class AttendanceServiceTests
     }
 
     [Fact]
-    public async Task Submit_OwnerAnyArm_Succeeds()
+    public async Task Submit_OwnerAnyUnit_Succeeds()
     {
         AsOwner();
-        ArmExists(TeacherAffiliation);            // owner doesn't need to be the class teacher
+        UnitExists(TeacherAffiliation);           // owner doesn't need to be the class teacher
         RosterHas(StudentA, StudentB);
-        _repo.Setup(r => r.GetCurrentTermIdAsync(It.IsAny<CancellationToken>())).ReturnsAsync((Guid?)null);
+        _repo.Setup(r => r.GetCurrentTermIdAsync(It.IsAny<CancellationToken>())).ReturnsAsync(Term);
         Guid recordId = Guid.NewGuid();
-        _repo.Setup(r => r.UpsertRecordAsync(Arm, Yesterday, null, null,
+        _repo.Setup(r => r.UpsertRecordAsync(Cls, Arm, Yesterday, Term, null,
                 It.IsAny<IReadOnlyList<(Guid, AttendanceStatus)>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((recordId, DateTime.UtcNow));
 
@@ -95,21 +99,24 @@ public class AttendanceServiceTests
     }
 
     [Fact]
-    public async Task Submit_ClassTeacherOfArm_PassesOwnAffiliationAsSubmitter()
+    public async Task Submit_ClassTeacherOfUnit_PassesOwnAffiliationAsSubmitter()
     {
         AsClassTeacher(TeacherAffiliation);
-        ArmExists(TeacherAffiliation);
+        UnitExists(TeacherAffiliation);
         RosterHas(StudentA, StudentB);
-        _repo.Setup(r => r.GetCurrentTermIdAsync(It.IsAny<CancellationToken>())).ReturnsAsync((Guid?)null);
-        _repo.Setup(r => r.UpsertRecordAsync(Arm, Yesterday, null, TeacherAffiliation,
+        _repo.Setup(r => r.GetCurrentTermIdAsync(It.IsAny<CancellationToken>())).ReturnsAsync(Term);
+        _repo.Setup(r => r.UpsertRecordAsync(Cls, Arm, Yesterday, Term, TeacherAffiliation,
                 It.IsAny<IReadOnlyList<(Guid, AttendanceStatus)>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((Guid.NewGuid(), DateTime.UtcNow));
 
         await CreateSut().SubmitAsync(ValidSubmit(), CancellationToken.None);
 
-        _repo.Verify(r => r.UpsertRecordAsync(Arm, Yesterday, null, TeacherAffiliation,
+        _repo.Verify(r => r.UpsertRecordAsync(Cls, Arm, Yesterday, Term, TeacherAffiliation,
             It.IsAny<IReadOnlyList<(Guid, AttendanceStatus)>>(), It.IsAny<CancellationToken>()), Times.Once);
     }
+
+    // "No current term → blocked" is enforced at the edge by [RequiresCurrentTerm]
+    // (see RequiresCurrentTermAttributeTests), so the service no longer re-checks it.
 
     // ---- validation ----
 
@@ -117,9 +124,11 @@ public class AttendanceServiceTests
     public async Task Submit_FutureDate_Throws400()
     {
         AsOwner();
-        ArmExists(TeacherAffiliation);
-        SubmitAttendanceRequest req = ValidSubmit();
-        req = new SubmitAttendanceRequest { ArmId = Arm, Date = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(1)), Marks = req.Marks };
+        UnitExists(TeacherAffiliation);
+        SubmitAttendanceRequest req = new SubmitAttendanceRequest
+        {
+            ClassId = Cls, ArmId = Arm, Date = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(1)), Marks = ValidSubmit().Marks
+        };
 
         AppErrorException ex = await Assert.ThrowsAsync<AppErrorException>(
             () => CreateSut().SubmitAsync(req, CancellationToken.None));
@@ -130,10 +139,10 @@ public class AttendanceServiceTests
     public async Task Submit_EmptyMarks_Throws400()
     {
         AsOwner();
-        ArmExists(TeacherAffiliation);
+        UnitExists(TeacherAffiliation);
 
         AppErrorException ex = await Assert.ThrowsAsync<AppErrorException>(
-            () => CreateSut().SubmitAsync(new SubmitAttendanceRequest { ArmId = Arm, Date = Yesterday }, CancellationToken.None));
+            () => CreateSut().SubmitAsync(new SubmitAttendanceRequest { ClassId = Cls, ArmId = Arm, Date = Yesterday }, CancellationToken.None));
         Assert.Equal(400, ex.StatusCode);
     }
 
@@ -142,11 +151,11 @@ public class AttendanceServiceTests
     {
         // Status omitted → null → service rejects (an invalid status is unrepresentable with the enum).
         AsOwner();
-        ArmExists(TeacherAffiliation);
+        UnitExists(TeacherAffiliation);
         RosterHas(StudentA);
         SubmitAttendanceRequest req = new SubmitAttendanceRequest
         {
-            ArmId = Arm, Date = Yesterday,
+            ClassId = Cls, ArmId = Arm, Date = Yesterday,
             Marks = new List<AttendanceMarkInput> { new AttendanceMarkInput { StudentId = StudentA } }
         };
 
@@ -156,11 +165,11 @@ public class AttendanceServiceTests
     }
 
     [Fact]
-    public async Task Submit_StudentNotInArm_Throws400()
+    public async Task Submit_StudentNotInUnit_Throws400()
     {
         AsOwner();
-        ArmExists(TeacherAffiliation);
-        RosterHas(StudentA);                      // StudentB is not in the arm
+        UnitExists(TeacherAffiliation);
+        RosterHas(StudentA);                      // StudentB is not in the unit
 
         AppErrorException ex = await Assert.ThrowsAsync<AppErrorException>(
             () => CreateSut().SubmitAsync(ValidSubmit(), CancellationToken.None));
@@ -171,11 +180,11 @@ public class AttendanceServiceTests
     public async Task Submit_DuplicateStudent_Throws400()
     {
         AsOwner();
-        ArmExists(TeacherAffiliation);
+        UnitExists(TeacherAffiliation);
         RosterHas(StudentA);
         SubmitAttendanceRequest req = new SubmitAttendanceRequest
         {
-            ArmId = Arm, Date = Yesterday,
+            ClassId = Cls, ArmId = Arm, Date = Yesterday,
             Marks = new List<AttendanceMarkInput>
             {
                 new AttendanceMarkInput { StudentId = StudentA, Status = AttendanceStatus.Present },
@@ -188,14 +197,14 @@ public class AttendanceServiceTests
         Assert.Equal(400, ex.StatusCode);
     }
 
-    // ---- roster + arms ----
+    // ---- roster + units ----
 
     [Fact]
     public async Task ListMarkableArms_ForwardsAffiliationAndOwnerFlag()
     {
         AsClassTeacher(TeacherAffiliation);
         _repo.Setup(r => r.ListMarkableArmsAsync(TeacherAffiliation, false, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new[] { new MarkableArmRow { ArmId = Arm, ArmName = "JSS 1A", ClassId = Guid.NewGuid(), ClassName = "JSS 1", Level = "junior_secondary" } });
+            .ReturnsAsync(new[] { new MarkableArmRow { ArmId = Arm, ArmName = "JSS 1A", ClassId = Cls, ClassName = "JSS 1", Level = "junior_secondary" } });
 
         IReadOnlyList<MarkableArmResponse> arms = await CreateSut().ListMarkableArmsAsync(CancellationToken.None);
 
@@ -208,12 +217,12 @@ public class AttendanceServiceTests
     public async Task Roster_SetsSubmittedFromRecordExists()
     {
         AsOwner();
-        ArmExists(TeacherAffiliation);
-        _repo.Setup(r => r.GetRosterAsync(Arm, Yesterday, It.IsAny<CancellationToken>()))
+        UnitExists(TeacherAffiliation);
+        _repo.Setup(r => r.GetRosterAsync(Cls, Arm, Yesterday, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new[] { new RosterStudentRow { StudentId = StudentA, StudentName = "Tolu Adebayo", Status = "present" } });
-        _repo.Setup(r => r.RecordExistsAsync(Arm, Yesterday, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        _repo.Setup(r => r.RecordExistsAsync(Cls, Arm, Yesterday, It.IsAny<CancellationToken>())).ReturnsAsync(true);
 
-        AttendanceRosterResponse res = await CreateSut().GetRosterAsync(Arm, Yesterday, CancellationToken.None);
+        AttendanceRosterResponse res = await CreateSut().GetRosterAsync(Cls, Arm, Yesterday, CancellationToken.None);
 
         Assert.True(res.Submitted);
         Assert.Single(res.Students);
@@ -223,14 +232,14 @@ public class AttendanceServiceTests
     // ---- overview ----
 
     [Fact]
-    public async Task Overview_ComputesPercentsAndTotalsFromSubmittedArmsOnly()
+    public async Task Overview_ComputesPercentsAndTotalsFromSubmittedUnitsOnly()
     {
         AsOwner();
         DateOnly date = Yesterday;
         _repo.Setup(r => r.GetOverviewArmStatsAsync(date, It.IsAny<CancellationToken>())).ReturnsAsync(new[]
         {
-            new ArmStatRow { ArmId = Guid.NewGuid(), ArmName = "JSS 1A", Submitted = true,  PresentCount = 18, AbsentCount = 2, LateCount = 0, TotalCount = 20 },
-            new ArmStatRow { ArmId = Guid.NewGuid(), ArmName = "JSS 1B", Submitted = false, PresentCount = 0,  AbsentCount = 0, LateCount = 0, TotalCount = 25 }
+            new ArmStatRow { ClassId = Cls, ArmId = Arm, ArmName = "JSS 1A", Submitted = true,  PresentCount = 18, AbsentCount = 2, LateCount = 0, TotalCount = 20 },
+            new ArmStatRow { ClassId = Guid.NewGuid(), ArmId = Guid.NewGuid(), ArmName = "JSS 1B", Submitted = false, PresentCount = 0, AbsentCount = 0, LateCount = 0, TotalCount = 25 }
         });
         _repo.Setup(r => r.GetAbsentStudentsAsync(date, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new[] { new AbsentStudentRow { StudentName = "Ada Obi", ArmName = "JSS 1A" } });
@@ -239,7 +248,7 @@ public class AttendanceServiceTests
 
         Assert.Equal(18, res.TotalPresent);
         Assert.Equal(2, res.TotalAbsent);
-        Assert.Equal(20, res.TotalStudents);          // the unsubmitted arm contributes nothing
+        Assert.Equal(20, res.TotalStudents);          // the unsubmitted unit contributes nothing
         Assert.Equal(90, res.OverallPresentPct);      // 18 / 20
         Assert.Equal(90, res.Arms.First(a => a.ArmName == "JSS 1A").PresentPct);
         Assert.Equal(0, res.Arms.First(a => a.ArmName == "JSS 1B").PresentPct);

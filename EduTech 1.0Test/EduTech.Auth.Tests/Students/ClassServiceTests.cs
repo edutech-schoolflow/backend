@@ -22,12 +22,19 @@ public class ClassServiceTests
     }
 
     [Fact]
-    public async Task CreateClass_NoArms_Throws400()
+    public async Task CreateClass_NoArms_Succeeds()
     {
-        AppErrorException ex = await Assert.ThrowsAsync<AppErrorException>(() => CreateSut().CreateClassAsync(
-            new CreateClassRequest { Name = "JSS 1", Level = ClassLevel.JuniorSecondary, Arms = new() }, CancellationToken.None));
+        // A class can now take students directly, without any arm — 0 arms is valid.
+        Guid classId = Guid.NewGuid();
+        _repo.Setup(r => r.CreateClassWithArmsAsync("JSS 1", ClassLevel.JuniorSecondary, 0,
+                It.IsAny<IReadOnlyList<(string, Guid?)>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(classId);
 
-        Assert.Equal(400, ex.StatusCode);
+        SchoolClassResponse res = await CreateSut().CreateClassAsync(
+            new CreateClassRequest { Name = "JSS 1", Level = ClassLevel.JuniorSecondary, Arms = new() }, CancellationToken.None);
+
+        Assert.Equal(classId, res.Id);
+        Assert.Equal(0, res.ArmsCount);
     }
 
     [Fact]

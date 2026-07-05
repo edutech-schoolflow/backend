@@ -11,9 +11,12 @@ using EduTech.Grades;
 using EduTech.Notifications;
 using EduTech.Students;
 using EduTech.School;
+using EduTech.Shared.Audit;
+using EduTech.Shared.Auth;
 using EduTech.Shared.Caching;
 using EduTech.Shared.Constants;
 using EduTech.Shared.Context;
+using EduTech.Shared.Events;
 using EduTech.Shared.Features;
 using EduTech.Shared.HealthChecks;
 using EduTech.Shared.Identity;
@@ -238,6 +241,9 @@ builder.Services.AddSingleton<IFieldEncryptor, AesFieldEncryptor>();
 builder.Services.AddIdentityVerification(config);   // shared Dojah/stub seam (school KYC + compliance)
 builder.Services.AddFeatureFlags();
 builder.Services.AddSlackNotifications(config);     // error alerts -> Slack (real) or logs (dev)
+builder.Services.AddDomainEvents();                 // Observer: publisher; modules register their handlers
+builder.Services.AddAuditLog();                     // Observer: writes every auditable event to the trail
+builder.Services.AddCurrentTermGuard();             // provider behind [RequiresCurrentTerm]
 builder.Services.AddAuthModule();
 builder.Services.AddNotificationsModule(config);
 builder.Services.AddSchoolModule(config);

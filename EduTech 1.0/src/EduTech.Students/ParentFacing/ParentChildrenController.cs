@@ -29,6 +29,15 @@ public sealed class ParentChildrenController : ControllerBase
         return Ok(ServiceResponses<IReadOnlyList<ParentChildResponse>>.Ok(children, "Children."));
     }
 
+    /// <summary>Full profile for one of my children (for prefilling the edit/enrol form).</summary>
+    [HttpGet("{childProfileId:guid}")]
+    public async Task<ActionResult<ServiceResponses<ChildProfileResponse>>> Get(
+        Guid childProfileId, CancellationToken cancellationToken)
+    {
+        ChildProfileResponse child = await _service.GetChildAsync(childProfileId, cancellationToken);
+        return Ok(ServiceResponses<ChildProfileResponse>.Ok(child, "Child profile."));
+    }
+
     /// <summary>Create a new child profile, or update one I own (when Id is supplied).</summary>
     [HttpPost]
     public async Task<ActionResult<ServiceResponses<object>>> Upsert(

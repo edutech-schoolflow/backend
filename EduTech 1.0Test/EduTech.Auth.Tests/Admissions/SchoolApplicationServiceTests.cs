@@ -1,7 +1,8 @@
 using EduTech.Shared.Constants;
+using EduTech.Shared.Events;
 using EduTech.Shared.Exceptions;
-using EduTech.Shared.Notifications;
 using EduTech.Students.Admissions;
+using EduTech.Students.Admissions.Events;
 using Moq;
 
 namespace EduTech.Auth.Tests.Admissions;
@@ -9,11 +10,12 @@ namespace EduTech.Auth.Tests.Admissions;
 public class SchoolApplicationServiceTests
 {
     private readonly Mock<ISchoolApplicationRepository> _repo = new();
-    private readonly Mock<INotificationDispatcher> _sms = new();
+    private readonly Mock<IDomainEventPublisher> _events = new();
 
-    private SchoolApplicationService CreateSut() => new(_repo.Object, _sms.Object);
+    private SchoolApplicationService CreateSut() => new(_repo.Object, _events.Object);
 
     private static readonly Guid App = Guid.NewGuid();
+    private static readonly Guid Cls = Guid.NewGuid();
     private static readonly Guid Arm = Guid.NewGuid();
 
     private static ApplicationRow Row(string status, string? admission = null) => new ApplicationRow
@@ -28,54 +30,73 @@ public class SchoolApplicationServiceTests
         _repo.Setup(r => r.GetNotifyTargetAsync(App, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ApplicationNotifyRow { Phone = "+2348030000001", ChildName = "Tunde Johnson" });
 
-    [Fact]
-    public async Task Admit_UnderReview_CreatesStudentAndNotifies()
+    private void ValidClassAndArm()
     {
-        _repo.Setup(r => r.ArmExistsAsync(Arm, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        _repo.Setup(r => r.ClassExistsAsync(Cls, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        _repo.Setup(r => r.ArmInClassAsync(Arm, Cls, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+    }
+
+    [Fact]
+    public async Task Admit_UnderReview_CreatesStudentAndPublishesEvent()
+    {
+        ValidClassAndArm();
         _repo.Setup(r => r.GetStatusAsync(App, It.IsAny<CancellationToken>())).ReturnsAsync("under_review");
-        _repo.Setup(r => r.AdmitAsync(App, ApplicationStatus.UnderReview, Arm, It.IsAny<CancellationToken>()))
+        _repo.Setup(r => r.AdmitAsync(App, ApplicationStatus.UnderReview, Cls, Arm, It.IsAny<CancellationToken>()))
             .ReturnsAsync("SCH/2026/005");
         _repo.Setup(r => r.GetAsync(App, It.IsAny<CancellationToken>())).ReturnsAsync(Row("admitted", "SCH/2026/005"));
         NotifyTarget();
 
-        ApplicationResponse res = await CreateSut().AdmitAsync(App, new AdmitApplicationRequest { ClassArmId = Arm }, CancellationToken.None);
+        ApplicationResponse res = await CreateSut().AdmitAsync(App,
+            new AdmitApplicationRequest { ClassId = Cls, ClassArmId = Arm }, CancellationToken.None);
 
         Assert.Equal(ApplicationStatus.Admitted, res.Status);
         Assert.Equal("SCH/2026/005", res.AdmissionNumber);
-        _repo.Verify(r => r.AdmitAsync(App, ApplicationStatus.UnderReview, Arm, It.IsAny<CancellationToken>()), Times.Once);
-        _sms.Verify(s => s.SendSmsAsync("+2348030000001", It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+        _repo.Verify(r => r.AdmitAsync(App, ApplicationStatus.UnderReview, Cls, Arm, It.IsAny<CancellationToken>()), Times.Once);
+        // Notification is now decoupled: the service publishes the event; an observer sends the SMS.
+        _events.Verify(p => p.PublishAsync(It.IsAny<ApplicationAdmittedEvent>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
     public async Task Admit_AlreadyAdmitted_Throws409()
     {
-        _repo.Setup(r => r.ArmExistsAsync(Arm, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        ValidClassAndArm();
         _repo.Setup(r => r.GetStatusAsync(App, It.IsAny<CancellationToken>())).ReturnsAsync("admitted");
 
         AppErrorException ex = await Assert.ThrowsAsync<AppErrorException>(
-            () => CreateSut().AdmitAsync(App, new AdmitApplicationRequest { ClassArmId = Arm }, CancellationToken.None));
+            () => CreateSut().AdmitAsync(App, new AdmitApplicationRequest { ClassId = Cls, ClassArmId = Arm }, CancellationToken.None));
         Assert.Equal(409, ex.StatusCode);
-        _repo.Verify(r => r.AdmitAsync(It.IsAny<Guid>(), It.IsAny<ApplicationStatus>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+        _repo.Verify(r => r.AdmitAsync(It.IsAny<Guid>(), It.IsAny<ApplicationStatus>(), It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
     public async Task Admit_RejectedApplication_Throws409()
     {
-        _repo.Setup(r => r.ArmExistsAsync(Arm, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        ValidClassAndArm();
         _repo.Setup(r => r.GetStatusAsync(App, It.IsAny<CancellationToken>())).ReturnsAsync("rejected");
 
         AppErrorException ex = await Assert.ThrowsAsync<AppErrorException>(
-            () => CreateSut().AdmitAsync(App, new AdmitApplicationRequest { ClassArmId = Arm }, CancellationToken.None));
+            () => CreateSut().AdmitAsync(App, new AdmitApplicationRequest { ClassId = Cls, ClassArmId = Arm }, CancellationToken.None));
         Assert.Equal(409, ex.StatusCode);
     }
 
     [Fact]
-    public async Task Admit_MissingArm_Throws400()
+    public async Task Admit_InvalidClass_Throws400()
     {
-        _repo.Setup(r => r.ArmExistsAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        _repo.Setup(r => r.ClassExistsAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync(false);
 
         AppErrorException ex = await Assert.ThrowsAsync<AppErrorException>(
-            () => CreateSut().AdmitAsync(App, new AdmitApplicationRequest { ClassArmId = Arm }, CancellationToken.None));
+            () => CreateSut().AdmitAsync(App, new AdmitApplicationRequest { ClassId = Cls }, CancellationToken.None));
+        Assert.Equal(400, ex.StatusCode);
+    }
+
+    [Fact]
+    public async Task Admit_ArmNotInClass_Throws400()
+    {
+        _repo.Setup(r => r.ClassExistsAsync(Cls, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        _repo.Setup(r => r.ArmInClassAsync(Arm, Cls, It.IsAny<CancellationToken>())).ReturnsAsync(false);
+
+        AppErrorException ex = await Assert.ThrowsAsync<AppErrorException>(
+            () => CreateSut().AdmitAsync(App, new AdmitApplicationRequest { ClassId = Cls, ClassArmId = Arm }, CancellationToken.None));
         Assert.Equal(400, ex.StatusCode);
     }
 
@@ -91,6 +112,7 @@ public class SchoolApplicationServiceTests
 
         Assert.Equal(ApplicationStatus.Rejected, res.Status);
         _repo.Verify(r => r.RejectAsync(App, ApplicationStatus.UnderReview, "no space", It.IsAny<CancellationToken>()), Times.Once);
+        _events.Verify(p => p.PublishAsync(It.IsAny<ApplicationRejectedEvent>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]

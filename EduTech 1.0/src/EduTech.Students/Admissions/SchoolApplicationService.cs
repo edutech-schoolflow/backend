@@ -1,6 +1,7 @@
 using EduTech.Shared.Constants;
+using EduTech.Shared.Events;
 using EduTech.Shared.Exceptions;
-using EduTech.Shared.Notifications;
+using EduTech.Students.Admissions.Events;
 
 namespace EduTech.Students.Admissions;
 
@@ -17,12 +18,12 @@ public interface ISchoolApplicationService
 internal sealed class SchoolApplicationService : ISchoolApplicationService
 {
     private readonly ISchoolApplicationRepository _repository;
-    private readonly INotificationDispatcher _notifications;
+    private readonly IDomainEventPublisher _events;
 
-    public SchoolApplicationService(ISchoolApplicationRepository repository, INotificationDispatcher notifications)
+    public SchoolApplicationService(ISchoolApplicationRepository repository, IDomainEventPublisher events)
     {
         _repository = repository;
-        _notifications = notifications;
+        _events = events;
     }
 
     public async Task<IReadOnlyList<ApplicationResponse>> ListAsync(string? status, CancellationToken cancellationToken)
@@ -51,9 +52,15 @@ internal sealed class SchoolApplicationService : ISchoolApplicationService
             throw new AppErrorException("Application status changed, please retry.", 409, ErrorCodes.Conflict);
         }
 
-        await NotifyAsync(applicationId, name =>
-            $"{name}'s entrance exam has been scheduled{(request.ExamDate is DateOnly d ? $" for {d:yyyy-MM-dd}" : "")}.",
-            cancellationToken);
+        ApplicationNotifyRow? target = await _repository.GetNotifyTargetAsync(applicationId, cancellationToken);
+        if (target is not null)
+        {
+            await _events.PublishAsync(new ExamScheduledEvent
+            {
+                ApplicationId = applicationId, ChildName = target.ChildName, Phone = target.Phone,
+                ExamDate = request.ExamDate
+            }, cancellationToken);
+        }
         return await GetAsync(applicationId, cancellationToken);
     }
 
@@ -100,8 +107,15 @@ internal sealed class SchoolApplicationService : ISchoolApplicationService
 
         string admissionNumber = await _repository.AdmitAsync(applicationId, from, request.ClassId, request.ClassArmId, cancellationToken);
 
-        await NotifyAsync(applicationId, name =>
-            $"Congratulations! {name} has been admitted. Admission number: {admissionNumber}.", cancellationToken);
+        ApplicationNotifyRow? target = await _repository.GetNotifyTargetAsync(applicationId, cancellationToken);
+        if (target is not null)
+        {
+            await _events.PublishAsync(new ApplicationAdmittedEvent
+            {
+                ApplicationId = applicationId, ChildName = target.ChildName, Phone = target.Phone,
+                AdmissionNumber = admissionNumber
+            }, cancellationToken);
+        }
         return await GetAsync(applicationId, cancellationToken);
     }
 
@@ -116,7 +130,15 @@ internal sealed class SchoolApplicationService : ISchoolApplicationService
             throw new AppErrorException("Application status changed, please retry.", 409, ErrorCodes.Conflict);
         }
 
-        await NotifyAsync(applicationId, name => $"Update on {name}'s application: it was not successful.", cancellationToken);
+        ApplicationNotifyRow? target = await _repository.GetNotifyTargetAsync(applicationId, cancellationToken);
+        if (target is not null)
+        {
+            await _events.PublishAsync(new ApplicationRejectedEvent
+            {
+                ApplicationId = applicationId, ChildName = target.ChildName, Phone = target.Phone,
+                Reason = request.Reason?.Trim()
+            }, cancellationToken);
+        }
         return await GetAsync(applicationId, cancellationToken);
     }
 
@@ -129,14 +151,5 @@ internal sealed class SchoolApplicationService : ISchoolApplicationService
         ApplicationStatus current = SnakeCaseEnum.Parse<ApplicationStatus>(raw);
         ApplicationLifecycle.Rules.Require(current, target);   // 409 on an illegal move
         return current;
-    }
-
-    private async Task NotifyAsync(Guid applicationId, Func<string, string> buildMessage, CancellationToken cancellationToken)
-    {
-        ApplicationNotifyRow? target = await _repository.GetNotifyTargetAsync(applicationId, cancellationToken);
-        if (target is not null && !string.IsNullOrWhiteSpace(target.Phone))
-        {
-            await _notifications.SendSmsAsync(target.Phone, buildMessage(target.ChildName), cancellationToken);
-        }
     }
 }

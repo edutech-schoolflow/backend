@@ -155,4 +155,30 @@ public class AcademicSessionTests
         SessionTerm second = Term_(Term.Second);
         Session(2025, false, first, second).EnsureCanRemoveTerm(second.Id); // no throw
     }
+
+    // ── set current term (no going backward) ─────────────────────────────────────
+
+    [Fact]
+    public void EnsureCanSetCurrentTerm_EarlierTerm_WhenLaterAlreadyStarted_Throws409()
+    {
+        // First + Second exist; Second has already started. Trying to set First current is going back.
+        SessionTerm first = new SessionTerm(Guid.NewGuid(), Term.First, new DateOnly(2025, 9, 15), null, false);
+        SessionTerm second = new SessionTerm(Guid.NewGuid(), Term.Second, new DateOnly(2026, 1, 5), null, true);
+
+        AppErrorException ex = Assert.Throws<AppErrorException>(() =>
+            Session(2025, true, first, second).EnsureCanSetCurrentTerm(first.Id, new DateOnly(2026, 2, 1)));
+
+        Assert.Equal(409, ex.StatusCode);
+    }
+
+    [Fact]
+    public void EnsureCanSetCurrentTerm_UpcomingTermNotYetStarted_Ok()
+    {
+        // Second hasn't started yet (school resuming early) — setting it current is allowed.
+        SessionTerm first = new SessionTerm(Guid.NewGuid(), Term.First, new DateOnly(2025, 9, 15), null, true);
+        SessionTerm second = new SessionTerm(Guid.NewGuid(), Term.Second, new DateOnly(2026, 1, 5), null, false);
+
+        Session(2025, true, first, second)
+            .EnsureCanSetCurrentTerm(second.Id, new DateOnly(2025, 12, 20)); // no throw
+    }
 }

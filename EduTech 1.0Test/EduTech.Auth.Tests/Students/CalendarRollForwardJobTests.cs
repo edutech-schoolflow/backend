@@ -1,6 +1,7 @@
 using EduTech.Shared.Constants;
 using EduTech.Shared.Notifications;
 using EduTech.Students.Academics.Transition;
+using EduTech.Students.Classes;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 
@@ -9,10 +10,14 @@ namespace EduTech.Auth.Tests.Students;
 public class CalendarRollForwardJobTests
 {
     private readonly Mock<ICalendarRollForwardRepository> _repo = new();
+    private readonly Mock<ISchoolClassProvisioner> _classProvisioner = new();
     private readonly Mock<INotificationDispatcher> _notifications = new();
 
+    // Calendar provisioning is delegated to the real provisioner over the mocked repo, so
+    // ProvisionCalendarAsync is still observable on _repo; class provisioning is a no-op mock here.
     private CalendarRollForwardJob CreateSut() =>
-        new(_repo.Object, _notifications.Object, NullLogger<CalendarRollForwardJob>.Instance);
+        new(_repo.Object, new SchoolCalendarProvisioner(_repo.Object), _classProvisioner.Object,
+            _notifications.Object, NullLogger<CalendarRollForwardJob>.Instance);
 
     private static readonly Guid School = Guid.NewGuid();
     private static readonly Guid YearId = Guid.NewGuid();
@@ -29,9 +34,9 @@ public class CalendarRollForwardJobTests
 
         await CreateSut().RunAsync(new DateOnly(2025, 10, 10), CancellationToken.None);
 
-        // October 2025 → 2025/26 session, first term current.
+        // October 2025 → 2025/26 session, first term current — only the current term is created.
         _repo.Verify(r => r.ProvisionCalendarAsync(School, 2025, Term.First,
-            It.Is<IReadOnlyList<(Term, DateOnly, DateOnly)>>(t => t.Count == 3),
+            It.Is<IReadOnlyList<(Term, DateOnly, DateOnly)>>(t => t.Count == 1 && t[0].Item1 == Term.First),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 

@@ -17,13 +17,19 @@ namespace EduTech.Students.Academics.Transition;
 public sealed class CalendarRollForwardJob
 {
     private readonly ICalendarRollForwardRepository _repository;
+    private readonly ISchoolCalendarProvisioner _provisioner;
+    private readonly Classes.ISchoolClassProvisioner _classProvisioner;
     private readonly INotificationDispatcher _notifications;
     private readonly ILogger<CalendarRollForwardJob> _logger;
 
     public CalendarRollForwardJob(ICalendarRollForwardRepository repository,
+        ISchoolCalendarProvisioner provisioner,
+        Classes.ISchoolClassProvisioner classProvisioner,
         INotificationDispatcher notifications, ILogger<CalendarRollForwardJob> logger)
     {
         _repository = repository;
+        _provisioner = provisioner;
+        _classProvisioner = classProvisioner;
         _notifications = notifications;
         _logger = logger;
     }
@@ -53,21 +59,21 @@ public sealed class CalendarRollForwardJob
 
     private async Task SweepSchoolAsync(Guid schoolId, DateOnly today, CancellationToken cancellationToken)
     {
+        // Classes are independent of the calendar — a safety net for any school missing its class ladder
+        // (e.g. schools that predate class provisioning, or that missed the activation event).
+        if (await _classProvisioner.ProvisionIfMissingAsync(schoolId, cancellationToken))
+        {
+            _logger.LogInformation("Provisioned standard classes for school {SchoolId}.", schoolId);
+        }
+
         CalendarSnapshotRow snapshot = await _repository.GetSnapshotAsync(schoolId, cancellationToken);
 
         if (!snapshot.HasYears)
         {
-            (int startYear, Term currentTerm) = NigerianCalendarPolicy.CurrentTermFor(today);
-            List<(Term, DateOnly, DateOnly)> windows = new List<(Term, DateOnly, DateOnly)>(3);
-            foreach (Term term in new[] { Term.First, Term.Second, Term.Third })
+            if (await _provisioner.ProvisionIfMissingAsync(schoolId, today, cancellationToken))
             {
-                (DateOnly start, DateOnly end) = NigerianCalendarPolicy.DefaultDatesFor(startYear, term);
-                windows.Add((term, start, end));
+                _logger.LogInformation("Provisioned calendar for school {SchoolId}.", schoolId);
             }
-
-            await _repository.ProvisionCalendarAsync(schoolId, startYear, currentTerm, windows, cancellationToken);
-            _logger.LogInformation("Provisioned {Session} calendar for school {SchoolId}.",
-                CalendarRollForwardRepository.SessionName(startYear), schoolId);
             return;
         }
 

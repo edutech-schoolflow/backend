@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using EduTech.Shared.Constants;
 using EduTech.Shared.Context;
+using EduTech.Shared.Events;
 using EduTech.Shared.Exceptions;
 using EduTech.Shared.Persistence;
 
@@ -29,17 +30,20 @@ internal sealed class SchoolKycAdminService : ISchoolKycAdminService
     private readonly IDbConnectionFactory _connectionFactory;
     private readonly IAdminSchoolRepository _schools;
     private readonly IAdminAuditLogRepository _audit;
+    private readonly IDomainEventPublisher _events;
 
     public SchoolKycAdminService(
         IEduTechRequestContext requestContext,
         IDbConnectionFactory connectionFactory,
         IAdminSchoolRepository schools,
-        IAdminAuditLogRepository audit)
+        IAdminAuditLogRepository audit,
+        IDomainEventPublisher events)
     {
         _requestContext = requestContext;
         _connectionFactory = connectionFactory;
         _schools = schools;
         _audit = audit;
+        _events = events;
     }
 
     public async Task<IReadOnlyList<AdminSchoolItem>> ListQueueAsync(CancellationToken cancellationToken)
@@ -89,6 +93,11 @@ internal sealed class SchoolKycAdminService : ISchoolKycAdminService
         await _audit.InsertAsync(adminId, "kyc.approve", "school", schoolId, metadata, ipAddress,
             transaction.Transaction, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+
+        // The school is now live — let observers react (the Students module provisions its calendar).
+        // Published after commit so listeners see an activated school; handler failures are isolated
+        // by the publisher and never undo the approval.
+        await _events.PublishAsync(new SchoolActivatedEvent(schoolId), cancellationToken);
     }
 
     public async Task RejectAsync(Guid schoolId, RejectSchoolRequest request, string? ipAddress,

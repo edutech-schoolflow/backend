@@ -157,6 +157,28 @@ internal sealed class AcademicSession
         }
     }
 
+    /// <summary>
+    /// A term can be made current unless a LATER term in the same session has already started — that later
+    /// term is the real current one, so the calendar can't be set backward. Holiday gaps are fine (no later
+    /// term has started yet), and setting an upcoming term current early (a school resuming ahead of the
+    /// default dates) is allowed.
+    /// </summary>
+    public void EnsureCanSetCurrentTerm(Guid termId, DateOnly today)
+    {
+        SessionTerm term = _terms.FirstOrDefault(t => t.Id == termId)
+            ?? throw new AppErrorException("Term not found.", 404, ErrorCodes.NotFound);
+
+        bool laterTermStarted = _terms.Any(t =>
+            t.Name > term.Name && t.StartDate is DateOnly start && start <= today);
+        if (laterTermStarted)
+        {
+            throw new AppErrorException(
+                "A later term in this session has already started — that's the current term. " +
+                "You can't set the calendar back to an earlier one.",
+                409, ErrorCodes.Conflict);
+        }
+    }
+
     /// <summary>Terms are removed in reverse order so the sequence stays contiguous (no First + Third gaps).</summary>
     public void EnsureCanRemoveTerm(Guid termId)
     {

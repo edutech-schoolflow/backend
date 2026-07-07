@@ -181,13 +181,19 @@ internal sealed class AcademicCalendarService : IAcademicCalendarService
 
     public async Task SetCurrentTermAsync(Guid termId, CancellationToken cancellationToken)
     {
-        if (!await _repository.TermExistsAsync(termId, cancellationToken))
-        {
-            throw new AppErrorException("Term not found.", 404, ErrorCodes.NotFound);
-        }
+        TermRow term = await _repository.GetTermAsync(termId, cancellationToken)
+            ?? throw new AppErrorException("Term not found.", 404, ErrorCodes.NotFound);
+
+        // The aggregate forbids setting the calendar backward past a term that has already started.
+        IReadOnlyList<TermRow> siblings = await _repository.ListTermsAsync(term.AcademicYearId, cancellationToken);
+        AcademicSession session = BuildSession(term.AcademicYearId, startYear: null, isCurrent: false, siblings);
+        session.EnsureCanSetCurrentTerm(termId, TodayWat());
 
         await _repository.SetCurrentTermAsync(termId, cancellationToken);
     }
+
+    // School days are West Africa Time (UTC+1, no DST).
+    private static DateOnly TodayWat() => DateOnly.FromDateTime(DateTime.UtcNow.AddHours(1));
 
     public async Task UpdateTermDatesAsync(Guid termId, UpdateTermDatesRequest request, CancellationToken cancellationToken)
     {

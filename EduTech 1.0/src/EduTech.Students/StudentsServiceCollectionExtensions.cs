@@ -22,9 +22,16 @@ public static class StudentsServiceCollectionExtensions
         services.AddScoped<IAcademicCalendarService, AcademicCalendarService>();
         services.AddScoped<IAcademicTransitionService, AcademicTransitionService>();
         services.AddScoped<ICalendarRollForwardRepository, CalendarRollForwardRepository>();
+        services.AddScoped<ISchoolCalendarProvisioner, SchoolCalendarProvisioner>();
         services.AddScoped<CalendarRollForwardJob>();   // daily sweep; scheduled in Program.cs
+        // Observer: provision a calendar the moment a school is activated (approved + made visible).
+        services.AddScoped<IDomainEventHandler<SchoolActivatedEvent>, ProvisionCalendarOnSchoolActivated>();
         services.AddScoped<IClassRepository, ClassRepository>();
         services.AddScoped<IClassService, ClassService>();
+        services.AddScoped<ISchoolClassProvisionRepository, SchoolClassProvisionRepository>();
+        services.AddScoped<ISchoolClassProvisioner, SchoolClassProvisioner>();
+        // Observer: provision the standard 6-3-3 classes when a school is activated (alongside the calendar).
+        services.AddScoped<IDomainEventHandler<SchoolActivatedEvent>, ProvisionClassesOnSchoolActivated>();
         services.AddScoped<IStudentRepository, StudentRepository>();
         services.AddScoped<StudentCommandInvoker>();   // Command: runs lifecycle actions + audits them
         services.AddScoped<IStudentService, StudentService>();

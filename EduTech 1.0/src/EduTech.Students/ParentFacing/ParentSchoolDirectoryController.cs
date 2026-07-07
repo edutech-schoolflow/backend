@@ -25,4 +25,22 @@ public sealed class ParentSchoolDirectoryController : ControllerBase
         IReadOnlyList<ParentSchoolListItem> schools = await _service.SearchAsync(query, type, cancellationToken);
         return Ok(ServiceResponses<IReadOnlyList<ParentSchoolListItem>>.Ok(schools, "Schools."));
     }
+
+    /// <summary>A single public school's profile.</summary>
+    [HttpGet("{schoolId:guid}")]
+    public async Task<ActionResult<ServiceResponses<ParentSchoolListItem>>> Get(
+        Guid schoolId, CancellationToken cancellationToken)
+    {
+        ParentSchoolListItem school = await _service.GetAsync(schoolId, cancellationToken);
+        return Ok(ServiceResponses<ParentSchoolListItem>.Ok(school, "School."));
+    }
+
+    /// <summary>The classes a public school offers — the parent's desired-class options when applying.</summary>
+    [HttpGet("{schoolId:guid}/classes")]
+    public async Task<ActionResult<ServiceResponses<IReadOnlyList<ParentSchoolClass>>>> Classes(
+        Guid schoolId, CancellationToken cancellationToken)
+    {
+        IReadOnlyList<ParentSchoolClass> classes = await _service.GetClassesAsync(schoolId, cancellationToken);
+        return Ok(ServiceResponses<IReadOnlyList<ParentSchoolClass>>.Ok(classes, "School classes."));
+    }
 }

@@ -20,6 +20,8 @@ public static class StudentsServiceCollectionExtensions
     {
         services.AddScoped<IAcademicCalendarRepository, AcademicCalendarRepository>();
         services.AddScoped<IAcademicCalendarService, AcademicCalendarService>();
+        // The port behind [RequiresCurrentTerm] — an Academics question, answered by Academics (EDD-002 V5).
+        services.AddScoped<EduTech.Shared.Auth.ICurrentTermProvider, CurrentTermProvider>();
         services.AddScoped<IAcademicTransitionService, AcademicTransitionService>();
         services.AddScoped<ICalendarRollForwardRepository, CalendarRollForwardRepository>();
         services.AddScoped<ISchoolCalendarProvisioner, SchoolCalendarProvisioner>();

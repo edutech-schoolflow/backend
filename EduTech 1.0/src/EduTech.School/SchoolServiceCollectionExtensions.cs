@@ -14,6 +14,9 @@ public static class SchoolServiceCollectionExtensions
         services.AddFileStorage(configuration);
         services.AddScoped<ISchoolKycRepository, SchoolKycRepository>();
         services.AddScoped<ISchoolKycService, SchoolKycService>();
+        // Organization lifecycle management by the platform (EDD-002 V4 — moved out of Auth).
+        services.AddScoped<PlatformAdmin.IAdminSchoolRepository, PlatformAdmin.AdminSchoolRepository>();
+        services.AddScoped<PlatformAdmin.ISchoolKycAdminService, PlatformAdmin.SchoolKycAdminService>();
 
         services.AddControllers()
             .AddApplicationPart(typeof(SchoolServiceCollectionExtensions).Assembly);

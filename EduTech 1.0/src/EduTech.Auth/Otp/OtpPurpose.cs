@@ -9,6 +9,10 @@ namespace EduTech.Auth.Otp;
 /// </summary>
 public static class OtpPurpose
 {
+    // Unified Identity (EDD-001)
+    public const string IdentityPhoneVerification = "identity_phone_verification";
+    public const string IdentityPasswordReset     = "identity_password_reset";
+
     // School Owner (Actor 1)
     public const string SchoolOwnerPhoneVerification = "school_owner_phone_verification";
     public const string SchoolOwnerPasswordReset     = "school_owner_password_reset";

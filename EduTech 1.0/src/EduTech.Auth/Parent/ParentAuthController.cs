@@ -14,6 +14,7 @@ namespace EduTech.Auth.Parent;
 [Route("api/v1/parent/auth")]
 public sealed class ParentAuthController : ControllerBase
 {
+    // Legacy portal auth removed (EDD-001 Sprint 5) — register/login/password flows now live at /api/v1/auth.
     private const string AccessCookie = "sf_access";
     private const string RefreshCookie = "sf_refresh";
 
@@ -24,37 +25,8 @@ public sealed class ParentAuthController : ControllerBase
         _authService = authService;
     }
 
-    [HttpPost("register")]
-    [EnableRateLimiting("otp")]
-    [SignupGate("parent")]
-    public async Task<ActionResult<ServiceResponses<string?>>> Register(
-        [FromBody] RegisterParentRequest request, CancellationToken cancellationToken)
-    {
-        await _authService.RegisterAsync(request, cancellationToken);
-        return Ok(ServiceResponses<string?>.Ok(null,
-            "Account created. We sent a verification code to your phone."));
-    }
 
-    [HttpPost("verify-phone")]
-    [EnableRateLimiting("login")]
-    public async Task<ActionResult<ServiceResponses<string?>>> VerifyPhone(
-        [FromBody] ParentVerifyPhoneRequest request, CancellationToken cancellationToken)
-    {
-        await _authService.VerifyPhoneAsync(request, cancellationToken);
-        return Ok(ServiceResponses<string?>.Ok(null, "Phone verified. You can now log in."));
-    }
 
-    [HttpPost("login")]
-    [EnableRateLimiting("login")]
-    [MaintenanceGate]
-    public async Task<ActionResult<ServiceResponses<ParentAuthResponse>>> Login(
-        [FromBody] ParentLoginRequest request, CancellationToken cancellationToken)
-    {
-        ParentTokensResult result = await _authService.LoginAsync(request, ClientIp(), UserAgent(), cancellationToken);
-        SetAuthCookies(result);
-        return Ok(ServiceResponses<ParentAuthResponse>.Ok(
-            new ParentAuthResponse { AccessTokenExpiresAt = result.AccessTokenExpiresAt }, "Logged in."));
-    }
 
     [HttpPost("refresh")]
     [EnableRateLimiting("login")]
@@ -76,32 +48,8 @@ public sealed class ParentAuthController : ControllerBase
         return Ok(ServiceResponses<string?>.Ok(null, "Payment PIN set."));
     }
 
-    [HttpPost("resend-otp")]
-    [EnableRateLimiting("otp")]
-    public async Task<ActionResult<ServiceResponses<string?>>> ResendOtp(
-        [FromBody] ParentResendOtpRequest request, CancellationToken cancellationToken)
-    {
-        await _authService.ResendOtpAsync(request, cancellationToken);
-        return Ok(ServiceResponses<string?>.Ok(null, "If your number needs verifying, we sent a new code."));
-    }
 
-    [HttpPost("forgot-password")]
-    [EnableRateLimiting("login")]
-    public async Task<ActionResult<ServiceResponses<string?>>> ForgotPassword(
-        [FromBody] ParentForgotPasswordRequest request, CancellationToken cancellationToken)
-    {
-        await _authService.ForgotPasswordAsync(request, cancellationToken);
-        return Ok(ServiceResponses<string?>.Ok(null, "If that account exists, we sent a reset code."));
-    }
 
-    [HttpPost("reset-password")]
-    [EnableRateLimiting("login")]
-    public async Task<ActionResult<ServiceResponses<string?>>> ResetPassword(
-        [FromBody] ParentResetPasswordRequest request, CancellationToken cancellationToken)
-    {
-        await _authService.ResetPasswordAsync(request, cancellationToken);
-        return Ok(ServiceResponses<string?>.Ok(null, "Password reset. Please log in."));
-    }
 
     [HttpGet("me")]
     [Authorize(Policy = "ParentOnly")]

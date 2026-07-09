@@ -2,16 +2,15 @@
 
   <ItemGroup>
     <ProjectReference Include="..\EduTech.Auth\EduTech.Auth.csproj" />
+    <ProjectReference Include="..\EduTech.Identity\EduTech.Identity.csproj" />
+    <ProjectReference Include="..\EduTech.Workforce\EduTech.Workforce.csproj" />
     <ProjectReference Include="..\EduTech.School\EduTech.School.csproj" />
-    <ProjectReference Include="..\EduTech.Staff\EduTech.Staff.csproj" />
     <ProjectReference Include="..\EduTech.Students\EduTech.Students.csproj" />
     <ProjectReference Include="..\EduTech.Grades\EduTech.Grades.csproj" />
     <ProjectReference Include="..\EduTech.Fees\EduTech.Fees.csproj" />
     <ProjectReference Include="..\EduTech.Attendance\EduTech.Attendance.csproj" />
-    <ProjectReference Include="..\EduTech.Store\EduTech.Store.csproj" />
     <ProjectReference Include="..\EduTech.Notifications\EduTech.Notifications.csproj" />
     <ProjectReference Include="..\EduTech.Compliance\EduTech.Compliance.csproj" />
-    <ProjectReference Include="..\EduTech.PlatformAdmin\EduTech.PlatformAdmin.csproj" />
     <ProjectReference Include="..\EduTech.Shared\EduTech.Shared.csproj" />
   </ItemGroup>
 

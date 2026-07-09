@@ -1,6 +1,7 @@
 using EduTech.Shared.Constants;
 using EduTech.Shared.Context;
 using EduTech.Shared.Exceptions;
+using EduTech.Shared.Ports;
 
 namespace EduTech.Students.ParentFacing;
 
@@ -18,22 +19,34 @@ internal sealed class ParentChildrenService : IParentChildrenService
 {
     private readonly IParentChildrenRepository _repository;
     private readonly IEduTechRequestContext _context;
+    private readonly IStudentFeeBalanceProvider _feeBalances;
 
-    public ParentChildrenService(IParentChildrenRepository repository, IEduTechRequestContext context)
+    public ParentChildrenService(IParentChildrenRepository repository, IEduTechRequestContext context,
+        IStudentFeeBalanceProvider feeBalances)
     {
         _repository = repository;
         _context = context;
+        _feeBalances = feeBalances;
     }
 
     public async Task<IReadOnlyList<ParentChildResponse>> GetChildrenAsync(CancellationToken cancellationToken)
     {
         IReadOnlyList<ParentChildRow> rows = await _repository.GetChildrenAsync(ParentId, cancellationToken);
+
+        // Outstanding balances are Finance's number — fetched through the SharedKernel port (EDD-002 V1).
+        IReadOnlyList<Guid> studentIds = rows.Where(r => r.StudentId is not null)
+            .Select(r => r.StudentId!.Value).ToList();
+        IReadOnlyDictionary<Guid, decimal> balances = studentIds.Count == 0
+            ? new Dictionary<Guid, decimal>()
+            : await _feeBalances.GetOutstandingAsync(studentIds.ToList(), cancellationToken);
+
         return rows.Select(r => new ParentChildResponse
         {
             ChildProfileId = r.ChildProfileId, StudentName = r.StudentName, StudentId = r.StudentId,
             SchoolId = r.SchoolId, SchoolName = r.SchoolName, SchoolLogoUrl = r.SchoolLogoUrl,
             ClassName = r.ClassName, AdmissionNumber = r.AdmissionNumber, EnrollmentStatus = r.EnrollmentStatus,
-            OutstandingFees = r.OutstandingFees, HasNewResult = r.HasNewResult
+            OutstandingFees = r.StudentId is Guid sid && balances.TryGetValue(sid, out decimal owed) ? owed : 0m,
+            HasNewResult = r.HasNewResult
         }).ToList();
     }
 

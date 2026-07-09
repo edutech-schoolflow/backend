@@ -1,0 +1,25 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\EduTech.Shared\EduTech.Shared.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- EduTech.Auth is the same bounded context (legacy home of Identity) during the EDD-001
+         transition; its unified auth service consumes this module's internals until Sprint 5. -->
+    <InternalsVisibleTo Include="EduTech.Auth" />
+    <InternalsVisibleTo Include="EduTech.Auth.Tests" />
+    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

@@ -28,12 +28,13 @@ public class SchoolOwnerAuthServiceTests
     private readonly Mock<INotificationDispatcher> _sms = new();
     private readonly Mock<IAccessTokenIssuer> _access = new();
     private readonly Mock<IRefreshTokenService> _refresh = new();
+    private readonly Mock<EduTech.Auth.Unified.IAuthContextRepository> _identityLinks = new();
 
     private SchoolOwnerAuthService CreateSut()
     {
         return new SchoolOwnerAuthService(
             _context.Object, _db.Object, _schools.Object, _owners.Object, _hasher.Object,
-            _otp.Object, _sms.Object, _access.Object, _refresh.Object);
+            _otp.Object, _sms.Object, _access.Object, _refresh.Object, _identityLinks.Object);
     }
 
     private static SchoolOwnerLoginRow Owner(bool verified = true, bool active = true,
@@ -63,7 +64,8 @@ public class SchoolOwnerAuthServiceTests
         _schools.Setup(s => s.GetStatusAsync(owner.SchoolId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new SchoolStatusRow { Status = "pending_kyc", KycStatus = "not_submitted" });
         _access.Setup(a => a.IssueSchoolOwner(owner.Id, owner.SchoolId, It.IsAny<string>(),
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()))
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(),
+                It.IsAny<Guid?>(), It.IsAny<Guid?>()))
             .Returns(new AccessToken { Token = "access-jwt", ExpiresAt = DateTime.UtcNow.AddMinutes(30) });
         _refresh.Setup(r => r.IssueAsync(AuthActorTypes.SchoolOwner, owner.Id, null, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new RefreshTokenIssue

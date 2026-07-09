@@ -9,7 +9,8 @@ internal interface IAccessTokenIssuer
 {
  
     AccessToken IssueSchoolOwner(Guid ownerId, Guid schoolId, string phone,
-        string schoolStatus, string kycStatus, string? subdomain);
+        string schoolStatus, string kycStatus, string? subdomain,
+        Guid? identityId = null, Guid? contextId = null);
 
   
     AccessToken IssueStaffIdentity(Guid staffUserId, string phone, string kycStatus);
@@ -19,10 +20,14 @@ internal interface IAccessTokenIssuer
     /// 13 resolved feature flags.
     /// </summary>
     AccessToken IssueStaffScoped(Guid staffUserId, Guid schoolId, Guid affiliationId, string phone,
-        string role, string employmentType, string kycStatus, IReadOnlyDictionary<string, bool> features);
+        string role, string employmentType, string kycStatus, IReadOnlyDictionary<string, bool> features,
+        Guid? identityId = null, Guid? contextId = null);
+
+    /// <summary>Identity-scope token — a person with no organization context yet (onboarding hub).</summary>
+    AccessToken IssueIdentity(Guid identityId, string phone);
 
     /// <summary>Parent token — school-agnostic (no school_id claim).</summary>
-    AccessToken IssueParent(Guid parentId, string phone);
+    AccessToken IssueParent(Guid parentId, string phone, Guid? identityId = null, Guid? contextId = null);
 
     /// <summary>Internal Platform Admin token. <paramref name="role"/> is the sub-role.</summary>
     AccessToken IssuePlatformAdmin(Guid adminId, string role, string email);

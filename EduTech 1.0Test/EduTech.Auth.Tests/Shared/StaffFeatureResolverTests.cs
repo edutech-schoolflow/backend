@@ -1,5 +1,6 @@
 using EduTech.Auth.Staff;
 using EduTech.Shared.Constants;
+using EduTech.Workforce;
 
 namespace EduTech.Auth.Tests.Shared;
 

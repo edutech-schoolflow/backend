@@ -35,9 +35,12 @@ internal sealed class SchoolRepository : BaseRepository, ISchoolRepository
 
     public async Task<Guid> CreateShellAsync(IDbTransaction transaction, CancellationToken cancellationToken)
     {
+        // Id generated here so the placeholder slug (unique NOT NULL soon) exists from birth;
+        // the Organization Wizard re-slugs from the school's name later.
+        Guid id = Guid.NewGuid();
         return await ExecuteScalarAsync<Guid>(
-            "INSERT INTO schools DEFAULT VALUES RETURNING id",
-            parameters: null,
+            "INSERT INTO schools (id, slug) VALUES (@Id, @Slug) RETURNING id",
+            new { Id = id, Slug = $"s-{id:N}"[..10] },
             cancellationToken: cancellationToken,
             transaction: transaction);
     }

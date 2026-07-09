@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\EduTech.Shared\EduTech.Shared.csproj" />
+    <ProjectReference Include="..\EduTech.Identity\EduTech.Identity.csproj" />
   </ItemGroup>
 
   <ItemGroup>

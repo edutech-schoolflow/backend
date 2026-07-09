@@ -21,12 +21,6 @@ internal interface IStudentRepository
     Task<(Guid Id, string AdmissionNumber)> CreateAsync(StudentInsert student,
         IReadOnlyList<GuardianDto> extraGuardians, CancellationToken cancellationToken);
 
-    /// <summary>
-    /// Look up an existing parent account by phone so the Add-Student modal can show whether the
-    /// guardian is already known (link) or new (create). Null when the phone is unknown.
-    /// </summary>
-    Task<ParentLookupRow?> LookupParentByPhoneAsync(string phone, CancellationToken cancellationToken);
-
     Task<bool> ExistsAsync(Guid studentId, CancellationToken cancellationToken);
     Task<bool> ClassArmExistsAsync(Guid classArmId, CancellationToken cancellationToken);
     Task<bool> ClassExistsAsync(Guid classId, CancellationToken cancellationToken);
@@ -45,6 +39,12 @@ internal interface IStudentRepository
 
     Task<bool> YearExistsAsync(Guid academicYearId, CancellationToken cancellationToken);
 
+    /// <summary>The student's current class (id + name), or nulls if unplaced.</summary>
+    Task<CurrentClassRow?> GetCurrentClassAsync(Guid studentId, CancellationToken cancellationToken);
+
+    /// <summary>Finds this school's class by exact name (case-insensitive), e.g. "JSS 2".</summary>
+    Task<Guid?> FindClassIdByNameAsync(string name, CancellationToken cancellationToken);
+
     /// <summary>True if the target session is later than the school's current session (or none is set yet).</summary>
     Task<bool> IsSessionForwardAsync(Guid targetAcademicYearId, CancellationToken cancellationToken);
 
@@ -55,6 +55,12 @@ internal interface IStudentRepository
     /// </summary>
     Task PromoteStudentsAsync(Guid targetAcademicYearId, IReadOnlyList<PromotionCommand> commands,
         CancellationToken cancellationToken);
+}
+
+internal sealed class CurrentClassRow
+{
+    public Guid? ClassId { get; init; }
+    public string? ClassName { get; init; }
 }
 
 /// <summary>A validated, ready-to-apply promotion for one student.</summary>
@@ -120,14 +126,6 @@ internal sealed class GuardianRow
     public string Phone { get; init; } = string.Empty;
     public string Relationship { get; init; } = string.Empty;
     public string? Email { get; init; }
-}
-
-internal sealed class ParentLookupRow
-{
-    public string FirstName { get; init; } = string.Empty;
-    public string? MiddleName { get; init; }
-    public string LastName { get; init; } = string.Empty;
-    public bool HasPassword { get; init; }
 }
 
 internal sealed class StudentRepository : TenantRepository, IStudentRepository
@@ -302,19 +300,22 @@ internal sealed class StudentRepository : TenantRepository, IStudentRepository
             cancellationToken, tx);
     }
 
-    public Task<ParentLookupRow?> LookupParentByPhoneAsync(string phone, CancellationToken cancellationToken)
+    public Task<CurrentClassRow?> GetCurrentClassAsync(Guid studentId, CancellationToken cancellationToken)
     {
-        // parents is a GLOBAL table keyed by phone (a parent can have children in many schools), so this
-        // is intentionally not tenant-scoped. HasPassword distinguishes a claimed/registered account from
-        // a school-seeded pending one.
-        return QuerySingleOrDefaultAsync<ParentLookupRow?>(
+        return QuerySingleOrDefaultAsync<CurrentClassRow>(
             """
-            SELECT first_name AS FirstName, middle_name AS MiddleName, last_name AS LastName,
-                   (password_hash IS NOT NULL) AS HasPassword
-            FROM parents
-            WHERE phone = @Phone
+            SELECT s.class_id AS ClassId, cl.name AS ClassName
+            FROM students s LEFT JOIN classes cl ON cl.id = s.class_id
+            WHERE s.id = @Id AND s.school_id = @SchoolId
             """,
-            new { Phone = phone }, cancellationToken);
+            TenantParameters(new { Id = studentId }), cancellationToken);
+    }
+
+    public Task<Guid?> FindClassIdByNameAsync(string name, CancellationToken cancellationToken)
+    {
+        return QuerySingleOrDefaultAsync<Guid?>(
+            "SELECT id FROM classes WHERE school_id = @SchoolId AND lower(name) = lower(@Name)",
+            TenantParameters(new { Name = name }), cancellationToken);
     }
 
     public async Task<bool> ExistsAsync(Guid studentId, CancellationToken cancellationToken)

@@ -40,7 +40,8 @@ public static class TokenVendor
     public static string VendStaffScopedToken(string signingKey, string issuer, string audience,
         string userId, string phone, string schoolId, string affiliationId, string role,
         string employmentType, string kycStatus, IReadOnlyDictionary<string, bool> features,
-        int expiryMinutes = 30)
+        int expiryMinutes = 30,
+        string? identityId = null, string? contextId = null)
     {
         List<Claim> claims = new List<Claim>
         {
@@ -62,6 +63,9 @@ public static class TokenVendor
         {
             claims.Add(new Claim(flag, value ? "true" : "false"));
         }
+
+        if (identityId is not null) claims.Add(new Claim("identity_id", identityId));
+        if (contextId is not null) claims.Add(new Claim("context_id", contextId));
 
         return VendToken(signingKey, issuer, audience, claims, expiryMinutes);
     }
@@ -96,7 +100,8 @@ public static class TokenVendor
     /// </summary>
     public static string VendSchoolOwnerToken(string signingKey, string issuer, string audience,
         string userId, string schoolId, string phone, string schoolStatus, string kycStatus,
-        string? subdomain, int expiryMinutes = 30)
+        string? subdomain, int expiryMinutes = 30,
+        string? identityId = null, string? contextId = null)
     {
         List<Claim> claims = new List<Claim>
         {
@@ -115,6 +120,9 @@ public static class TokenVendor
             claims.Add(new Claim("subdomain", subdomain));
         }
 
+        if (identityId is not null) claims.Add(new Claim("identity_id", identityId));
+        if (contextId is not null) claims.Add(new Claim("context_id", contextId));
+
         return VendToken(signingKey, issuer, audience, claims, expiryMinutes);
     }
 
@@ -123,8 +131,29 @@ public static class TokenVendor
     /// child's data is authorized per-request via the parent→child→student links (spec §3.3).
     /// Portal: parent.schoolflow.com. Signing key: Jwt:ParentSigningKey. 30-minute access token.
     /// </summary>
+    /// <summary>
+    /// Identity-scope token (EDD-001): a signed-in PERSON with no organization context yet. Grants
+    /// only the identity surface (/auth/me, onboarding actions) — every portal policy requires a
+    /// different user_type, so it opens no school/parent/staff doors.
+    /// </summary>
+    public static string VendIdentityToken(string signingKey, string issuer, string audience,
+        string identityId, string phone, int expiryMinutes = 30)
+    {
+        List<Claim> claims = new List<Claim>
+        {
+            new Claim("user_id", identityId),
+            new Claim("user_type", "identity"),
+            new Claim("is_owner", "false"),
+            new Claim("role", "identity"),
+            new Claim("phone", phone)
+        };
+
+        return VendToken(signingKey, issuer, audience, claims, expiryMinutes);
+    }
+
     public static string VendParentToken(string signingKey, string issuer, string audience,
-        string userId, string phone, int expiryMinutes = 30)
+        string userId, string phone, int expiryMinutes = 30,
+        string? identityId = null, string? contextId = null)
     {
         List<Claim> claims = new List<Claim>
         {
@@ -134,6 +163,10 @@ public static class TokenVendor
             new Claim("role", UserTypes.Parent),
             new Claim("phone", phone)
         };
+
+        // Org-context token (EDD-001/FE-001): every request carries WHO (identity) and WHERE (context).
+        if (identityId is not null) claims.Add(new Claim("identity_id", identityId));
+        if (contextId is not null) claims.Add(new Claim("context_id", contextId));
 
         return VendToken(signingKey, issuer, audience, claims, expiryMinutes);
     }

@@ -5,7 +5,7 @@ namespace EduTech.Shared.Events;
 /// operate. Observers react to a school going live (e.g. the Students module provisions its academic
 /// calendar). School-agnostic and cross-module, so it lives in Shared.
 /// </summary>
-public sealed class SchoolActivatedEvent : IDomainEvent
+public sealed class SchoolActivatedEvent : DomainEvent
 {
     public SchoolActivatedEvent(Guid schoolId)
     {
@@ -13,5 +13,4 @@ public sealed class SchoolActivatedEvent : IDomainEvent
     }
 
     public Guid SchoolId { get; }
-    public DateTime OccurredAt { get; } = DateTime.UtcNow;
 }

@@ -1,3 +1,5 @@
+using EduTech.Auth.Unified;
+using EduTech.Shared.Events;
 using System.Security.Cryptography;
 using System.Text;
 using EduTech.Auth.Otp;
@@ -8,6 +10,9 @@ using EduTech.Shared.Constants;
 using EduTech.Shared.Exceptions;
 using EduTech.Shared.Notifications;
 using EduTech.Shared.Persistence;
+using EduTech.Workforce;
+
+
 
 namespace EduTech.Auth.Staff;
 
@@ -42,6 +47,8 @@ internal sealed class StaffInviteAcceptService : IStaffInviteAcceptService
     private readonly INotificationDispatcher _notifications;
     private readonly IAccessTokenIssuer _accessTokenIssuer;
     private readonly IRefreshTokenService _refreshTokenService;
+    private readonly IAuthContextRepository _identityLinks;
+    private readonly IDomainEventPublisher _events;
 
     public StaffInviteAcceptService(
         IDbConnectionFactory connectionFactory,
@@ -52,7 +59,9 @@ internal sealed class StaffInviteAcceptService : IStaffInviteAcceptService
         IOtpService otpService,
         INotificationDispatcher notifications,
         IAccessTokenIssuer accessTokenIssuer,
-        IRefreshTokenService refreshTokenService)
+        IRefreshTokenService refreshTokenService,
+        IAuthContextRepository identityLinks,
+        IDomainEventPublisher events)
     {
         _connectionFactory = connectionFactory;
         _staffUsers = staffUsers;
@@ -62,7 +71,9 @@ internal sealed class StaffInviteAcceptService : IStaffInviteAcceptService
         _otpService = otpService;
         _notifications = notifications;
         _accessTokenIssuer = accessTokenIssuer;
-        _refreshTokenService = refreshTokenService;
+        _refreshTokenService = refreshTokenService;        _identityLinks = identityLinks;
+        _events = events;
+
     }
 
     public async Task<InviteDetailsResponse> ValidateAsync(string token, CancellationToken cancellationToken)
@@ -131,6 +142,13 @@ internal sealed class StaffInviteAcceptService : IStaffInviteAcceptService
             await AcceptExistingAccountAsync(invite, affiliation, staffUserId, authenticatedStaffUserId,
                 cancellationToken);
         }
+
+        // Identity platform (EDD-001): the accepted employment links to its identity + position, and
+        // the fact is published (audited via IAuditableEvent; Authorization/Communication react later).
+        string staffName = await _identityLinks.EnsureStaffIdentityLinksAsync(staffUserId, affiliation.Id,
+            cancellationToken);
+        await _events.PublishAsync(new EmploymentStartedEvent(affiliation.Id, affiliation.SchoolId,
+            staffUserId, affiliation.Role, staffName), cancellationToken);
 
         return await IssueTokensAsync(staffUserId, state.Phone, state.KycStatus, ipAddress, userAgent,
             cancellationToken);

@@ -26,6 +26,12 @@ internal interface IParentRepository
     Task<int> ClaimAsync(Guid parentId, string firstName, string? middleName, string lastName,
         string? email, string passwordHash, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Creates the parent PROFILE for an identity (no credentials — the identity authenticates).
+    /// Deliberate start of the parent journey; idempotent. Returns the parent id.
+    /// </summary>
+    Task<Guid> ProvisionFromIdentityAsync(Guid identityId, CancellationToken cancellationToken);
+
     Task<Guid?> GetIdByPhoneAsync(string phone, CancellationToken cancellationToken);
 
     /// <summary>Marks the phone verified and activates the account (pending → active).</summary>
@@ -135,6 +141,30 @@ internal sealed class ParentRepository : BaseRepository, IParentRepository
             new { Id = parentId, FirstName = firstName, MiddleName = middleName, LastName = lastName,
                 Email = email, PasswordHash = passwordHash },
             cancellationToken);
+    }
+
+    public async Task<Guid> ProvisionFromIdentityAsync(Guid identityId, CancellationToken cancellationToken)
+    {
+        Guid? existing = await QuerySingleOrDefaultAsync<Guid?>(
+            "SELECT id FROM parents WHERE identity_id = @IdentityId",
+            new { IdentityId = identityId }, cancellationToken);
+        if (existing is Guid id)
+        {
+            return id;
+        }
+
+        return await ExecuteScalarAsync<Guid>(
+            """
+            INSERT INTO parents (first_name, middle_name, last_name, phone, email,
+                                 phone_verified, status, identity_id)
+            SELECT i.first_name, i.middle_name, i.last_name, i.phone, NULL,
+                   i.phone_verified, 'active', i.id
+            FROM identities i
+            WHERE i.id = @IdentityId
+            ON CONFLICT (phone) DO UPDATE SET identity_id = COALESCE(parents.identity_id, EXCLUDED.identity_id)
+            RETURNING id
+            """,
+            new { IdentityId = identityId }, cancellationToken);
     }
 
     public Task<Guid?> GetIdByPhoneAsync(string phone, CancellationToken cancellationToken)

@@ -6,6 +6,7 @@ using EduTech.Shared.Constants;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
 using Moq;
+using EduTech.Workforce;
 
 namespace EduTech.Auth.Tests.Feasibility;
 
@@ -147,10 +148,93 @@ public class StaffParentDualPersonaFeasibilityTests
     //      persona's token — mirroring StaffSchoolService.SwitchAsync (which already switches between
     //      staff affiliations and re-issues a scoped token without re-login).
     // Un-skip and implement against that design when we decide to ship it.
-    [Fact(Skip = "Not built: needs a unified principal (people table) + a persona-switch endpoint. See class summary.")]
-    public void Person_CanSwitch_StaffToParent_WithoutReLogin()
+    /// <summary>
+    /// FORMERLY SKIPPED — the two missing pieces now exist (EDD-001): the unified principal is the
+    /// <c>identities</c> table, and the persona switch is the unified login's context selection.
+    /// One identity holding a STAFF employment and a PARENT relationship gets BOTH contexts from one
+    /// login, and entering either mints the matching portal token — no second account, no re-login
+    /// as a different person.
+    /// </summary>
+    [Fact]
+    public async Task Person_CanSwitch_StaffToParent_WithoutReLogin()
     {
-        Assert.Fail("Aspirational capability — implement unified principal + /auth/switch-persona first.");
+        var identities = new Mock<EduTech.Identity.IIdentityRepository>();
+        var contexts = new Mock<EduTech.Auth.Unified.IAuthContextRepository>();
+        var parents = new Mock<EduTech.Auth.Parent.IParentRepository>();
+        var hasher = new Mock<EduTech.Auth.Security.IPasswordHasher>();
+        var otp = new Mock<EduTech.Auth.Otp.IOtpService>();
+        var sms = new Mock<EduTech.Shared.Notifications.INotificationDispatcher>();
+        var access = new Mock<IAccessTokenIssuer>();
+        var refresh = new Mock<EduTech.Auth.RefreshTokens.IRefreshTokenService>();
+        var staffUsers = new Mock<IStaffUserRepository>();
+        var affiliations = new Mock<IStaffAffiliationRepository>();
+        var templates = new Mock<IPermissionTemplateRepository>();
+        var overrides = new Mock<IStaffFeatureOverrideRepository>();
+
+        var identity = new EduTech.Identity.Domain.Identity(Guid.NewGuid(), "Dual", null, "Persona",
+            SharedPhone, null, "hashed", true, false, EduTech.Identity.Domain.IdentityStatus.Active, 0, null);
+        identities.Setup(i => i.GetByPhoneAsync(SharedPhone, It.IsAny<CancellationToken>())).ReturnsAsync(identity);
+        hasher.Setup(h => h.Verify("password123", "hashed")).Returns(true);
+
+        Guid parentId = Guid.NewGuid();
+        Guid affiliationId = Guid.NewGuid();
+        Guid staffUserId = Guid.NewGuid();
+        Guid schoolId = Guid.NewGuid();
+        contexts.Setup(c => c.ListAccessContextsAsync(identity.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[]
+            {
+                new EduTech.Auth.Unified.AccessContextRow
+                    { ReferenceId = affiliationId, Type = "staff", OrganizationId = schoolId, OrganizationName = "Divine Wisdom", Role = "teacher" },
+                new EduTech.Auth.Unified.AccessContextRow { ReferenceId = parentId, Type = "parent" }
+            });
+        contexts.Setup(c => c.ListStaffContextsAsync(identity.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { new EduTech.Auth.Unified.StaffContextRow
+                { StaffUserId = staffUserId, AffiliationId = affiliationId, SchoolId = schoolId, SchoolName = "Divine Wisdom", Role = "teacher" } });
+
+        affiliations.Setup(a => a.GetActiveForSwitchAsync(staffUserId, schoolId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new StaffSwitchRow { AffiliationId = affiliationId, Role = "teacher", EmploymentType = "full_time" });
+        staffUsers.Setup(su => su.GetTokenClaimsAsync(staffUserId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new StaffUserTokenRow { Phone = SharedPhone, KycStatus = "approved" });
+        overrides.Setup(o => o.GetForAffiliationAsync(affiliationId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<string, bool>());
+        access.Setup(a => a.IssueStaffScoped(staffUserId, schoolId, affiliationId, SharedPhone, "teacher",
+                "full_time", "approved", It.IsAny<IReadOnlyDictionary<string, bool>>(),
+                It.IsAny<Guid?>(), It.IsAny<Guid?>()))
+            .Returns(new AccessToken { Token = "staff-token", ExpiresAt = DateTime.UtcNow.AddMinutes(30) });
+        access.Setup(a => a.IssueParent(parentId, SharedPhone, It.IsAny<Guid?>(), It.IsAny<Guid?>()))
+            .Returns(new AccessToken { Token = "parent-token", ExpiresAt = DateTime.UtcNow.AddMinutes(30) });
+        refresh.Setup(r => r.IssueAsync(It.IsAny<string>(), It.IsAny<Guid>(), null, null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new EduTech.Auth.RefreshTokens.RefreshTokenIssue
+                { Token = "r", FamilyId = Guid.NewGuid(), ExpiresAt = DateTime.UtcNow.AddHours(12) });
+
+        var sut = new EduTech.Auth.Unified.UnifiedAuthService(identities.Object, contexts.Object,
+            parents.Object, hasher.Object, otp.Object, sms.Object, access.Object, refresh.Object,
+            staffUsers.Object, affiliations.Object, templates.Object, overrides.Object,
+            new Mock<EduTech.Auth.SchoolOwner.ISchoolRepository>().Object,
+            new Mock<EduTech.Auth.SchoolOwner.ISchoolOwnerRepository>().Object,
+            new Mock<EduTech.Shared.Persistence.IDbConnectionFactory>().Object);
+
+        access.Setup(a => a.IssueIdentity(identity.Id, SharedPhone))
+            .Returns(new AccessToken { Token = "identity-token", ExpiresAt = DateTime.UtcNow.AddMinutes(30) });
+        contexts.Setup(c => c.GetIdentityIdForActorAsync("identity", identity.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(identity.Id);
+        identities.Setup(i => i.GetByIdAsync(identity.Id, It.IsAny<CancellationToken>())).ReturnsAsync(identity);
+
+        // ONE login → BOTH personas offered (the unified principal) + an identity session for the picker.
+        var offered = await sut.LoginAsync(
+            new EduTech.Auth.Unified.UnifiedLoginRequest { Phone = SharedPhone, Password = "password123" },
+            null, null, CancellationToken.None);
+        Assert.Equal(2, offered.Contexts.Count);
+        Assert.Null(offered.Selected);
+
+        // Enter STAFF, then switch to PARENT — one session, /select-context, different portal tokens.
+        var asStaff = await sut.SelectContextAsync("identity", identity.Id, affiliationId,
+            null, null, CancellationToken.None);
+        Assert.Equal("staff-token", asStaff.Tokens!.AccessToken);
+
+        var asParent = await sut.SelectContextAsync("identity", identity.Id, parentId,
+            null, null, CancellationToken.None);
+        Assert.Equal("parent-token", asParent.Tokens!.AccessToken);
     }
 
     private static TokenValidationParameters ValidationParams(string key) => new()

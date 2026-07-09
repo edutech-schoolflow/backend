@@ -15,6 +15,7 @@ namespace EduTech.Auth.Staff;
 [Route("api/v1/staff/auth")]
 public sealed class StaffAuthController : ControllerBase
 {
+    // Legacy portal auth removed (EDD-001 Sprint 5) — register/login/password flows now live at /api/v1/auth.
     private const string AccessCookie = "sf_access";
     private const string RefreshCookie = "sf_refresh";
 
@@ -25,37 +26,8 @@ public sealed class StaffAuthController : ControllerBase
         _authService = authService;
     }
 
-    [HttpPost("register")]
-    [EnableRateLimiting("otp")]
-    [SignupGate("staff")]
-    public async Task<ActionResult<ServiceResponses<string?>>> Register(
-        [FromBody] RegisterStaffRequest request, CancellationToken cancellationToken)
-    {
-        await _authService.RegisterAsync(request, cancellationToken);
-        return Ok(ServiceResponses<string?>.Ok(null,
-            "Account created. We sent a verification code to your phone."));
-    }
 
-    [HttpPost("verify-phone")]
-    [EnableRateLimiting("login")]
-    public async Task<ActionResult<ServiceResponses<string?>>> VerifyPhone(
-        [FromBody] StaffVerifyPhoneRequest request, CancellationToken cancellationToken)
-    {
-        await _authService.VerifyPhoneAsync(request, cancellationToken);
-        return Ok(ServiceResponses<string?>.Ok(null, "Phone verified. You can now log in."));
-    }
 
-    [HttpPost("login")]
-    [EnableRateLimiting("login")]
-    [MaintenanceGate]
-    public async Task<ActionResult<ServiceResponses<StaffAuthResponse>>> Login(
-        [FromBody] StaffLoginRequest request, CancellationToken cancellationToken)
-    {
-        StaffTokensResult result = await _authService.LoginAsync(request, ClientIp(), UserAgent(), cancellationToken);
-        SetAuthCookies(result);
-        return Ok(ServiceResponses<StaffAuthResponse>.Ok(
-            new StaffAuthResponse { AccessTokenExpiresAt = result.AccessTokenExpiresAt }, "Logged in."));
-    }
 
     [HttpPost("refresh")]
     [EnableRateLimiting("login")]
@@ -68,32 +40,8 @@ public sealed class StaffAuthController : ControllerBase
             new StaffAuthResponse { AccessTokenExpiresAt = result.AccessTokenExpiresAt }, "Token refreshed."));
     }
 
-    [HttpPost("resend-otp")]
-    [EnableRateLimiting("otp")]
-    public async Task<ActionResult<ServiceResponses<string?>>> ResendOtp(
-        [FromBody] StaffResendOtpRequest request, CancellationToken cancellationToken)
-    {
-        await _authService.ResendOtpAsync(request, cancellationToken);
-        return Ok(ServiceResponses<string?>.Ok(null, "If your number needs verifying, we sent a new code."));
-    }
 
-    [HttpPost("forgot-password")]
-    [EnableRateLimiting("login")]
-    public async Task<ActionResult<ServiceResponses<string?>>> ForgotPassword(
-        [FromBody] StaffForgotPasswordRequest request, CancellationToken cancellationToken)
-    {
-        await _authService.ForgotPasswordAsync(request, cancellationToken);
-        return Ok(ServiceResponses<string?>.Ok(null, "If that account exists, we sent a reset code."));
-    }
 
-    [HttpPost("reset-password")]
-    [EnableRateLimiting("login")]
-    public async Task<ActionResult<ServiceResponses<string?>>> ResetPassword(
-        [FromBody] StaffResetPasswordRequest request, CancellationToken cancellationToken)
-    {
-        await _authService.ResetPasswordAsync(request, cancellationToken);
-        return Ok(ServiceResponses<string?>.Ok(null, "Password reset. Please log in."));
-    }
 
     [HttpGet("me")]
     [Authorize(Policy = "StaffOnly")]

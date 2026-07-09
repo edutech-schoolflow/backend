@@ -7,14 +7,13 @@ namespace EduTech.Students.Admissions.Events;
 /// parent's contact so the notification observer can text them — the service that raises it doesn't care who
 /// listens. Phone/ChildName are transient delivery data; only Action/EntityType/EntityId/Summary are audited.
 /// </summary>
-public sealed class ExamScheduledEvent : IAuditableEvent
+public sealed class ExamScheduledEvent : DomainEvent, IAuditableEvent
 {
     public required Guid ApplicationId { get; init; }
     public required string ChildName { get; init; }
     public string? Phone { get; init; }
     public DateOnly? ExamDate { get; init; }
 
-    public DateTime OccurredAt { get; } = DateTime.UtcNow;
     public string Action => "application.exam_scheduled";
     public string EntityType => "application";
     public Guid EntityId => ApplicationId;
@@ -23,14 +22,13 @@ public sealed class ExamScheduledEvent : IAuditableEvent
     public string? Metadata => null;
 }
 
-public sealed class ApplicationAdmittedEvent : IAuditableEvent
+public sealed class ApplicationAdmittedEvent : DomainEvent, IAuditableEvent
 {
     public required Guid ApplicationId { get; init; }
     public required string ChildName { get; init; }
     public string? Phone { get; init; }
     public required string AdmissionNumber { get; init; }
 
-    public DateTime OccurredAt { get; } = DateTime.UtcNow;
     public string Action => "application.admitted";
     public string EntityType => "application";
     public Guid EntityId => ApplicationId;
@@ -38,14 +36,13 @@ public sealed class ApplicationAdmittedEvent : IAuditableEvent
     public string? Metadata => null;
 }
 
-public sealed class ApplicationRejectedEvent : IAuditableEvent
+public sealed class ApplicationRejectedEvent : DomainEvent, IAuditableEvent
 {
     public required Guid ApplicationId { get; init; }
     public required string ChildName { get; init; }
     public string? Phone { get; init; }
     public string? Reason { get; init; }
 
-    public DateTime OccurredAt { get; } = DateTime.UtcNow;
     public string Action => "application.rejected";
     public string EntityType => "application";
     public Guid EntityId => ApplicationId;

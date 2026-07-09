@@ -8,6 +8,7 @@ using EduTech.Shared.Context;
 using EduTech.Shared.Exceptions;
 using EduTech.Shared.Notifications;
 using Moq;
+using EduTech.Workforce;
 
 namespace EduTech.Auth.Tests.Staff;
 

@@ -8,6 +8,7 @@ using EduTech.Shared.Exceptions;
 using EduTech.Shared.Notifications;
 using EduTech.Shared.Phone;
 using Npgsql;
+using EduTech.Workforce;
 
 namespace EduTech.Auth.Staff;
 

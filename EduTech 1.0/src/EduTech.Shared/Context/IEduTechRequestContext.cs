@@ -30,6 +30,12 @@ public interface IEduTechRequestContext
     /// </summary>
     string? AffiliationId { get; }
 
+    /// <summary>The person (identities.id) behind this request — org-context tokens carry it.</summary>
+    string? IdentityId { get; }
+
+    /// <summary>The active AccessContext reference this session operates in.</summary>
+    string? ContextId { get; }
+
     /// <summary>
     /// True only for the school account owner (registered the school).
     /// Bypasses all feature flag and role checks.

@@ -5,9 +5,11 @@ using System.Threading.RateLimiting;
 using EduTech.Api.Hangfire;
 using EduTech.Attendance;
 using EduTech.Auth;
+using EduTech.Workforce;
 using EduTech.Compliance;
 using EduTech.Fees;
 using EduTech.Grades;
+using EduTech.Identity;
 using EduTech.Notifications;
 using EduTech.Students;
 using EduTech.School;
@@ -59,6 +61,7 @@ string staffKey    = config["Jwt:StaffSigningKey"]         ?? throw new InvalidO
 string schoolKey   = config["Jwt:SchoolSigningKey"]        ?? throw new InvalidOperationException("Jwt:SchoolSigningKey is missing");
 string parentKey   = config["Jwt:ParentSigningKey"]        ?? throw new InvalidOperationException("Jwt:ParentSigningKey is missing");
 string adminKey    = config["Jwt:PlatformAdminSigningKey"] ?? throw new InvalidOperationException("Jwt:PlatformAdminSigningKey is missing");
+string identityKey = config["Jwt:IdentitySigningKey"] ?? parentKey;   // identity-scope tokens (EDD-001)
 string jwtIssuer   = config["Jwt:Issuer"]                  ?? "EduTech";
 string jwtAudience = config["Jwt:Audience"]                ?? "EduTechApp";
 
@@ -92,6 +95,11 @@ builder.Services.AddAuthentication()
         options.TokenValidationParameters = BuildTokenParams(parentKey, jwtIssuer, jwtAudience);
         ReadTokenFromCookie(options);
     })
+    .AddJwtBearer("IdentityAuth", options =>
+    {
+        options.TokenValidationParameters = BuildTokenParams(identityKey, jwtIssuer, jwtAudience);
+        ReadTokenFromCookie(options);
+    })
     .AddJwtBearer("PlatformAdminAuth", options =>
     {
         options.TokenValidationParameters = BuildTokenParams(adminKey, jwtIssuer, jwtAudience);
@@ -123,6 +131,11 @@ builder.Services.AddAuthorizationBuilder()
     // active school. Both tokens carry school_id; per-action [RequireFeature] gates staff (owner bypasses).
     .AddPolicy("SchoolPortal", policy => policy
         .AddAuthenticationSchemes("SchoolAuth", "StaffAuth")
+        .RequireAuthenticatedUser())
+    // "Are you an authenticated person?" — any session (identity-scope or portal) qualifies; the
+    // persona is irrelevant. Identity-surface endpoints (/auth/me, select-context, onboarding) use this.
+    .AddPolicy("AuthenticatedIdentity", policy => policy
+        .AddAuthenticationSchemes("SchoolAuth", "StaffAuth", "ParentAuth", "IdentityAuth")
         .RequireAuthenticatedUser());
 
 // ─── Rate limiting ────────────────────────────────────────────────────────────
@@ -243,8 +256,9 @@ builder.Services.AddFeatureFlags();
 builder.Services.AddSlackNotifications(config);     // error alerts -> Slack (real) or logs (dev)
 builder.Services.AddDomainEvents();                 // Observer: publisher; modules register their handlers
 builder.Services.AddAuditLog();                     // Observer: writes every auditable event to the trail
-builder.Services.AddCurrentTermGuard();             // provider behind [RequiresCurrentTerm]
 builder.Services.AddAuthModule();
+builder.Services.AddWorkforceModule();
+builder.Services.AddIdentityModule();   // EDD-001 Sprint 1 — global identities (unified auth lands Sprint 2)
 builder.Services.AddNotificationsModule(config);
 builder.Services.AddSchoolModule(config);
 builder.Services.AddComplianceModule(config);
@@ -252,11 +266,8 @@ builder.Services.AddStudentsModule(config);
 builder.Services.AddAttendanceModule(config);
 builder.Services.AddGradesModule(config);
 builder.Services.AddFeesModule(config);
-// builder.Services.AddStaffModule(config);
 // builder.Services.AddStudentsModule(config);
-// builder.Services.AddStoreModule(config);
 // builder.Services.AddComplianceModule(config);
-// builder.Services.AddPlatformAdminModule(config);
 
 // ─── Build ────────────────────────────────────────────────────────────────────
 WebApplication app = builder.Build();
@@ -353,6 +364,8 @@ using (IServiceScope scope = app.Services.CreateScope())
         IRecurringJobManager recurringJobs = scope.ServiceProvider.GetRequiredService<IRecurringJobManager>();
         recurringJobs.AddOrUpdate<EduTech.Students.Academics.Transition.CalendarRollForwardJob>(
             "calendar-roll-forward", job => job.RunAsync(CancellationToken.None), Cron.Daily(2));
+        recurringJobs.AddOrUpdate<EduTech.Auth.Unified.IdentityReconciliationJob>(
+            "identity-reconciliation", job => job.RunAsync(CancellationToken.None), Cron.Daily(3));
     }
     catch (Exception ex)
     {

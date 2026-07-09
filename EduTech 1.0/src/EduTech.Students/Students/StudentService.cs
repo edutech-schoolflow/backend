@@ -1,8 +1,11 @@
 using EduTech.Shared.Audit;
 using EduTech.Shared.Constants;
+using EduTech.Shared.Context;
 using EduTech.Shared.Events;
 using EduTech.Shared.Exceptions;
 using EduTech.Shared.Phone;
+using EduTech.Identity;
+using EduTech.Students.Classes.Domain;
 using EduTech.Students.Students.Commands;
 
 namespace EduTech.Students.Students;
@@ -27,14 +30,19 @@ internal sealed class StudentService : IStudentService
     private readonly StudentCommandInvoker _invoker;
     private readonly IDomainEventPublisher _events;
     private readonly IAuditLogRepository _audit;
+    private readonly IEduTechRequestContext _context;
+    private readonly IIdentityDirectory _identityDirectory;
 
     public StudentService(IStudentRepository repository, StudentCommandInvoker invoker,
-        IDomainEventPublisher events, IAuditLogRepository audit)
+        IDomainEventPublisher events, IAuditLogRepository audit, IEduTechRequestContext context,
+        IIdentityDirectory identityDirectory)
     {
+        _identityDirectory = identityDirectory;
         _repository = repository;
         _invoker = invoker;
         _events = events;
         _audit = audit;
+        _context = context;
     }
 
     public async Task<StudentListResponse> ListAsync(Guid? classId, string? status, int page, int limit,
@@ -63,21 +71,18 @@ internal sealed class StudentService : IStudentService
             throw new AppErrorException("Enter a valid Nigerian phone number.", 400, ErrorCodes.ValidationError);
         }
 
-        ParentLookupRow? row = await _repository.LookupParentByPhoneAsync(normalized, cancellationToken);
-        if (row is null)
+        // Identity owns people — Academics asks its directory instead of reading people tables (EDD-002 V3).
+        IdentityLookup? person = await _identityDirectory.LookupByPhoneAsync(normalized, cancellationToken);
+        if (person is null)
         {
             return new ParentLookupResponse { Found = false };
         }
 
-        string name = string.Join(' ',
-            new[] { row.FirstName, row.MiddleName, row.LastName }
-                .Where(part => !string.IsNullOrWhiteSpace(part)));
-
         return new ParentLookupResponse
         {
             Found = true,
-            Name = name,
-            Status = row.HasPassword ? "registered" : "pending",
+            Name = person.FullName,
+            Status = person.IsClaimed ? "registered" : "pending",
         };
     }
 
@@ -155,6 +160,14 @@ internal sealed class StudentService : IStudentService
         };
 
         (Guid id, _) = await _repository.CreateAsync(insert, extraGuardians, cancellationToken);
+
+        // The Identity context reacts by ensuring an identity + parent membership for this guardian —
+        // Academics doesn't write people (EDD-002). Published after the student INSERT committed.
+        if (Guid.TryParse(_context.SchoolId, out Guid schoolId))
+        {
+            await _events.PublishAsync(new GuardianLinkedEvent(schoolId, parentPhone,
+                request.Parent?.FirstName?.Trim(), request.Parent?.LastName?.Trim()), cancellationToken);
+        }
 
         // Re-read so the response reflects the resolved class/arm names + parent (and any extra contacts).
         return await GetAsync(id, cancellationToken);
@@ -331,8 +344,47 @@ internal sealed class StudentService : IStudentService
                 continue;
             }
 
+            // No explicit target → derive it from the 6-3-3 ladder: repeat stays in the current class;
+            // promote moves to the next grade (Primary 6 → JSS 1, …) — and past SSS 3 there is no next
+            // grade, so the student GRADUATES. An explicit TargetClassId remains the school's override.
+            Guid? resolvedTarget = item.TargetClassId;
+            if (resolvedTarget is null)
+            {
+                CurrentClassRow? current = await _repository.GetCurrentClassAsync(item.StudentId, cancellationToken);
+                if (current?.ClassName is null
+                    || !NigerianEducationLadder.TryGetByName(current.ClassName, out StandardGrade grade))
+                {
+                    throw new AppErrorException(
+                        "This student's class isn't on the standard ladder — pick their target class explicitly.",
+                        400, ErrorCodes.ValidationError);
+                }
+
+                if (action == PromotionAction.Repeat)
+                {
+                    resolvedTarget = current.ClassId;
+                }
+                else
+                {
+                    StandardGrade? next = NigerianEducationLadder.NextGrade(grade);
+                    if (next is null)
+                    {
+                        graduated++;
+                        commands.Add(new PromotionCommand
+                        {
+                            StudentId = item.StudentId, Outcome = "graduated", Graduate = true
+                        });
+                        continue;
+                    }
+
+                    resolvedTarget = await _repository.FindClassIdByNameAsync(next.Name, cancellationToken)
+                        ?? throw new AppErrorException(
+                            $"Promoting from {grade.Name} needs a \"{next.Name}\" class — create it first or pick a target explicitly.",
+                            400, ErrorCodes.ValidationError);
+                }
+            }
+
             // Promote / repeat both land the student in a class in the target session.
-            if (item.TargetClassId is not Guid targetClassId
+            if (resolvedTarget is not Guid targetClassId
                 || !await _repository.ClassExistsAsync(targetClassId, cancellationToken))
             {
                 throw new AppErrorException("Select a valid class to move each promoted/repeating student into.",

@@ -15,6 +15,7 @@ namespace EduTech.Auth.SchoolOwner;
 [Route("api/v1/school/auth")]
 public sealed class SchoolOwnerAuthController : ControllerBase
 {
+    // Legacy portal auth removed (EDD-001 Sprint 5) — register/login/password flows now live at /api/v1/auth.
     private const string AccessCookie = "sf_access";
     private const string RefreshCookie = "sf_refresh";
 
@@ -45,17 +46,6 @@ public sealed class SchoolOwnerAuthController : ControllerBase
         return Ok(ServiceResponses<string?>.Ok(null, "Phone verified. You can now log in."));
     }
 
-    [HttpPost("login")]
-    [EnableRateLimiting("login")]
-    [MaintenanceGate]
-    public async Task<ActionResult<ServiceResponses<LoginResponse>>> Login(
-        [FromBody] LoginRequest request, CancellationToken cancellationToken)
-    {
-        LoginResult result = await _authService.LoginAsync(request, ClientIp(), UserAgent(), cancellationToken);
-        SetAuthCookies(result);
-        return Ok(ServiceResponses<LoginResponse>.Ok(
-            new LoginResponse { AccessTokenExpiresAt = result.AccessTokenExpiresAt }, "Logged in."));
-    }
 
     [HttpPost("refresh")]
     [EnableRateLimiting("login")]
@@ -77,23 +67,7 @@ public sealed class SchoolOwnerAuthController : ControllerBase
         return Ok(ServiceResponses<string?>.Ok(null, "If your number needs verifying, we sent a new code."));
     }
 
-    [HttpPost("forgot-password")]
-    [EnableRateLimiting("login")]
-    public async Task<ActionResult<ServiceResponses<string?>>> ForgotPassword(
-        [FromBody] ForgotPasswordRequest request, CancellationToken cancellationToken)
-    {
-        await _authService.ForgotPasswordAsync(request, cancellationToken);
-        return Ok(ServiceResponses<string?>.Ok(null, "If that account exists, we sent a reset code."));
-    }
 
-    [HttpPost("reset-password")]
-    [EnableRateLimiting("login")]
-    public async Task<ActionResult<ServiceResponses<string?>>> ResetPassword(
-        [FromBody] ResetPasswordRequest request, CancellationToken cancellationToken)
-    {
-        await _authService.ResetPasswordAsync(request, cancellationToken);
-        return Ok(ServiceResponses<string?>.Ok(null, "Password reset. Please log in."));
-    }
 
     [HttpGet("me")]
     [Authorize(Policy = "SchoolOnly")]

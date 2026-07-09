@@ -6,6 +6,7 @@ using EduTech.Shared.Notifications;
 using EduTech.Shared.Persistence;
 using Microsoft.Extensions.Configuration;
 using Moq;
+using EduTech.Workforce;
 
 namespace EduTech.Auth.Tests.Staff;
 

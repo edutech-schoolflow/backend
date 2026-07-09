@@ -4,6 +4,7 @@ using EduTech.Shared.Events;
 using EduTech.Shared.Exceptions;
 using EduTech.Students.Students;
 using EduTech.Students.Students.Commands;
+using EduTech.Identity;
 using Moq;
 
 namespace EduTech.Auth.Tests.Students;
@@ -13,9 +14,11 @@ public class StudentServiceTests
     private readonly Mock<IStudentRepository> _repo = new();
     private readonly Mock<IDomainEventPublisher> _events = new();
     private readonly Mock<IAuditLogRepository> _audit = new();
+    private readonly Mock<EduTech.Shared.Context.IEduTechRequestContext> _context = new();
+    private readonly Mock<IIdentityDirectory> _directory = new();
 
     private StudentService CreateSut() =>
-        new(_repo.Object, new StudentCommandInvoker(_events.Object), _events.Object, _audit.Object);
+        new(_repo.Object, new StudentCommandInvoker(_events.Object), _events.Object, _audit.Object, _context.Object, _directory.Object);
 
     private static readonly Guid Cls = Guid.NewGuid();
 
@@ -32,6 +35,9 @@ public class StudentServiceTests
         DateOfBirth = new DateOnly(2015, 4, 12), Gender = "male", AdmissionNumber = "GFA/2025/001",
         ClassId = Cls, Status = status, CreatedAt = DateTime.UtcNow
     };
+
+    private void SchoolContext() =>
+        _context.Setup(c => c.SchoolId).Returns(Guid.NewGuid().ToString());
 
     private void ClassExists() =>
         _repo.Setup(r => r.ClassExistsAsync(Cls, It.IsAny<CancellationToken>())).ReturnsAsync(true);
@@ -92,6 +98,7 @@ public class StudentServiceTests
     {
         Guid id = Guid.NewGuid();
         ClassExists();
+        SchoolContext();
         _repo.Setup(r => r.CreateAsync(It.IsAny<StudentInsert>(), It.IsAny<IReadOnlyList<GuardianDto>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((id, "GFA/2025/001"));
         _repo.Setup(r => r.GetAsync(id, It.IsAny<CancellationToken>())).ReturnsAsync(Row(id));
@@ -108,6 +115,9 @@ public class StudentServiceTests
         _repo.Verify(r => r.CreateAsync(
             It.Is<StudentInsert>(i => i.Parent.Phone == "+2348030000001" && i.ClassId == Cls),
             It.IsAny<IReadOnlyList<GuardianDto>>(), It.IsAny<CancellationToken>()), Times.Once);
+        // and the Identity context is told about the guardian (identity + membership follow via the event)
+        _events.Verify(p => p.PublishAsync(
+            It.Is<GuardianLinkedEvent>(e => e.Phone == "+2348030000001"), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -213,8 +223,8 @@ public class StudentServiceTests
     [Fact]
     public async Task LookupParent_UnknownPhone_ReturnsNotFound()
     {
-        _repo.Setup(r => r.LookupParentByPhoneAsync("+2348030000001", It.IsAny<CancellationToken>()))
-            .ReturnsAsync((ParentLookupRow?)null);
+        _directory.Setup(d => d.LookupByPhoneAsync("+2348030000001", It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IdentityLookup?)null);
 
         ParentLookupResponse res = await CreateSut().LookupParentAsync("08030000001", CancellationToken.None);
 
@@ -226,8 +236,8 @@ public class StudentServiceTests
     [Fact]
     public async Task LookupParent_RegisteredParent_ReturnsRegisteredWithFullName()
     {
-        _repo.Setup(r => r.LookupParentByPhoneAsync("+2348030000001", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new ParentLookupRow { FirstName = "Ada", MiddleName = "N", LastName = "Obi", HasPassword = true });
+        _directory.Setup(d => d.LookupByPhoneAsync("+2348030000001", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new IdentityLookup { FullName = "Ada N Obi", IsClaimed = true });
 
         ParentLookupResponse res = await CreateSut().LookupParentAsync("08030000001", CancellationToken.None);
 
@@ -239,8 +249,8 @@ public class StudentServiceTests
     [Fact]
     public async Task LookupParent_PendingSchoolSeededParent_ReturnsPending()
     {
-        _repo.Setup(r => r.LookupParentByPhoneAsync("+2348030000001", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new ParentLookupRow { FirstName = "Guardian", LastName = "Guardian", HasPassword = false });
+        _directory.Setup(d => d.LookupByPhoneAsync("+2348030000001", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new IdentityLookup { FullName = "Guardian Guardian", IsClaimed = false });
 
         ParentLookupResponse res = await CreateSut().LookupParentAsync("08030000001", CancellationToken.None);
 

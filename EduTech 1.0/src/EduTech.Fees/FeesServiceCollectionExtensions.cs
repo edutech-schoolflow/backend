@@ -10,6 +10,8 @@ public static class FeesServiceCollectionExtensions
     public static IServiceCollection AddFeesModule(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddScoped<ISchoolFeeRepository, SchoolFeeRepository>();
+        // Finance's answer to the SharedKernel balance port (EDD-002 V1) — consumed by parent-facing reads.
+        services.AddScoped<EduTech.Shared.Ports.IStudentFeeBalanceProvider, StudentFeeBalanceProvider>();
         services.AddScoped<ISchoolFeeService, SchoolFeeService>();
         services.AddScoped<IParentFeeRepository, ParentFeeRepository>();
         services.AddScoped<IParentFeeService, ParentFeeService>();

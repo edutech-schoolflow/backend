@@ -112,19 +112,7 @@ internal sealed class ParentChildrenRepository : BaseRepository, IParentChildren
                    st.id AS StudentId, st.school_id AS SchoolId, sch.name AS SchoolName, sch.logo_url AS SchoolLogoUrl,
                    NULLIF(concat_ws('', cl.name, ca.arm), '') AS ClassName,
                    st.admission_number AS AdmissionNumber, st.status AS EnrollmentStatus,
-                   COALESCE((
-                       SELECT SUM(GREATEST(ft.amount - COALESCE((
-                                  SELECT SUM(p.base_amount) FROM payments p
-                                  WHERE p.student_id = st.id AND p.fee_type_id = ft.id AND p.status = 'successful'), 0), 0))
-                       FROM terms t
-                       JOIN fee_types ft ON ft.school_id = st.school_id AND ft.term_id = t.id
-                                        AND ft.approval_status = 'approved' AND ft.is_active = TRUE
-                       JOIN fee_type_classes ftc ON ftc.fee_type_id = ft.id AND ftc.class_id = st.class_id
-                       WHERE t.school_id = st.school_id AND t.is_current = TRUE
-                         AND (ft.category = 'compulsory'
-                              OR EXISTS (SELECT 1 FROM fee_subscriptions fs
-                                         WHERE fs.student_id = st.id AND fs.fee_type_id = ft.id))
-                   ), 0) AS OutstandingFees,
+                   0::numeric AS OutstandingFees,  -- Finance's number; merged in the service via the balance port (EDD-002 V1)
                    COALESCE((SELECT TRUE FROM report_cards rc
                              WHERE rc.student_id = st.id AND rc.status = 'published' LIMIT 1), FALSE) AS HasNewResult
             FROM parent_children pc

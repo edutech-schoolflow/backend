@@ -2,6 +2,7 @@ using EduTech.Auth.Otp;
 using EduTech.Auth.RefreshTokens;
 using EduTech.Auth.Security;
 using EduTech.Auth.Tokens;
+using EduTech.Auth.Unified;
 using EduTech.Shared.Constants;
 using EduTech.Shared.Context;
 using EduTech.Shared.Exceptions;
@@ -27,6 +28,7 @@ internal sealed class SchoolOwnerAuthService : ISchoolOwnerAuthService
     private readonly ISchoolRepository _schoolRepository;
     private readonly ISchoolOwnerRepository _ownerRepository;
     private readonly IPasswordHasher _passwordHasher;
+    private readonly IAuthContextRepository _identityLinks;
     private readonly IOtpService _otpService;
     private readonly INotificationDispatcher _notifications;
     private readonly IAccessTokenIssuer _accessTokenIssuer;
@@ -41,7 +43,8 @@ internal sealed class SchoolOwnerAuthService : ISchoolOwnerAuthService
         IOtpService otpService,
         INotificationDispatcher notifications,
         IAccessTokenIssuer accessTokenIssuer,
-        IRefreshTokenService refreshTokenService)
+        IRefreshTokenService refreshTokenService,
+        IAuthContextRepository identityLinks)
     {
         _requestContext = requestContext;
         _connectionFactory = connectionFactory;
@@ -51,7 +54,8 @@ internal sealed class SchoolOwnerAuthService : ISchoolOwnerAuthService
         _otpService = otpService;
         _notifications = notifications;
         _accessTokenIssuer = accessTokenIssuer;
-        _refreshTokenService = refreshTokenService;
+        _refreshTokenService = refreshTokenService;        _identityLinks = identityLinks;
+
     }
 
     public async Task RegisterAsync(RegisterSchoolOwnerRequest request, CancellationToken cancellationToken)
@@ -111,6 +115,10 @@ internal sealed class SchoolOwnerAuthService : ISchoolOwnerAuthService
             throw MapUniqueViolation(ex);
         }
 
+        // Identity platform: the owner IS an identity — create/claim + link (idempotent), so the
+        // unified login works the moment they verify. (EDD-001; owner row = employment record.)
+        await _identityLinks.EnsureOwnerIdentityLinksAsync(ownerId, cancellationToken);
+
         // After commit — if OTP/SMS fail here, the account still exists and the owner can request a
         // resend, so we deliberately keep this out of the transaction.
         string code = await _otpService.GenerateAsync(
@@ -149,6 +157,9 @@ internal sealed class SchoolOwnerAuthService : ISchoolOwnerAuthService
         {
             case OtpVerifyResult.Success:
                 await _ownerRepository.MarkPhoneVerifiedAsync(ownerId.Value, cancellationToken);
+                // The unified login gates on the IDENTITY's phone_verified — keep it in step.
+                await _identityLinks.EnsureOwnerIdentityLinksAsync(ownerId.Value, cancellationToken);
+                await _identityLinks.MarkOwnerIdentityVerifiedAsync(ownerId.Value, cancellationToken);
                 return;
 
             case OtpVerifyResult.Expired:

@@ -73,7 +73,19 @@ internal sealed class SchoolKycRepository : BaseRepository, ISchoolKycRepository
             UPDATE schools
             SET name = @Name, type = @Type, address = @Address, city = @City, state = @State,
                 phone = @Phone, email = @Email, updated_at = NOW()
-            WHERE id = @Id
+            WHERE id = @Id;
+
+            -- First real name replaces the bootstrap placeholder slug (s-xxxxxxxx) with a readable
+            -- one; later renames never move the workspace URL. Suffix on collision, like the backfill.
+            UPDATE schools
+            SET slug = CASE
+                    WHEN EXISTS (SELECT 1 FROM schools o WHERE o.id <> schools.id AND o.slug = base.slug)
+                        THEN base.slug || '-' || left(schools.id::text, 4)
+                    ELSE base.slug
+                END
+            FROM (SELECT NULLIF(left(trim(both '-' from
+                      regexp_replace(lower(@Name), '[^a-z0-9]+', '-', 'g')), 74), '') AS slug) base
+            WHERE schools.id = @Id AND schools.slug ~ '^s-[0-9a-f]{8}$' AND base.slug IS NOT NULL
             """,
             new
             {

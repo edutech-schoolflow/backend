@@ -181,7 +181,7 @@ public class UnifiedAuthServiceTests
         NoContexts(identity.Id);
         _contexts.Setup(c => c.ListAccessContextsAsync(identity.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new[] { new AccessContextRow { ReferenceId = parentId, Type = "parent" } });
-        _access.Setup(a => a.IssueParent(parentId, Phone, It.IsAny<Guid?>(), It.IsAny<Guid?>()))
+        _access.Setup(a => a.IssueParent(parentId, Phone, It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>()))
             .Returns(new AccessToken { Token = "access", ExpiresAt = DateTime.UtcNow.AddMinutes(30) });
         _refresh.Setup(r => r.IssueAsync(AuthActorTypes.Parent, parentId, null, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new RefreshTokenIssue { Token = "refresh", FamilyId = Guid.NewGuid(), ExpiresAt = DateTime.UtcNow.AddDays(14) });
@@ -192,6 +192,37 @@ public class UnifiedAuthServiceTests
         Assert.Equal(parentId, result.Selected);
         Assert.NotNull(result.Tokens);
         Assert.Equal("access", result.Tokens!.AccessToken);
+    }
+
+    // EDD-002 revision: a parent membership is organization-scoped. Its context carries the school,
+    // and entering it mints a token scoped to that school (not the old school-agnostic parent token).
+    [Fact]
+    public async Task Login_OrgScopedParentContext_MintsSchoolScopedToken()
+    {
+        Guid parentId = Guid.NewGuid();
+        Guid schoolId = Guid.NewGuid();
+        IdentityAggregate identity = Identity(passwordHash: "hashed", phoneVerified: true, status: IdentityStatus.Active);
+        _identities.Setup(i => i.GetByPhoneAsync(Phone, It.IsAny<CancellationToken>())).ReturnsAsync(identity);
+        _hasher.Setup(h => h.Verify("password123", "hashed")).Returns(true);
+        NoContexts(identity.Id);
+        _contexts.Setup(c => c.ListAccessContextsAsync(identity.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { new AccessContextRow
+            {
+                ReferenceId = parentId, Type = "parent", OrganizationId = schoolId,
+                OrganizationName = "Divine Wisdom", OrganizationSlug = "divine-wisdom"
+            } });
+        _access.Setup(a => a.IssueParent(parentId, Phone, identity.Id, parentId, schoolId))
+            .Returns(new AccessToken { Token = "parent-access", ExpiresAt = DateTime.UtcNow.AddMinutes(30) });
+        _refresh.Setup(r => r.IssueAsync(AuthActorTypes.Parent, parentId, null, null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RefreshTokenIssue { Token = "r", FamilyId = Guid.NewGuid(), ExpiresAt = DateTime.UtcNow.AddDays(14) });
+
+        UnifiedLoginResult result = await CreateSut().LoginAsync(
+            new UnifiedLoginRequest { Phone = "08033334444", Password = "password123" }, null, null, CancellationToken.None);
+
+        Assert.Equal(parentId, result.Selected);
+        Assert.Equal("parent-access", result.Tokens!.AccessToken);
+        // The school rode into the token — proof the parent session is organization-scoped.
+        _access.Verify(a => a.IssueParent(parentId, Phone, identity.Id, parentId, schoolId), Times.Once);
     }
 
     [Fact]

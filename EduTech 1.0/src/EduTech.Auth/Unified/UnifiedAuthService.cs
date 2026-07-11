@@ -626,8 +626,10 @@ internal sealed class UnifiedAuthService : IUnifiedAuthService
 
             case "parent":
             {
+                // Org-scoped parent context (EDD-002 revision): the token carries the school so parent
+                // data binds @SchoolId + @ParentId. A legacy NULL-org context stays school-agnostic.
                 AccessToken access = _accessTokenIssuer.IssueParent(actorId, identity.Phone,
-                    identityId: identity.Id, contextId: actorId);
+                    identityId: identity.Id, contextId: actorId, schoolId: context.OrganizationId);
                 RefreshTokenIssue refresh = await _refreshTokens.IssueAsync(AuthActorTypes.Parent,
                     actorId, ipAddress, userAgent, cancellationToken);
                 return Tokens(access, refresh);

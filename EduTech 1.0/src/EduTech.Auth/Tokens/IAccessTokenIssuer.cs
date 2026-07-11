@@ -27,7 +27,10 @@ internal interface IAccessTokenIssuer
     AccessToken IssueIdentity(Guid identityId, string phone);
 
     /// <summary>Parent token — school-agnostic (no school_id claim).</summary>
-    AccessToken IssueParent(Guid parentId, string phone, Guid? identityId = null, Guid? contextId = null);
+    // schoolId makes a parent token ORGANIZATION-SCOPED (EDD-002 revision): a parent membership belongs
+    // to one school, like staff employment. Null keeps the legacy school-agnostic token (strangler path).
+    AccessToken IssueParent(Guid parentId, string phone, Guid? identityId = null, Guid? contextId = null,
+        Guid? schoolId = null);
 
     /// <summary>Internal Platform Admin token. <paramref name="role"/> is the sub-role.</summary>
     AccessToken IssuePlatformAdmin(Guid adminId, string role, string email);

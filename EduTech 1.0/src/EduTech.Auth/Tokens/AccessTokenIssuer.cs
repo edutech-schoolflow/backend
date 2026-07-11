@@ -98,11 +98,12 @@ internal sealed class AccessTokenIssuer : IAccessTokenIssuer
         };
     }
 
-    public AccessToken IssueParent(Guid parentId, string phone, Guid? identityId = null, Guid? contextId = null)
+    public AccessToken IssueParent(Guid parentId, string phone, Guid? identityId = null, Guid? contextId = null,
+        Guid? schoolId = null)
     {
         string token = TokenVendor.VendParentToken(
             _parentSigningKey, _issuer, _audience, parentId.ToString(), phone, ParentAccessMinutes,
-            identityId?.ToString(), contextId?.ToString());
+            identityId?.ToString(), contextId?.ToString(), schoolId?.ToString());
 
         return new AccessToken
         {

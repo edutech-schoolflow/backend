@@ -153,7 +153,7 @@ public static class TokenVendor
 
     public static string VendParentToken(string signingKey, string issuer, string audience,
         string userId, string phone, int expiryMinutes = 30,
-        string? identityId = null, string? contextId = null)
+        string? identityId = null, string? contextId = null, string? schoolId = null)
     {
         List<Claim> claims = new List<Claim>
         {
@@ -167,6 +167,9 @@ public static class TokenVendor
         // Org-context token (EDD-001/FE-001): every request carries WHO (identity) and WHERE (context).
         if (identityId is not null) claims.Add(new Claim("identity_id", identityId));
         if (contextId is not null) claims.Add(new Claim("context_id", contextId));
+        // A parent membership is organization-scoped (EDD-002 revision): the school it belongs to lets
+        // parent queries bind @SchoolId + @ParentId, the same structural guard tenant data gets.
+        if (schoolId is not null) claims.Add(new Claim("school_id", schoolId));
 
         return VendToken(signingKey, issuer, audience, claims, expiryMinutes);
     }

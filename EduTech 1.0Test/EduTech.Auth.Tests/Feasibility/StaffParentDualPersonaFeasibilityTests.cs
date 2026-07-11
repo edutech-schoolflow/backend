@@ -201,7 +201,7 @@ public class StaffParentDualPersonaFeasibilityTests
                 "full_time", "approved", It.IsAny<IReadOnlyDictionary<string, bool>>(),
                 It.IsAny<Guid?>(), It.IsAny<Guid?>()))
             .Returns(new AccessToken { Token = "staff-token", ExpiresAt = DateTime.UtcNow.AddMinutes(30) });
-        access.Setup(a => a.IssueParent(parentId, SharedPhone, It.IsAny<Guid?>(), It.IsAny<Guid?>()))
+        access.Setup(a => a.IssueParent(parentId, SharedPhone, It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>()))
             .Returns(new AccessToken { Token = "parent-token", ExpiresAt = DateTime.UtcNow.AddMinutes(30) });
         refresh.Setup(r => r.IssueAsync(It.IsAny<string>(), It.IsAny<Guid>(), null, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new EduTech.Auth.RefreshTokens.RefreshTokenIssue

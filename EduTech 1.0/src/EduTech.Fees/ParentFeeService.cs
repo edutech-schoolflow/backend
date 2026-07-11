@@ -11,6 +11,10 @@ public interface IParentFeeService
     Task<IReadOnlyList<ChildFeesResponse>> GetFeesAsync(Guid? studentId, CancellationToken cancellationToken);
     Task<PaymentResponse> PayAsync(PayFeeRequest request, CancellationToken cancellationToken);
     Task<IReadOnlyList<PaymentResponse>> ListPaymentsAsync(CancellationToken cancellationToken);
+
+    /// <summary>The signed-in IDENTITY's payments across schools (EDD-002 identity-space view) —
+    /// includes application fees paid before any membership. Empty until they've paid anything.</summary>
+    Task<IReadOnlyList<PaymentResponse>> ListMyPaymentsAsync(CancellationToken cancellationToken);
 }
 
 internal sealed class ParentFeeService : IParentFeeService
@@ -117,9 +121,20 @@ internal sealed class ParentFeeService : IParentFeeService
         };
     }
 
-    public async Task<IReadOnlyList<PaymentResponse>> ListPaymentsAsync(CancellationToken cancellationToken)
+    public Task<IReadOnlyList<PaymentResponse>> ListPaymentsAsync(CancellationToken cancellationToken)
+        => FetchPaymentsAsync(ParentId, cancellationToken);
+
+    public async Task<IReadOnlyList<PaymentResponse>> ListMyPaymentsAsync(CancellationToken cancellationToken)
     {
-        IReadOnlyList<PaymentRow> rows = await _repository.ListPaymentsAsync(ParentId, cancellationToken);
+        Guid? parentId = await _repository.GetParentIdByIdentityAsync(CurrentIdentityId, cancellationToken);
+        return parentId is Guid pid
+            ? await FetchPaymentsAsync(pid, cancellationToken)
+            : Array.Empty<PaymentResponse>();
+    }
+
+    private async Task<IReadOnlyList<PaymentResponse>> FetchPaymentsAsync(Guid parentId, CancellationToken cancellationToken)
+    {
+        IReadOnlyList<PaymentRow> rows = await _repository.ListPaymentsAsync(parentId, cancellationToken);
         return rows.Select(r => new PaymentResponse
         {
             Id = r.Id, FeeTypeId = r.FeeTypeId, BaseAmount = r.BaseAmount, PlatformFee = r.PlatformFee,
@@ -130,6 +145,12 @@ internal sealed class ParentFeeService : IParentFeeService
 
     private Guid ParentId =>
         Guid.TryParse(_context.UserId, out Guid id)
+            ? id
+            : throw new AppErrorException("Authentication required.", 401, ErrorCodes.Unauthorized);
+
+    // The identity behind the session: identity_id claim (org tokens) or user_id (identity session).
+    private Guid CurrentIdentityId =>
+        Guid.TryParse(_context.IdentityId ?? _context.UserId, out Guid id)
             ? id
             : throw new AppErrorException("Authentication required.", 401, ErrorCodes.Unauthorized);
 }

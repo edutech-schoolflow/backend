@@ -11,6 +11,13 @@ internal interface IParentChildrenRepository
 {
     Task<bool> OwnsChildAsync(Guid parentId, Guid childProfileId, CancellationToken cancellationToken);
     Task<IReadOnlyList<ParentChildRow>> GetChildrenAsync(Guid parentId, CancellationToken cancellationToken);
+
+    /// <summary>The identity's active parent profile id, or null if it hasn't created one yet.</summary>
+    Task<Guid?> GetParentIdByIdentityAsync(Guid identityId, CancellationToken cancellationToken);
+
+    /// <summary>The identity's parent profile id, creating it from the identity if this is their first
+    /// child (Stage-1 lazy provisioning). Idempotent.</summary>
+    Task<Guid> GetOrProvisionParentIdAsync(Guid identityId, CancellationToken cancellationToken);
     Task<ChildProfileDetailRow?> GetChildProfileAsync(Guid childProfileId, CancellationToken cancellationToken);
     Task<Guid> InsertChildProfileAsync(Guid parentId, ChildProfileInsert insert, string? relationship, CancellationToken cancellationToken);
     Task UpdateChildProfileAsync(Guid childProfileId, ChildProfileInsert insert, CancellationToken cancellationToken);
@@ -101,6 +108,36 @@ internal sealed class ParentChildrenRepository : BaseRepository, IParentChildren
         return await ExecuteScalarAsync<int>(
             "SELECT COUNT(1) FROM parent_children WHERE parent_id = @ParentId AND child_profile_id = @ChildProfileId",
             new { ParentId = parentId, ChildProfileId = childProfileId }, cancellationToken) > 0;
+    }
+
+    public Task<Guid?> GetParentIdByIdentityAsync(Guid identityId, CancellationToken cancellationToken)
+    {
+        return QuerySingleOrDefaultAsync<Guid?>(
+            "SELECT id FROM parents WHERE identity_id = @IdentityId AND is_active = TRUE",
+            new { IdentityId = identityId }, cancellationToken);
+    }
+
+    public async Task<Guid> GetOrProvisionParentIdAsync(Guid identityId, CancellationToken cancellationToken)
+    {
+        Guid? existing = await GetParentIdByIdentityAsync(identityId, cancellationToken);
+        if (existing is Guid id)
+        {
+            return id;
+        }
+
+        // First child → create the parent profile from the identity (mirrors Auth's provisioner).
+        return await ExecuteScalarAsync<Guid>(
+            """
+            INSERT INTO parents (first_name, middle_name, last_name, phone, email,
+                                 phone_verified, status, identity_id)
+            SELECT i.first_name, i.middle_name, i.last_name, i.phone, NULL,
+                   i.phone_verified, 'active', i.id
+            FROM identities i
+            WHERE i.id = @IdentityId
+            ON CONFLICT (phone) DO UPDATE SET identity_id = COALESCE(parents.identity_id, EXCLUDED.identity_id)
+            RETURNING id
+            """,
+            new { IdentityId = identityId }, cancellationToken);
     }
 
     public Task<IReadOnlyList<ParentChildRow>> GetChildrenAsync(Guid parentId, CancellationToken cancellationToken)

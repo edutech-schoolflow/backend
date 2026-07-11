@@ -8,8 +8,21 @@ namespace EduTech.Students.ParentFacing;
 public interface IParentChildrenService
 {
     Task<IReadOnlyList<ParentChildResponse>> GetChildrenAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// The signed-in IDENTITY's children across every school (EDD-002: an identity-level "my data" view,
+    /// authorized by the identity session, not a parent token). Empty when there's no parent profile yet.
+    /// </summary>
+    Task<IReadOnlyList<ParentChildResponse>> GetMyChildrenAsync(CancellationToken cancellationToken);
     Task<ChildProfileResponse> GetChildAsync(Guid childProfileId, CancellationToken cancellationToken);
     Task<Guid> UpsertChildAsync(UpsertChildProfileRequest request, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Identity space (EDD-002): save a child to the signed-in identity's account, provisioning the
+    /// parent profile if this is their first child — the Stage-1 completion point. Authorized by the
+    /// identity session; a school membership is not required to keep children on your account.
+    /// </summary>
+    Task<Guid> UpsertMyChildAsync(UpsertChildProfileRequest request, CancellationToken cancellationToken);
     Task<IReadOnlyList<ChildReportCardSummary>> GetReportCardsAsync(Guid childProfileId, CancellationToken cancellationToken);
     Task<IReadOnlyList<ChildCaScoreResponse>> GetCaScoresAsync(Guid childProfileId, Guid? termId, CancellationToken cancellationToken);
     Task<IReadOnlyList<ChildAttendanceSummary>> GetAttendanceAsync(Guid childProfileId, CancellationToken cancellationToken);
@@ -29,9 +42,22 @@ internal sealed class ParentChildrenService : IParentChildrenService
         _feeBalances = feeBalances;
     }
 
-    public async Task<IReadOnlyList<ParentChildResponse>> GetChildrenAsync(CancellationToken cancellationToken)
+    public Task<IReadOnlyList<ParentChildResponse>> GetChildrenAsync(CancellationToken cancellationToken)
+        => FetchChildrenAsync(ParentId, cancellationToken);
+
+    public async Task<IReadOnlyList<ParentChildResponse>> GetMyChildrenAsync(CancellationToken cancellationToken)
     {
-        IReadOnlyList<ParentChildRow> rows = await _repository.GetChildrenAsync(ParentId, cancellationToken);
+        // Resolve the parent profile from the identity; a brand-new user has none yet → no children.
+        Guid? parentId = await _repository.GetParentIdByIdentityAsync(CurrentIdentityId, cancellationToken);
+        return parentId is Guid pid
+            ? await FetchChildrenAsync(pid, cancellationToken)
+            : Array.Empty<ParentChildResponse>();
+    }
+
+    private async Task<IReadOnlyList<ParentChildResponse>> FetchChildrenAsync(Guid parentId,
+        CancellationToken cancellationToken)
+    {
+        IReadOnlyList<ParentChildRow> rows = await _repository.GetChildrenAsync(parentId, cancellationToken);
 
         // Outstanding balances are Finance's number — fetched through the SharedKernel port (EDD-002 V1).
         IReadOnlyList<Guid> studentIds = rows.Where(r => r.StudentId is not null)
@@ -70,7 +96,19 @@ internal sealed class ParentChildrenService : IParentChildrenService
         };
     }
 
-    public async Task<Guid> UpsertChildAsync(UpsertChildProfileRequest request, CancellationToken cancellationToken)
+    public Task<Guid> UpsertChildAsync(UpsertChildProfileRequest request, CancellationToken cancellationToken)
+        => UpsertForParentAsync(ParentId, request, cancellationToken);
+
+    public async Task<Guid> UpsertMyChildAsync(UpsertChildProfileRequest request, CancellationToken cancellationToken)
+    {
+        // Saving a child is a Stage-1 act: provision the parent profile from the identity if it's their
+        // first child, so a person can keep children on their account before joining any school.
+        Guid parentId = await _repository.GetOrProvisionParentIdAsync(CurrentIdentityId, cancellationToken);
+        return await UpsertForParentAsync(parentId, request, cancellationToken);
+    }
+
+    private async Task<Guid> UpsertForParentAsync(Guid parentId, UpsertChildProfileRequest request,
+        CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.FirstName) || string.IsNullOrWhiteSpace(request.LastName))
         {
@@ -101,7 +139,7 @@ internal sealed class ParentChildrenService : IParentChildrenService
             return id;
         }
 
-        return await _repository.InsertChildProfileAsync(ParentId, insert,
+        return await _repository.InsertChildProfileAsync(parentId, insert,
             string.IsNullOrWhiteSpace(request.Relationship) ? null : request.Relationship.Trim(), cancellationToken);
     }
 
@@ -152,6 +190,13 @@ internal sealed class ParentChildrenService : IParentChildrenService
 
     private Guid ParentId =>
         Guid.TryParse(_context.UserId, out Guid id)
+            ? id
+            : throw new AppErrorException("Authentication required.", 401, ErrorCodes.Unauthorized);
+
+    // The identity behind the session: the identity_id claim (org tokens) or the user_id itself (an
+    // identity-scope session, where user_id IS the identity).
+    private Guid CurrentIdentityId =>
+        Guid.TryParse(_context.IdentityId ?? _context.UserId, out Guid id)
             ? id
             : throw new AppErrorException("Authentication required.", 401, ErrorCodes.Unauthorized);
 }

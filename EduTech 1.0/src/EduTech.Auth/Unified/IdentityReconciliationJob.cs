@@ -86,30 +86,8 @@ internal sealed class IdentityReconciliationRepository : BaseRepository, IIdenti
             FROM positions p
             WHERE a.position_id IS NULL AND p.school_id IS NULL AND p.slug = a.role;
 
-            -- AccessContext projection convergence (EDD-003): upsert actives, end the gone.
-            INSERT INTO access_contexts (identity_id, type, reference_id, organization_id)
-            SELECT o.identity_id, 'owner', o.id, o.school_id FROM school_owners o
-            WHERE o.identity_id IS NOT NULL AND o.is_active = TRUE
-            ON CONFLICT (type, reference_id) DO UPDATE SET status = 'active', updated_at = NOW();
-
-            INSERT INTO access_contexts (identity_id, type, reference_id, organization_id)
-            SELECT a.identity_id, 'staff', a.id, a.school_id FROM staff_affiliations a
-            WHERE a.identity_id IS NOT NULL AND a.status = 'active'
-            ON CONFLICT (type, reference_id) DO UPDATE SET status = 'active', updated_at = NOW();
-
-            INSERT INTO access_contexts (identity_id, type, reference_id, organization_id)
-            SELECT p.identity_id, 'parent', p.id, NULL FROM parents p
-            WHERE p.identity_id IS NOT NULL AND p.is_active = TRUE
-            ON CONFLICT (type, reference_id) DO UPDATE SET status = 'active', updated_at = NOW();
-
-            UPDATE access_contexts ac SET status = 'ended', updated_at = NOW()
-            WHERE ac.status = 'active' AND (
-                (ac.type = 'owner'  AND NOT EXISTS (SELECT 1 FROM school_owners o WHERE o.id = ac.reference_id AND o.is_active = TRUE))
-             OR (ac.type = 'staff'  AND NOT EXISTS (SELECT 1 FROM staff_affiliations a WHERE a.id = ac.reference_id AND a.status = 'active'))
-             OR (ac.type = 'parent' AND NOT EXISTS (SELECT 1 FROM parents p WHERE p.id = ac.reference_id AND p.is_active = TRUE))
-            );
-
-            -- parent memberships from enrollments (the GuardianLinked safety net)
+            -- Parent memberships from enrollments FIRST (the GuardianLinked safety net) — the parent
+            -- AccessContext convergence below reads them, so they must exist beforehand.
             INSERT INTO memberships (identity_id, school_id, kind)
             SELECT DISTINCT p.identity_id, st.school_id, 'parent'
             FROM parents p
@@ -117,6 +95,36 @@ internal sealed class IdentityReconciliationRepository : BaseRepository, IIdenti
             JOIN students st        ON st.child_profile_id = pc.child_profile_id
             WHERE p.identity_id IS NOT NULL
             ON CONFLICT (identity_id, school_id, kind) DO NOTHING;
+
+            -- AccessContext projection convergence (EDD-003): upsert actives, end the gone.
+            INSERT INTO access_contexts (identity_id, type, reference_id, organization_id)
+            SELECT o.identity_id, 'owner', o.id, o.school_id FROM school_owners o
+            WHERE o.identity_id IS NOT NULL AND o.is_active = TRUE
+            ON CONFLICT (type, reference_id, organization_id) DO UPDATE SET status = 'active', updated_at = NOW();
+
+            INSERT INTO access_contexts (identity_id, type, reference_id, organization_id)
+            SELECT a.identity_id, 'staff', a.id, a.school_id FROM staff_affiliations a
+            WHERE a.identity_id IS NOT NULL AND a.status = 'active'
+            ON CONFLICT (type, reference_id, organization_id) DO UPDATE SET status = 'active', updated_at = NOW();
+
+            -- Parent contexts are organization-scoped (EDD-002 revision): one per active membership.
+            INSERT INTO access_contexts (identity_id, type, reference_id, organization_id)
+            SELECT m.identity_id, 'parent', p.id, m.school_id
+            FROM memberships m
+            JOIN parents p ON p.identity_id = m.identity_id AND p.is_active = TRUE
+            WHERE m.kind = 'parent' AND m.status = 'active'
+            ON CONFLICT (type, reference_id, organization_id) DO UPDATE SET status = 'active', updated_at = NOW();
+
+            UPDATE access_contexts ac SET status = 'ended', updated_at = NOW()
+            WHERE ac.status = 'active' AND (
+                (ac.type = 'owner'  AND NOT EXISTS (SELECT 1 FROM school_owners o WHERE o.id = ac.reference_id AND o.is_active = TRUE))
+             OR (ac.type = 'staff'  AND NOT EXISTS (SELECT 1 FROM staff_affiliations a WHERE a.id = ac.reference_id AND a.status = 'active'))
+             OR (ac.type = 'parent' AND NOT EXISTS (
+                    SELECT 1 FROM memberships m
+                    JOIN parents p ON p.identity_id = m.identity_id AND p.is_active = TRUE
+                    WHERE p.id = ac.reference_id AND m.school_id = ac.organization_id
+                      AND m.kind = 'parent' AND m.status = 'active'))
+            );
             """,
             null, cancellationToken);
     }

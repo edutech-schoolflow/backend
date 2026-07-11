@@ -14,6 +14,9 @@ internal interface IParentApplicationRepository
         Guid? termId, CancellationToken cancellationToken);
 
     Task<IReadOnlyList<ApplicationRow>> ListByParentAsync(Guid parentId, CancellationToken cancellationToken);
+
+    /// <summary>The identity's active parent profile id, or null if it hasn't created one yet.</summary>
+    Task<Guid?> GetParentIdByIdentityAsync(Guid identityId, CancellationToken cancellationToken);
     Task<ApplicationRow?> GetForParentAsync(Guid parentId, Guid applicationId, CancellationToken cancellationToken);
     Task<int> MarkPaidAsync(Guid parentId, Guid applicationId, string reference, CancellationToken cancellationToken);
 }
@@ -68,6 +71,13 @@ internal sealed class ParentApplicationRepository : BaseRepository, IParentAppli
             cancellationToken);
 
         return (await GetForParentAsync(parentId, id, cancellationToken))!;
+    }
+
+    public Task<Guid?> GetParentIdByIdentityAsync(Guid identityId, CancellationToken cancellationToken)
+    {
+        return QuerySingleOrDefaultAsync<Guid?>(
+            "SELECT id FROM parents WHERE identity_id = @IdentityId AND is_active = TRUE",
+            new { IdentityId = identityId }, cancellationToken);
     }
 
     public Task<IReadOnlyList<ApplicationRow>> ListByParentAsync(Guid parentId, CancellationToken cancellationToken)

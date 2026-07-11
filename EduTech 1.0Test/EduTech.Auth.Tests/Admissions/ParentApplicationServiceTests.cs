@@ -81,4 +81,30 @@ public class ParentApplicationServiceTests
         Assert.Equal(ApplicationStatus.UnderReview, res.Status);
         Assert.Equal("APP/2026/ABC123", res.ReferenceNumber);
     }
+
+    // EDD-002 identity space: applications resolved from the identity (not a parent token).
+    [Fact]
+    public async Task ListMine_NoParentProfile_ReturnsEmpty()
+    {
+        ParentApplicationService sut = CreateSut();
+        _repo.Setup(r => r.GetParentIdByIdentityAsync(Parent, It.IsAny<CancellationToken>())).ReturnsAsync((Guid?)null);
+
+        IReadOnlyList<ApplicationResponse> apps = await sut.ListMineAsync(CancellationToken.None);
+
+        Assert.Empty(apps);
+        _repo.Verify(r => r.ListByParentAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ListMine_ResolvesParentFromIdentity_ReturnsApplications()
+    {
+        ParentApplicationService sut = CreateSut();
+        _repo.Setup(r => r.GetParentIdByIdentityAsync(Parent, It.IsAny<CancellationToken>())).ReturnsAsync(Parent);
+        _repo.Setup(r => r.ListByParentAsync(Parent, It.IsAny<CancellationToken>())).ReturnsAsync(new[] { Row() });
+
+        IReadOnlyList<ApplicationResponse> apps = await sut.ListMineAsync(CancellationToken.None);
+
+        Assert.Single(apps);
+        _repo.Verify(r => r.ListByParentAsync(Parent, It.IsAny<CancellationToken>()), Times.Once);
+    }
 }

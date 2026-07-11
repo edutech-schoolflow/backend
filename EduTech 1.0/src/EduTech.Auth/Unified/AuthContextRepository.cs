@@ -182,17 +182,11 @@ internal sealed class AuthContextRepository : BaseRepository, IAuthContextReposi
 
     public Task LinkParentAsync(Guid parentId, Guid identityId, CancellationToken cancellationToken)
     {
+        // Links the parent profile to its identity. Parent AccessContexts are now organization-scoped
+        // (EDD-002 revision) and created per-school by EnsureParentMembershipAsync, so this no longer
+        // writes a school-agnostic context row.
         return ExecuteAsync(
-            """
-            UPDATE parents SET identity_id = @IdentityId, updated_at = NOW()
-             WHERE id = @ParentId AND identity_id IS NULL;
-
-            INSERT INTO access_contexts (identity_id, type, reference_id, organization_id)
-            SELECT p.identity_id, 'parent', p.id, NULL
-            FROM parents p
-            WHERE p.id = @ParentId AND p.identity_id IS NOT NULL AND p.is_active = TRUE
-            ON CONFLICT (type, reference_id) DO UPDATE SET status = 'active', updated_at = NOW();
-            """,
+            "UPDATE parents SET identity_id = @IdentityId, updated_at = NOW() WHERE id = @ParentId AND identity_id IS NULL",
             new { ParentId = parentId, IdentityId = identityId }, cancellationToken);
     }
 
@@ -304,7 +298,7 @@ internal sealed class AuthContextRepository : BaseRepository, IAuthContextReposi
             SELECT o.identity_id, 'owner', o.id, o.school_id
             FROM school_owners o
             WHERE o.id = @OwnerId AND o.identity_id IS NOT NULL AND o.is_active = TRUE
-            ON CONFLICT (type, reference_id) DO UPDATE SET status = 'active', updated_at = NOW();
+            ON CONFLICT (type, reference_id, organization_id) DO UPDATE SET status = 'active', updated_at = NOW();
             """,
             new { OwnerId = ownerId }, cancellationToken);
     }
@@ -369,7 +363,7 @@ internal sealed class AuthContextRepository : BaseRepository, IAuthContextReposi
             SELECT a.identity_id, 'staff', a.id, a.school_id
             FROM staff_affiliations a
             WHERE a.id = @AffiliationId AND a.identity_id IS NOT NULL AND a.status = 'active'
-            ON CONFLICT (type, reference_id) DO UPDATE SET status = 'active', updated_at = NOW();
+            ON CONFLICT (type, reference_id, organization_id) DO UPDATE SET status = 'active', updated_at = NOW();
             """,
             new { StaffUserId = staffUserId, AffiliationId = affiliationId }, cancellationToken);
 
@@ -391,11 +385,19 @@ internal sealed class AuthContextRepository : BaseRepository, IAuthContextReposi
 
     public Task EnsureParentMembershipAsync(Guid identityId, Guid schoolId, CancellationToken cancellationToken)
     {
+        // The parent's membership at this school AND its org-scoped AccessContext (EDD-002 revision):
+        // one context per school, reference_id = parent_id, so login lists it like a staff context.
         return ExecuteAsync(
             """
             INSERT INTO memberships (identity_id, school_id, kind)
             VALUES (@IdentityId, @SchoolId, 'parent')
-            ON CONFLICT (identity_id, school_id, kind) DO UPDATE SET status = 'active', ended_at = NULL
+            ON CONFLICT (identity_id, school_id, kind) DO UPDATE SET status = 'active', ended_at = NULL;
+
+            INSERT INTO access_contexts (identity_id, type, reference_id, organization_id)
+            SELECT @IdentityId, 'parent', p.id, @SchoolId
+            FROM parents p
+            WHERE p.identity_id = @IdentityId AND p.is_active = TRUE
+            ON CONFLICT (type, reference_id, organization_id) DO UPDATE SET status = 'active', updated_at = NOW();
             """,
             new { IdentityId = identityId, SchoolId = schoolId }, cancellationToken);
     }

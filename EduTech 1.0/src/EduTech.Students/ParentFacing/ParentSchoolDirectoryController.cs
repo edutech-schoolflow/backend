@@ -4,10 +4,14 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace EduTech.Students.ParentFacing;
 
-/// <summary>Parent portal — the public school directory a parent browses to apply to a school.</summary>
+/// <summary>
+/// The public school directory browsed during discovery. Discovery is IDENTITY-scoped (EDD-002): you
+/// find a school before you belong to one, so any authenticated person may browse — not only a parent
+/// context. The data is public-listed schools regardless, so no persona is needed.
+/// </summary>
 [ApiController]
 [Route("api/v1/parent/schools")]
-[Authorize(Policy = "ParentOnly")]
+[Authorize(Policy = "AuthenticatedIdentity")]
 public sealed class ParentSchoolDirectoryController : ControllerBase
 {
     private readonly IParentSchoolDirectoryService _service;

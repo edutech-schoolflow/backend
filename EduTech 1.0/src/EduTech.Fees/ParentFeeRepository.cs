@@ -9,6 +9,9 @@ namespace EduTech.Fees;
 internal interface IParentFeeRepository
 {
     Task<string?> GetPaymentPinHashAsync(Guid parentId, CancellationToken cancellationToken);
+
+    /// <summary>The identity's active parent profile id, or null if it hasn't created one yet.</summary>
+    Task<Guid?> GetParentIdByIdentityAsync(Guid identityId, CancellationToken cancellationToken);
     Task<IReadOnlyList<ChildFeeLineRow>> GetChildFeesAsync(Guid parentId, Guid? studentId, CancellationToken cancellationToken);
     Task<PayableFeeRow?> GetPayableFeeAsync(Guid parentId, Guid studentId, Guid feeTypeId, CancellationToken cancellationToken);
     Task<Guid> RecordPaymentAsync(Guid parentId, Guid studentId, Guid schoolId, Guid feeTypeId, Guid termId,
@@ -71,6 +74,13 @@ internal sealed class ParentFeeRepository : BaseRepository, IParentFeeRepository
     {
         return QuerySingleOrDefaultAsync<string?>(
             "SELECT payment_pin_hash FROM parents WHERE id = @Id", new { Id = parentId }, cancellationToken);
+    }
+
+    public Task<Guid?> GetParentIdByIdentityAsync(Guid identityId, CancellationToken cancellationToken)
+    {
+        return QuerySingleOrDefaultAsync<Guid?>(
+            "SELECT id FROM parents WHERE identity_id = @IdentityId AND is_active = TRUE",
+            new { IdentityId = identityId }, cancellationToken);
     }
 
     public Task<IReadOnlyList<ChildFeeLineRow>> GetChildFeesAsync(Guid parentId, Guid? studentId, CancellationToken cancellationToken)

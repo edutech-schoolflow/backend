@@ -136,4 +136,37 @@ public class ParentFeeServiceTests
             5000m, It.IsAny<decimal>(), It.IsAny<decimal>(), It.IsAny<string>(), It.IsAny<string>(),
             true, It.IsAny<CancellationToken>()), Times.Once);
     }
+
+    // EDD-002 identity space: payment history resolved from the identity (incl. application fees).
+    [Fact]
+    public async Task ListMyPayments_NoParentProfile_ReturnsEmpty()
+    {
+        ParentFeeService sut = CreateSut();
+        _repo.Setup(r => r.GetParentIdByIdentityAsync(Parent, It.IsAny<CancellationToken>())).ReturnsAsync((Guid?)null);
+
+        IReadOnlyList<PaymentResponse> payments = await sut.ListMyPaymentsAsync(CancellationToken.None);
+
+        Assert.Empty(payments);
+        _repo.Verify(r => r.ListPaymentsAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ListMyPayments_ResolvesParentFromIdentity_ReturnsPayments()
+    {
+        ParentFeeService sut = CreateSut();
+        _repo.Setup(r => r.GetParentIdByIdentityAsync(Parent, It.IsAny<CancellationToken>())).ReturnsAsync(Parent);
+        _repo.Setup(r => r.ListPaymentsAsync(Parent, It.IsAny<CancellationToken>())).ReturnsAsync(new[]
+        {
+            new PaymentRow
+            {
+                Id = Guid.NewGuid(), BaseAmount = 5000m, PlatformFee = 50m, TotalCharged = 5050m,
+                Method = "stub", MonnifyReference = "STUB-x", Status = "successful", PaidAt = DateTime.UtcNow
+            }
+        });
+
+        IReadOnlyList<PaymentResponse> payments = await sut.ListMyPaymentsAsync(CancellationToken.None);
+
+        Assert.Single(payments);
+        _repo.Verify(r => r.ListPaymentsAsync(Parent, It.IsAny<CancellationToken>()), Times.Once);
+    }
 }

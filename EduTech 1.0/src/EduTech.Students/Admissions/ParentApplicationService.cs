@@ -8,6 +8,10 @@ public interface IParentApplicationService
 {
     Task<ApplicationResponse> SubmitAsync(SubmitApplicationRequest request, CancellationToken cancellationToken);
     Task<IReadOnlyList<ApplicationResponse>> ListAsync(CancellationToken cancellationToken);
+
+    /// <summary>The signed-in IDENTITY's applications across schools (EDD-002 identity-space view).
+    /// Empty until they've created a parent profile / applied. Authorized by the identity session.</summary>
+    Task<IReadOnlyList<ApplicationResponse>> ListMineAsync(CancellationToken cancellationToken);
     Task<ApplicationResponse> GetAsync(Guid applicationId, CancellationToken cancellationToken);
     Task<ApplicationResponse> PayAsync(Guid applicationId, CancellationToken cancellationToken);
 }
@@ -62,6 +66,18 @@ internal sealed class ParentApplicationService : IParentApplicationService
         return rows.Select(ApplicationMapper.Map).ToList();
     }
 
+    public async Task<IReadOnlyList<ApplicationResponse>> ListMineAsync(CancellationToken cancellationToken)
+    {
+        Guid? parentId = await _repository.GetParentIdByIdentityAsync(CurrentIdentityId, cancellationToken);
+        if (parentId is not Guid pid)
+        {
+            return Array.Empty<ApplicationResponse>();
+        }
+
+        IReadOnlyList<ApplicationRow> rows = await _repository.ListByParentAsync(pid, cancellationToken);
+        return rows.Select(ApplicationMapper.Map).ToList();
+    }
+
     public async Task<ApplicationResponse> GetAsync(Guid applicationId, CancellationToken cancellationToken)
     {
         ApplicationRow row = await _repository.GetForParentAsync(ParentId, applicationId, cancellationToken)
@@ -83,6 +99,12 @@ internal sealed class ParentApplicationService : IParentApplicationService
 
     private Guid ParentId =>
         Guid.TryParse(_context.UserId, out Guid id)
+            ? id
+            : throw new AppErrorException("Authentication required.", 401, ErrorCodes.Unauthorized);
+
+    // The identity behind the session: identity_id claim (org tokens) or user_id (identity session).
+    private Guid CurrentIdentityId =>
+        Guid.TryParse(_context.IdentityId ?? _context.UserId, out Guid id)
             ? id
             : throw new AppErrorException("Authentication required.", 401, ErrorCodes.Unauthorized);
 }

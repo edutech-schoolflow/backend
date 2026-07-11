@@ -47,7 +47,6 @@ appsettings.Development.json
 # ── Database DDL ──────────────────────────────────────────────────────────────
 # Schema is applied by hand on the DB client; the .sql files are kept out of git
 # per project decision. (Trade-off: schema change history is not version-controlled.)
-Database/
 
 # ── Internal docs ─────────────────────────────────────────────────────────────
 docs/

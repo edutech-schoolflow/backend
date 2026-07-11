@@ -37,8 +37,7 @@ Thumbs.db
 appsettings.Development.json
 appsettings.Production.json
 
-# ── Database DDL (applied by hand on the DB client; per project decision) ──────
-Database/
+
 
 # ── Internal docs ─────────────────────────────────────────────────────────────
 docs/

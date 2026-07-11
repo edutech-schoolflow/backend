@@ -114,6 +114,18 @@ public sealed class OrganizationWorkspaceResponse
     public required AuthContextItem MyContext { get; init; }
 }
 
+/// <summary>
+/// The Organization Wizard's payload — names a bootstrapped org (fixes the null name) and captures
+/// the type that drives class provisioning. Naming re-slugs the workspace, so the response carries
+/// the new slug for the caller to route to.
+/// </summary>
+public sealed class SetupOrganizationRequest
+{
+    public string Name { get; init; } = string.Empty;
+    public string? Type { get; init; }     // nursery | primary | secondary | combined (drives class ladder)
+    public string? State { get; init; }
+}
+
 /// <summary>What /welcome offers a signed-in identity beyond the static hub cards.</summary>
 public sealed class WelcomeResponse
 {

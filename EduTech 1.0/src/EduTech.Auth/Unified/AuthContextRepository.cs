@@ -34,6 +34,13 @@ internal interface IAuthContextRepository
     /// <summary>The organization behind a workspace URL — /o/{slug} (FE-001 Phase 2).</summary>
     Task<OrganizationRow?> GetOrganizationBySlugAsync(string slug, CancellationToken cancellationToken);
 
+    /// <summary>True if another school already holds this slug (the caller's own is excluded).</summary>
+    Task<bool> SlugTakenAsync(string slug, Guid exceptSchoolId, CancellationToken cancellationToken);
+
+    /// <summary>The Organization Wizard's write: names the school, sets its type/state, and re-slugs.</summary>
+    Task SetOrganizationDetailsAsync(Guid schoolId, string name, string? type, string? state, string slug,
+        CancellationToken cancellationToken);
+
     /// <summary>Unaccepted, unexpired staff invites addressed to this phone (adaptive /welcome).</summary>
     Task<IReadOnlyList<PendingInviteRow>> ListPendingInvitesByPhoneAsync(string phone, CancellationToken cancellationToken);
 
@@ -212,6 +219,25 @@ internal sealed class AuthContextRepository : BaseRepository, IAuthContextReposi
             FROM schools WHERE slug = @Slug
             """,
             new { Slug = slug }, cancellationToken);
+    }
+
+    public async Task<bool> SlugTakenAsync(string slug, Guid exceptSchoolId, CancellationToken cancellationToken)
+    {
+        return await ExecuteScalarAsync<int>(
+            "SELECT COUNT(1) FROM schools WHERE slug = @Slug AND id <> @ExceptId",
+            new { Slug = slug, ExceptId = exceptSchoolId }, cancellationToken) > 0;
+    }
+
+    public Task SetOrganizationDetailsAsync(Guid schoolId, string name, string? type, string? state, string slug,
+        CancellationToken cancellationToken)
+    {
+        return ExecuteAsync(
+            """
+            UPDATE schools
+               SET name = @Name, type = @Type, state = @State, slug = @Slug, updated_at = NOW()
+             WHERE id = @Id
+            """,
+            new { Id = schoolId, Name = name, Type = type, State = state, Slug = slug }, cancellationToken);
     }
 
     public Task<IReadOnlyList<PendingInviteRow>> ListPendingInvitesByPhoneAsync(string phone,

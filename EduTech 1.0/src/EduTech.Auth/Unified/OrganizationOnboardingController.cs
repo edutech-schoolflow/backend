@@ -41,6 +41,24 @@ public sealed class OrganizationOnboardingController : ControllerBase
         return Ok(ServiceResponses<OrganizationWorkspaceResponse>.Ok(workspace, "Workspace."));
     }
 
+    /// <summary>Organization Wizard: names a bootstrapped org (owner-only). Returns the workspace at its
+    /// new slug — the caller re-routes to /o/{newSlug}.</summary>
+    [HttpPatch("{slug}")]
+    [Authorize(Policy = "AuthenticatedIdentity")]
+    public async Task<ActionResult<ServiceResponses<OrganizationWorkspaceResponse>>> Setup(
+        string slug, [FromBody] SetupOrganizationRequest request, CancellationToken cancellationToken)
+    {
+        Guid? identityId = await ResolveIdentityIdAsync(cancellationToken);
+        if (identityId is null)
+        {
+            return Unauthorized();
+        }
+
+        OrganizationWorkspaceResponse workspace =
+            await _service.SetupOrganizationAsync(identityId.Value, slug, request, cancellationToken);
+        return Ok(ServiceResponses<OrganizationWorkspaceResponse>.Ok(workspace, "School set up."));
+    }
+
     [HttpPost]
     [Authorize(Policy = "AuthenticatedIdentity")]
     public async Task<ActionResult<ServiceResponses<UnifiedLoginResponse>>> Create(

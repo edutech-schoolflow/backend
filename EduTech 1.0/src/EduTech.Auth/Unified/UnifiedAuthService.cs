@@ -71,6 +71,13 @@ public interface IUnifiedAuthService
     Task<OrganizationWorkspaceResponse> GetOrganizationWorkspaceAsync(Guid identityId, string slug,
         CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Organization Wizard: names a bootstrapped org (fixing the null name) and re-slugs from the
+    /// name. Owner-only. Returns the workspace at its NEW slug so the caller re-routes.
+    /// </summary>
+    Task<OrganizationWorkspaceResponse> SetupOrganizationAsync(Guid identityId, string slug,
+        SetupOrganizationRequest request, CancellationToken cancellationToken);
+
     /// <summary>What /welcome should offer this identity: pending invites + unfinished organizations.</summary>
     Task<WelcomeResponse> GetWelcomeAsync(Guid identityId, CancellationToken cancellationToken);
 }
@@ -346,6 +353,44 @@ internal sealed class UnifiedAuthService : IUnifiedAuthService
             KycStatus = organization.KycStatus,
             MyContext = myContext
         };
+    }
+
+    public async Task<OrganizationWorkspaceResponse> SetupOrganizationAsync(Guid identityId, string slug,
+        SetupOrganizationRequest request, CancellationToken cancellationToken)
+    {
+        // Resolve + authorize in one move: this 404s unless the org exists AND is on the caller's account.
+        OrganizationWorkspaceResponse workspace =
+            await GetOrganizationWorkspaceAsync(identityId, slug, cancellationToken);
+
+        // Only the owner names the school — a staff member in the same org must not.
+        if (workspace.MyContext.Type != "owner")
+        {
+            throw new AppErrorException("Only the school owner can set up the organization.",
+                403, ErrorCodes.Forbidden, logReason: "Org setup attempted by non-owner context.");
+        }
+
+        string name = (request.Name ?? string.Empty).Trim();
+        if (name.Length == 0)
+        {
+            throw new AppErrorException("School name is required.", 400, ErrorCodes.ValidationError);
+        }
+
+        // Re-slug from the name; keep the placeholder if the name yields nothing URL-safe, and ensure
+        // uniqueness by suffixing -2, -3… (the school's own current slug never counts as a clash).
+        string baseSlug = OrganizationSlug.From(name);
+        string newSlug = baseSlug.Length == 0 ? workspace.Slug : baseSlug;
+        for (int suffix = 2; await _contexts.SlugTakenAsync(newSlug, workspace.OrganizationId, cancellationToken); suffix++)
+        {
+            newSlug = $"{baseSlug}-{suffix}";
+        }
+
+        string? type = string.IsNullOrWhiteSpace(request.Type) ? null : request.Type.Trim().ToLowerInvariant();
+        string? state = string.IsNullOrWhiteSpace(request.State) ? null : request.State.Trim();
+
+        await _contexts.SetOrganizationDetailsAsync(workspace.OrganizationId, name, type, state, newSlug, cancellationToken);
+
+        // Re-resolve at the new slug so the response reflects the rename (name + slug).
+        return await GetOrganizationWorkspaceAsync(identityId, newSlug, cancellationToken);
     }
 
     public async Task<WelcomeResponse> GetWelcomeAsync(Guid identityId, CancellationToken cancellationToken)

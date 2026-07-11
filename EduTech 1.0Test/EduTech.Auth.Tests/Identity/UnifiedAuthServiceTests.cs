@@ -266,4 +266,111 @@ public class UnifiedAuthServiceTests
         Assert.Equal(ownerId, result.Selected);
         Assert.Equal("owner-access", result.Tokens!.AccessToken);
     }
+
+    // ── Organization Wizard: setup (name + re-slug), owner-only ─────────────────────
+
+    private void OrgWorkspace(Guid identityId, string slug, string type)
+    {
+        // The org resolved at its CURRENT (placeholder) slug — name still null.
+        _contexts.Setup(c => c.GetOrganizationBySlugAsync(slug, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new OrganizationRow
+            {
+                Id = OrgId, Slug = slug, Name = null, Status = "pending_kyc", KycStatus = "not_submitted"
+            });
+        _contexts.Setup(c => c.ListAccessContextsAsync(identityId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { new AccessContextRow
+            {
+                ReferenceId = Guid.NewGuid(), Type = type, OrganizationId = OrgId, OrganizationSlug = slug
+            } });
+    }
+
+    private void OrgResolvesAt(string newSlug, string name)
+    {
+        // The re-resolve after renaming — org now carries the name + new slug.
+        _contexts.Setup(c => c.GetOrganizationBySlugAsync(newSlug, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new OrganizationRow
+            {
+                Id = OrgId, Slug = newSlug, Name = name, Status = "pending_kyc", KycStatus = "not_submitted"
+            });
+    }
+
+    private static readonly Guid OrgId = Guid.NewGuid();
+
+    [Fact]
+    public async Task Setup_Owner_NamesAndReslugsFromName()
+    {
+        Guid ident = Guid.NewGuid();
+        OrgWorkspace(ident, "s-0a1b2c3d", "owner");
+        OrgResolvesAt("divine-wisdom", "Divine Wisdom");
+        _contexts.Setup(c => c.SlugTakenAsync("divine-wisdom", OrgId, It.IsAny<CancellationToken>())).ReturnsAsync(false);
+
+        OrganizationWorkspaceResponse res = await CreateSut().SetupOrganizationAsync(
+            ident, "s-0a1b2c3d", new SetupOrganizationRequest { Name = " Divine Wisdom ", Type = "Primary" },
+            CancellationToken.None);
+
+        Assert.Equal("divine-wisdom", res.Slug);
+        Assert.Equal("Divine Wisdom", res.Name);
+        _contexts.Verify(c => c.SetOrganizationDetailsAsync(
+            OrgId, "Divine Wisdom", "primary", null, "divine-wisdom", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Setup_SlugTaken_SuffixesUntilFree()
+    {
+        Guid ident = Guid.NewGuid();
+        OrgWorkspace(ident, "s-0a1b2c3d", "owner");
+        OrgResolvesAt("divine-wisdom-2", "Divine Wisdom");
+        _contexts.Setup(c => c.SlugTakenAsync("divine-wisdom", OrgId, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        _contexts.Setup(c => c.SlugTakenAsync("divine-wisdom-2", OrgId, It.IsAny<CancellationToken>())).ReturnsAsync(false);
+
+        OrganizationWorkspaceResponse res = await CreateSut().SetupOrganizationAsync(
+            ident, "s-0a1b2c3d", new SetupOrganizationRequest { Name = "Divine Wisdom" }, CancellationToken.None);
+
+        Assert.Equal("divine-wisdom-2", res.Slug);
+        _contexts.Verify(c => c.SetOrganizationDetailsAsync(
+            OrgId, "Divine Wisdom", null, null, "divine-wisdom-2", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Setup_NonOwnerContext_Throws403()
+    {
+        Guid ident = Guid.NewGuid();
+        OrgWorkspace(ident, "s-0a1b2c3d", "staff");   // a staff member in the same org
+
+        AppErrorException ex = await Assert.ThrowsAsync<AppErrorException>(
+            () => CreateSut().SetupOrganizationAsync(ident, "s-0a1b2c3d",
+                new SetupOrganizationRequest { Name = "Divine Wisdom" }, CancellationToken.None));
+
+        Assert.Equal(403, ex.StatusCode);
+        _contexts.Verify(c => c.SetOrganizationDetailsAsync(
+            It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(),
+            It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Setup_EmptyName_Throws400()
+    {
+        Guid ident = Guid.NewGuid();
+        OrgWorkspace(ident, "s-0a1b2c3d", "owner");
+
+        AppErrorException ex = await Assert.ThrowsAsync<AppErrorException>(
+            () => CreateSut().SetupOrganizationAsync(ident, "s-0a1b2c3d",
+                new SetupOrganizationRequest { Name = "   " }, CancellationToken.None));
+
+        Assert.Equal(400, ex.StatusCode);
+    }
+
+    [Fact]
+    public async Task Setup_UnknownSlugOrNotMine_Throws404()
+    {
+        Guid ident = Guid.NewGuid();
+        _contexts.Setup(c => c.GetOrganizationBySlugAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((OrganizationRow?)null);
+
+        AppErrorException ex = await Assert.ThrowsAsync<AppErrorException>(
+            () => CreateSut().SetupOrganizationAsync(ident, "s-unknown",
+                new SetupOrganizationRequest { Name = "Divine Wisdom" }, CancellationToken.None));
+
+        Assert.Equal(404, ex.StatusCode);
+    }
 }

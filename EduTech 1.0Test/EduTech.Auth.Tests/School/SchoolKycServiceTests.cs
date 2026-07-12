@@ -46,6 +46,7 @@ public class SchoolKycServiceTests
             Phone = "08012345678", Email = "info@greenfield.com",
             ProprietorFirstName = "Grace", ProprietorLastName = "Okafor",
             ProprietorNin = "11122233344", ProprietorBvn = "55566677788",
+            BusinessName = "Greenfield Academy Ltd",
             BankName = "Access Bank", AccountNumber = "0123456789", AccountName = "Greenfield"
             // no CAC document → triggers the missing-document guard
         };

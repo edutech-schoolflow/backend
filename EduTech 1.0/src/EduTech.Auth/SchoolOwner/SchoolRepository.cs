@@ -15,6 +15,13 @@ internal interface ISchoolRepository
     /// </summary>
     Task<Guid> CreateShellAsync(IDbTransaction transaction, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Creates a school already named (FE-001: form-first onboarding, so no unnamed shell ever
+    /// lingers when a create is abandoned). Slug is caller-computed and unique. Returns its id.
+    /// </summary>
+    Task<Guid> CreateNamedAsync(string name, string slug, string? type, string? state,
+        IDbTransaction transaction, CancellationToken cancellationToken);
+
     /// <summary>Status fields needed for the owner's JWT claims at login. Null if not found.</summary>
     Task<SchoolStatusRow?> GetStatusAsync(Guid schoolId, CancellationToken cancellationToken);
 }
@@ -41,6 +48,17 @@ internal sealed class SchoolRepository : BaseRepository, ISchoolRepository
         return await ExecuteScalarAsync<Guid>(
             "INSERT INTO schools (id, slug) VALUES (@Id, @Slug) RETURNING id",
             new { Id = id, Slug = $"s-{id:N}"[..10] },
+            cancellationToken: cancellationToken,
+            transaction: transaction);
+    }
+
+    public async Task<Guid> CreateNamedAsync(string name, string slug, string? type, string? state,
+        IDbTransaction transaction, CancellationToken cancellationToken)
+    {
+        Guid id = Guid.NewGuid();
+        return await ExecuteScalarAsync<Guid>(
+            "INSERT INTO schools (id, slug, name, type, state) VALUES (@Id, @Slug, @Name, @Type, @State) RETURNING id",
+            new { Id = id, Slug = slug, Name = name, Type = type, State = state },
             cancellationToken: cancellationToken,
             transaction: transaction);
     }

@@ -59,10 +59,11 @@ public sealed class OrganizationOnboardingController : ControllerBase
         return Ok(ServiceResponses<OrganizationWorkspaceResponse>.Ok(workspace, "School set up."));
     }
 
+    /// <summary>Form-first create: the school is named up front, so an abandoned form writes nothing.</summary>
     [HttpPost]
     [Authorize(Policy = "AuthenticatedIdentity")]
     public async Task<ActionResult<ServiceResponses<UnifiedLoginResponse>>> Create(
-        CancellationToken cancellationToken)
+        [FromBody] SetupOrganizationRequest request, CancellationToken cancellationToken)
     {
         string? userType = User.FindFirst("user_type")?.Value;
         string? sub = User.FindFirst("user_id")?.Value ?? User.FindFirst("sub")?.Value;
@@ -71,7 +72,7 @@ public sealed class OrganizationOnboardingController : ControllerBase
             return Unauthorized();
         }
 
-        UnifiedLoginResult result = await _service.CreateOrganizationAsync(userType, actorId,
+        UnifiedLoginResult result = await _service.CreateOrganizationAsync(userType, actorId, request,
             Request.Headers["X-Forwarded-For"].FirstOrDefault()
                 ?? HttpContext.Connection.RemoteIpAddress?.ToString(),
             Request.Headers.UserAgent.FirstOrDefault(), cancellationToken);
@@ -93,7 +94,7 @@ public sealed class OrganizationOnboardingController : ControllerBase
 
         return Ok(ServiceResponses<UnifiedLoginResponse>.Ok(
             new UnifiedLoginResponse { Contexts = result.Contexts, Selected = result.Selected },
-            "Your school has been created. Let's set it up."));
+            "Your school is ready. Welcome to your workspace."));
     }
 
     /// <summary>Org-context tokens carry identity_id; older sessions resolve via their portal actor.</summary>

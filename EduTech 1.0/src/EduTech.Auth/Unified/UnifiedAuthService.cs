@@ -61,8 +61,9 @@ public interface IUnifiedAuthService
     /// school — shell + owner employment — and is handed the owner context. Registration and
     /// organization creation are separate acts; nobody registers "as a school".
     /// </summary>
-    Task<UnifiedLoginResult> CreateOrganizationAsync(string userType, Guid actorId, string? ipAddress,
-        string? userAgent, CancellationToken cancellationToken);
+    Task<UnifiedLoginResult> CreateOrganizationAsync(string userType, Guid actorId,
+        SetupOrganizationRequest request, string? ipAddress, string? userAgent,
+        CancellationToken cancellationToken);
 
     /// <summary>Legacy-session bridge: portal actor → identity id (org-context tokens carry it directly).</summary>
     Task<Guid> ResolveIdentityIdAsync(string userType, Guid actorId, CancellationToken cancellationToken);
@@ -517,7 +518,8 @@ internal sealed class UnifiedAuthService : IUnifiedAuthService
     }
 
     public async Task<UnifiedLoginResult> CreateOrganizationAsync(string userType, Guid actorId,
-        string? ipAddress, string? userAgent, CancellationToken cancellationToken)
+        SetupOrganizationRequest request, string? ipAddress, string? userAgent,
+        CancellationToken cancellationToken)
     {
         Guid identityId = await _contexts.GetIdentityIdForActorAsync(userType, actorId, cancellationToken)
             ?? throw new AppErrorException("Account not found.", 404, ErrorCodes.NotFound);
@@ -530,12 +532,37 @@ internal sealed class UnifiedAuthService : IUnifiedAuthService
                 403, ErrorCodes.Forbidden);
         }
 
+        // Form-first (FE-001): the school is born named, so an abandoned "Create a school" writes
+        // nothing — there is no unnamed shell to clean up.
+        string name = (request.Name ?? string.Empty).Trim();
+        if (name.Length == 0)
+        {
+            throw new AppErrorException("School name is required.", 400, ErrorCodes.ValidationError);
+        }
+
+        // Unique slug from the name; fall back to a random placeholder if the name is all non-URL-safe,
+        // then suffix -2, -3… until free (Guid.Empty excludes no real school).
+        string baseSlug = OrganizationSlug.From(name);
+        if (baseSlug.Length == 0)
+        {
+            baseSlug = $"s-{Guid.NewGuid():N}"[..10];
+        }
+        string slug = baseSlug;
+        for (int suffix = 2; await _contexts.SlugTakenAsync(slug, Guid.Empty, cancellationToken); suffix++)
+        {
+            slug = $"{baseSlug}-{suffix}";
+        }
+
+        string? type = string.IsNullOrWhiteSpace(request.Type) ? null : request.Type.Trim().ToLowerInvariant();
+        string? state = string.IsNullOrWhiteSpace(request.State) ? null : request.State.Trim();
+
         Guid ownerId;
         try
         {
             await using DbTransactionScope transaction =
                 await _connectionFactory.BeginTransactionAsync(cancellationToken);
-            Guid schoolId = await _schools.CreateShellAsync(transaction.Transaction, cancellationToken);
+            Guid schoolId = await _schools.CreateNamedAsync(name, slug, type, state,
+                transaction.Transaction, cancellationToken);
             // The owner employment reuses the identity's own details (transition: legacy columns
             // still filled; the identity remains the single credential source).
             ownerId = await _owners.CreateAsync(schoolId, identity.FirstName, identity.MiddleName,

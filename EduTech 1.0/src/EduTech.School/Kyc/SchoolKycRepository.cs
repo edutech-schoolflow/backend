@@ -7,6 +7,12 @@ internal interface ISchoolKycRepository
 {
     Task<string?> GetKycStatusAsync(Guid schoolId, CancellationToken cancellationToken);
 
+    /// <summary>The school's identity captured at creation (name/type/state) — prefilled and locked in KYC.</summary>
+    Task<SchoolBasicsRow?> GetSchoolBasicsAsync(Guid schoolId, CancellationToken cancellationToken);
+
+    /// <summary>The proprietor's name from the identity that owns the school — prefilled and locked in KYC.</summary>
+    Task<ProprietorNameRow?> GetProprietorNameAsync(Guid schoolId, CancellationToken cancellationToken);
+
     Task UpdateSchoolDetailsAsync(Guid schoolId, SchoolDetails details,
         IDbTransaction transaction, CancellationToken cancellationToken);
 
@@ -32,11 +38,14 @@ internal sealed class SchoolDetails
     public required string State { get; init; }
     public required string Phone { get; init; }
     public required string Email { get; init; }
+    public decimal? Latitude { get; init; }
+    public decimal? Longitude { get; init; }
 }
 
 internal sealed class KycSubmissionRow
 {
     public string? ProprietorName { get; init; }
+    public string? BusinessName { get; init; }
     public string? BankName { get; init; }
     public string? AccountNumber { get; init; }
     public string? AccountName { get; init; }
@@ -53,6 +62,22 @@ internal sealed class KycDocumentRow
     public string? Notes { get; init; }
 }
 
+/// <summary>School identity set at creation — read-only in the KYC form.</summary>
+internal sealed class SchoolBasicsRow
+{
+    public string? Name { get; init; }
+    public string? Type { get; init; }
+    public string? State { get; init; }
+}
+
+/// <summary>Proprietor name from the owning identity — read-only in the KYC form.</summary>
+internal sealed class ProprietorNameRow
+{
+    public string? FirstName { get; init; }
+    public string? MiddleName { get; init; }
+    public string? LastName { get; init; }
+}
+
 internal sealed class SchoolKycRepository : BaseRepository, ISchoolKycRepository
 {
     public SchoolKycRepository(IDbConnectionFactory connectionFactory) : base(connectionFactory)
@@ -65,6 +90,28 @@ internal sealed class SchoolKycRepository : BaseRepository, ISchoolKycRepository
             "SELECT kyc_status FROM schools WHERE id = @Id", new { Id = schoolId }, cancellationToken);
     }
 
+    public Task<SchoolBasicsRow?> GetSchoolBasicsAsync(Guid schoolId, CancellationToken cancellationToken)
+    {
+        return QuerySingleOrDefaultAsync<SchoolBasicsRow>(
+            "SELECT name AS Name, type AS Type, state AS State FROM schools WHERE id = @Id",
+            new { Id = schoolId }, cancellationToken);
+    }
+
+    public Task<ProprietorNameRow?> GetProprietorNameAsync(Guid schoolId, CancellationToken cancellationToken)
+    {
+        // The proprietor is the identity that owns the school — pulled from identities (the single source
+        // of truth) via the owner's identity_id, so a later name change stays in sync.
+        return QuerySingleOrDefaultAsync<ProprietorNameRow>(
+            """
+            SELECT i.first_name AS FirstName, i.middle_name AS MiddleName, i.last_name AS LastName
+            FROM school_owners o
+            JOIN identities i ON i.id = o.identity_id
+            WHERE o.school_id = @SchoolId AND o.is_active = TRUE
+            LIMIT 1
+            """,
+            new { SchoolId = schoolId }, cancellationToken);
+    }
+
     public Task UpdateSchoolDetailsAsync(Guid schoolId, SchoolDetails details,
         IDbTransaction transaction, CancellationToken cancellationToken)
     {
@@ -72,7 +119,8 @@ internal sealed class SchoolKycRepository : BaseRepository, ISchoolKycRepository
             """
             UPDATE schools
             SET name = @Name, type = @Type, address = @Address, city = @City, state = @State,
-                phone = @Phone, email = @Email, updated_at = NOW()
+                phone = @Phone, email = @Email,
+                location_lat = @Latitude, location_lng = @Longitude, updated_at = NOW()
             WHERE id = @Id;
 
             -- First real name replaces the bootstrap placeholder slug (s-xxxxxxxx) with a readable
@@ -90,7 +138,8 @@ internal sealed class SchoolKycRepository : BaseRepository, ISchoolKycRepository
             new
             {
                 Id = schoolId, details.Name, details.Type, details.Address,
-                details.City, details.State, details.Phone, details.Email
+                details.City, details.State, details.Phone, details.Email,
+                details.Latitude, details.Longitude
             },
             cancellationToken, transaction);
     }
@@ -101,15 +150,16 @@ internal sealed class SchoolKycRepository : BaseRepository, ISchoolKycRepository
         return ExecuteAsync(
             """
             INSERT INTO school_kyc
-                (school_id, proprietor_name, proprietor_nin, proprietor_bvn, bank_name, account_number,
-                 account_name, submitted_at)
+                (school_id, proprietor_name, proprietor_nin, proprietor_bvn, business_name, bank_name,
+                 account_number, account_name, submitted_at)
             VALUES
-                (@SchoolId, @ProprietorName, @EncryptedNin, @EncryptedBvn, @BankName, @AccountNumber,
-                 @AccountName, NOW())
+                (@SchoolId, @ProprietorName, @EncryptedNin, @EncryptedBvn, @BusinessName, @BankName,
+                 @AccountNumber, @AccountName, NOW())
             ON CONFLICT (school_id) DO UPDATE SET
                 proprietor_name = EXCLUDED.proprietor_name,
                 proprietor_nin = EXCLUDED.proprietor_nin,
                 proprietor_bvn = EXCLUDED.proprietor_bvn,
+                business_name = EXCLUDED.business_name,
                 bank_name = EXCLUDED.bank_name,
                 account_number = EXCLUDED.account_number,
                 account_name = EXCLUDED.account_name,
@@ -119,7 +169,7 @@ internal sealed class SchoolKycRepository : BaseRepository, ISchoolKycRepository
             new
             {
                 SchoolId = schoolId, row.ProprietorName, EncryptedNin = encryptedNin, EncryptedBvn = encryptedBvn,
-                row.BankName, row.AccountNumber, row.AccountName
+                row.BusinessName, row.BankName, row.AccountNumber, row.AccountName
             },
             cancellationToken, transaction);
     }

@@ -96,6 +96,7 @@ internal sealed class SchoolKycService : ISchoolKycService
         KycSubmissionRow submission = new KycSubmissionRow
         {
             ProprietorName = ProprietorFullName(request),
+            BusinessName = string.IsNullOrWhiteSpace(request.BusinessName) ? null : request.BusinessName.Trim(),
             BankName = request.BankName.Trim(),
             AccountNumber = request.AccountNumber.Trim(),
             AccountName = request.AccountName.Trim()
@@ -109,7 +110,9 @@ internal sealed class SchoolKycService : ISchoolKycService
             City = request.City.Trim(),
             State = request.State.Trim(),
             Phone = request.Phone.Trim(),
-            Email = request.Email.Trim()
+            Email = request.Email.Trim(),
+            Latitude = request.Latitude,
+            Longitude = request.Longitude
         };
 
         // NIN/BVN are encrypted at rest and never returned to the client.
@@ -138,14 +141,24 @@ internal sealed class SchoolKycService : ISchoolKycService
 
         string status = await _repository.GetKycStatusAsync(schoolId, cancellationToken) ?? "not_submitted";
         KycSubmissionRow? submission = await _repository.GetSubmissionAsync(schoolId, cancellationToken);
+        SchoolBasicsRow? basics = await _repository.GetSchoolBasicsAsync(schoolId, cancellationToken);
+        ProprietorNameRow? proprietor = await _repository.GetProprietorNameAsync(schoolId, cancellationToken);
 
-        // Status metadata only — the submitted PII/financial/document data is never returned.
+        // Status metadata only — the submitted PII/financial/document data is never returned. The school's
+        // own name/type/state and the proprietor's name (both from account creation) come along so the KYC
+        // form can prefill + lock them.
         return new KycSubmissionResponse
         {
             Status = status,
             SubmittedAt = submission?.SubmittedAt,
             ReviewedAt = submission?.ReviewedAt,
-            SchoolMessage = submission?.SchoolMessage
+            SchoolMessage = submission?.SchoolMessage,
+            SchoolName = basics?.Name,
+            SchoolType = basics?.Type,
+            SchoolState = basics?.State,
+            ProprietorFirstName = proprietor?.FirstName,
+            ProprietorMiddleName = proprietor?.MiddleName,
+            ProprietorLastName = proprietor?.LastName
         };
     }
 
@@ -197,6 +210,12 @@ internal sealed class SchoolKycService : ISchoolKycService
         if (!IsElevenDigits(request.ProprietorBvn))
         {
             throw new AppErrorException("Proprietor BVN must be 11 digits.", 400, ErrorCodes.ValidationError);
+        }
+
+        if (string.IsNullOrWhiteSpace(request.BusinessName))
+        {
+            throw new AppErrorException("Business name (as registered with CAC) is required.",
+                400, ErrorCodes.ValidationError);
         }
 
         if (string.IsNullOrWhiteSpace(request.BankName) ||

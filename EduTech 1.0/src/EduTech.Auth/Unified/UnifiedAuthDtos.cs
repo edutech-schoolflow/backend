@@ -59,6 +59,9 @@ public sealed class UnifiedMeResponse
     /// <summary>Profile kinds this identity owns (e.g. "parent", "staff") — not the same as contexts.</summary>
     public required IReadOnlyList<string> Profiles { get; init; }
     public required IReadOnlyList<AuthContextItem> Contexts { get; init; }
+    /// <summary>The context this session is currently inside (the token's context_id), or null for an
+    /// identity-scope session. Lets the switcher show the current workspace and list only the others.</summary>
+    public Guid? CurrentContextId { get; init; }
 }
 
 /// <summary>

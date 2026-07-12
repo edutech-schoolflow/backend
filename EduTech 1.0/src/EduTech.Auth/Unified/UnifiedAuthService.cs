@@ -40,11 +40,14 @@ public interface IUnifiedAuthService
     Task ForgotPasswordAsync(string phone, CancellationToken cancellationToken);
     Task ResetPasswordAsync(UnifiedResetPasswordRequest request, CancellationToken cancellationToken);
 
-    /// <summary>The signed-in person (any portal token) resolved to their identity + contexts.</summary>
-    Task<UnifiedMeResponse> GetMeAsync(string userType, Guid actorId, CancellationToken cancellationToken);
+    /// <summary>The signed-in person (any portal token) resolved to their identity + contexts. The
+    /// current context id (from the token) rides along so the switcher can mark/exclude it.</summary>
+    Task<UnifiedMeResponse> GetMeAsync(string userType, Guid actorId, Guid? currentContextId,
+        CancellationToken cancellationToken);
 
     /// <summary>Same, when the token already carries identity_id (org-context tokens).</summary>
-    Task<UnifiedMeResponse> GetMeByIdentityAsync(Guid identityId, CancellationToken cancellationToken);
+    Task<UnifiedMeResponse> GetMeByIdentityAsync(Guid identityId, Guid? currentContextId,
+        CancellationToken cancellationToken);
 
     /// <summary>
     /// Enters one of the signed-in identity's contexts: validates ownership, mints the portal
@@ -313,10 +316,11 @@ internal sealed class UnifiedAuthService : IUnifiedAuthService
         // The identity is the ONLY credential — profiles never authenticate (EDD-001 Sprint 5).
     }
 
-    public async Task<UnifiedMeResponse> GetMeAsync(string userType, Guid actorId, CancellationToken cancellationToken)
+    public async Task<UnifiedMeResponse> GetMeAsync(string userType, Guid actorId, Guid? currentContextId,
+        CancellationToken cancellationToken)
     {
         Guid identityId = await ResolveIdentityIdAsync(userType, actorId, cancellationToken);
-        return await GetMeByIdentityAsync(identityId, cancellationToken);
+        return await GetMeByIdentityAsync(identityId, currentContextId, cancellationToken);
     }
 
     public async Task<Guid> ResolveIdentityIdAsync(string userType, Guid actorId, CancellationToken cancellationToken)
@@ -420,7 +424,8 @@ internal sealed class UnifiedAuthService : IUnifiedAuthService
         };
     }
 
-    public async Task<UnifiedMeResponse> GetMeByIdentityAsync(Guid identityId, CancellationToken cancellationToken)
+    public async Task<UnifiedMeResponse> GetMeByIdentityAsync(Guid identityId, Guid? currentContextId,
+        CancellationToken cancellationToken)
     {
         EduTech.Identity.Domain.Identity identity = await _identities.GetByIdAsync(identityId, cancellationToken)
             ?? throw new AppErrorException("Account not found.", 404, ErrorCodes.NotFound);
@@ -436,7 +441,8 @@ internal sealed class UnifiedAuthService : IUnifiedAuthService
             Email = identity.Email,
             PhoneVerified = identity.PhoneVerified,
             Profiles = profiles,
-            Contexts = contexts
+            Contexts = contexts,
+            CurrentContextId = currentContextId
         };
     }
 

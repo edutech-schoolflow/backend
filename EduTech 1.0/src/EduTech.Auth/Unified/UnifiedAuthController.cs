@@ -103,11 +103,15 @@ public sealed class UnifiedAuthController : ControllerBase
     [Authorize(Policy = "AuthenticatedIdentity")]
     public async Task<ActionResult<ServiceResponses<UnifiedMeResponse>>> Me(CancellationToken cancellationToken)
     {
+        // The context this session is inside (org tokens carry it) — lets the switcher mark the current
+        // workspace and list only the others.
+        Guid? currentContextId = Guid.TryParse(User.FindFirst("context_id")?.Value, out Guid cc) ? cc : null;
+
         // Org-context tokens carry identity_id directly — the actor-resolution fallback serves
         // sessions minted before this claim existed and dies with them.
         if (Guid.TryParse(User.FindFirst("identity_id")?.Value, out Guid identityId))
         {
-            UnifiedMeResponse direct = await _service.GetMeByIdentityAsync(identityId, cancellationToken);
+            UnifiedMeResponse direct = await _service.GetMeByIdentityAsync(identityId, currentContextId, cancellationToken);
             return Ok(ServiceResponses<UnifiedMeResponse>.Ok(direct, "Profile."));
         }
 
@@ -118,7 +122,7 @@ public sealed class UnifiedAuthController : ControllerBase
             return Unauthorized();
         }
 
-        UnifiedMeResponse me = await _service.GetMeAsync(userType, actorId, cancellationToken);
+        UnifiedMeResponse me = await _service.GetMeAsync(userType, actorId, currentContextId, cancellationToken);
         return Ok(ServiceResponses<UnifiedMeResponse>.Ok(me, "Profile."));
     }
 

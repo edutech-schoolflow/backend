@@ -1,6 +1,7 @@
 using EduTech.Auth.Otp;
 using EduTech.Auth.Parent;
 using EduTech.Auth.RefreshTokens;
+using EduTech.Auth.SchoolOwner;
 using EduTech.Auth.Security;
 using EduTech.Auth.Staff;
 using EduTech.Auth.Tokens;
@@ -403,5 +404,206 @@ public class UnifiedAuthServiceTests
                 new SetupOrganizationRequest { Name = "Divine Wisdom" }, CancellationToken.None));
 
         Assert.Equal(404, ex.StatusCode);
+    }
+
+    // ── /me capabilities (EDD-005 platform capability model) ───────────────────────
+
+    private void MeBaseline(IdentityAggregate identity,
+        IReadOnlyList<AccessContextRow>? contexts = null,
+        IReadOnlyList<PendingInviteRow>? invites = null,
+        IReadOnlyList<string>? profiles = null)
+    {
+        _identities.Setup(i => i.GetByIdAsync(identity.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(identity);
+        _contexts.Setup(c => c.ListAccessContextsAsync(identity.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(contexts ?? Array.Empty<AccessContextRow>());
+        _contexts.Setup(c => c.ListProfileKindsAsync(identity.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(profiles ?? Array.Empty<string>());
+        _contexts.Setup(c => c.ListPendingInvitesByPhoneAsync(Phone, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(invites ?? Array.Empty<PendingInviteRow>());
+    }
+
+    [Fact]
+    public async Task GetMe_FreshVerifiedIdentity_CanCreateSchoolAndStartParentJourney()
+    {
+        IdentityAggregate identity = Identity(passwordHash: "h", phoneVerified: true, status: IdentityStatus.Active);
+        MeBaseline(identity);
+
+        UnifiedMeResponse me = await CreateSut().GetMeByIdentityAsync(identity.Id, null, CancellationToken.None);
+
+        Assert.Equal(new[] { "create_school", "find_school", "add_child" }, me.Capabilities);
+    }
+
+    [Fact]
+    public async Task GetMe_UnverifiedIdentity_HasNoCapabilities()
+    {
+        IdentityAggregate identity = Identity(passwordHash: "h", phoneVerified: false);
+        MeBaseline(identity);
+
+        UnifiedMeResponse me = await CreateSut().GetMeByIdentityAsync(identity.Id, null, CancellationToken.None);
+
+        Assert.Empty(me.Capabilities);
+    }
+
+    [Fact]
+    public async Task GetMe_OwnerOfNamedSchool_CannotCreateAnother()
+    {
+        IdentityAggregate identity = Identity(passwordHash: "h", phoneVerified: true, status: IdentityStatus.Active);
+        MeBaseline(identity, contexts: new[] { new AccessContextRow
+            { ReferenceId = Guid.NewGuid(), Type = "owner", OrganizationId = Guid.NewGuid(),
+              OrganizationName = "Divine Wisdom", OrganizationSlug = "divine-wisdom" } });
+
+        UnifiedMeResponse me = await CreateSut().GetMeByIdentityAsync(identity.Id, null, CancellationToken.None);
+
+        Assert.DoesNotContain("create_school", me.Capabilities);
+        Assert.DoesNotContain("resume_school_setup", me.Capabilities);
+        Assert.Contains("find_school", me.Capabilities); // owner can still be a parent elsewhere
+    }
+
+    [Fact]
+    public async Task GetMe_OwnerOfUnnamedSchool_IsOfferedResumeSetup()
+    {
+        IdentityAggregate identity = Identity(passwordHash: "h", phoneVerified: true, status: IdentityStatus.Active);
+        MeBaseline(identity, contexts: new[] { new AccessContextRow
+            { ReferenceId = Guid.NewGuid(), Type = "owner", OrganizationId = Guid.NewGuid(),
+              OrganizationName = null, OrganizationSlug = "s-abc12345" } });
+
+        UnifiedMeResponse me = await CreateSut().GetMeByIdentityAsync(identity.Id, null, CancellationToken.None);
+
+        Assert.Contains("resume_school_setup", me.Capabilities);
+        Assert.DoesNotContain("create_school", me.Capabilities);
+    }
+
+    [Fact]
+    public async Task GetMe_PendingStaffInvite_IsOfferedAcceptInvitation()
+    {
+        IdentityAggregate identity = Identity(passwordHash: "h", phoneVerified: true, status: IdentityStatus.Active);
+        MeBaseline(identity, invites: new[] { new PendingInviteRow
+            { SchoolName = "Greenfield", Role = "teacher", ExpiresAt = DateTime.UtcNow.AddDays(2) } });
+
+        UnifiedMeResponse me = await CreateSut().GetMeByIdentityAsync(identity.Id, null, CancellationToken.None);
+
+        Assert.Contains("accept_invitation", me.Capabilities);
+    }
+
+    [Fact]
+    public async Task GetMe_ParentProfileExists_IsOfferedFamilyHomeNotProfileBranching()
+    {
+        IdentityAggregate identity = Identity(passwordHash: "h", phoneVerified: true, status: IdentityStatus.Active);
+        MeBaseline(identity, profiles: new[] { "parent" });
+
+        UnifiedMeResponse me = await CreateSut().GetMeByIdentityAsync(identity.Id, null, CancellationToken.None);
+
+        Assert.Contains("open_family_home", me.Capabilities);
+        Assert.Contains("add_child", me.Capabilities); // can always add another child
+    }
+
+    // ── unified refresh (EDD-005 P6: sessions are independent of routes) ────────────
+
+    private static RefreshRotationResult Rotation(string actorType, Guid actorId) => new()
+    {
+        Status = RefreshTokenStatus.Success, NewToken = "new-refresh", ActorType = actorType,
+        ActorId = actorId, ExpiresAt = DateTime.UtcNow.AddHours(12)
+    };
+
+    [Fact]
+    public async Task Refresh_IdentityActor_MintsIdentityScopeToken()
+    {
+        IdentityAggregate identity = Identity(passwordHash: "h", phoneVerified: true, status: IdentityStatus.Active);
+        _refresh.Setup(r => r.RotateAsync("raw", null, null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Rotation("identity", identity.Id));
+        _identities.Setup(i => i.GetByIdAsync(identity.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(identity);
+        _access.Setup(a => a.IssueIdentity(identity.Id, Phone))
+            .Returns(new AccessToken { Token = "identity-access", ExpiresAt = DateTime.UtcNow.AddMinutes(30) });
+
+        UnifiedTokens tokens = await CreateSut().RefreshSessionAsync("raw", null, null, CancellationToken.None);
+
+        Assert.Equal("identity-access", tokens.AccessToken);
+        Assert.Equal("new-refresh", tokens.RefreshToken);
+    }
+
+    [Fact]
+    public async Task Refresh_ParentActor_MintsParentTokenWithIdentityClaims()
+    {
+        Guid parentId = Guid.NewGuid();
+        Guid identityId = Guid.NewGuid();
+        _refresh.Setup(r => r.RotateAsync("raw", null, null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Rotation(AuthActorTypes.Parent, parentId));
+        _parents.Setup(p => p.GetTokenClaimsAsync(parentId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ParentTokenRow { Phone = Phone, IsActive = true });
+        _contexts.Setup(c => c.GetIdentityIdForActorAsync("parent", parentId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(identityId);
+        _access.Setup(a => a.IssueParent(parentId, Phone, identityId, parentId, null))
+            .Returns(new AccessToken { Token = "parent-access", ExpiresAt = DateTime.UtcNow.AddMinutes(30) });
+
+        UnifiedTokens tokens = await CreateSut().RefreshSessionAsync("raw", null, null, CancellationToken.None);
+
+        Assert.Equal("parent-access", tokens.AccessToken);
+    }
+
+    [Fact]
+    public async Task Refresh_StaffActor_MintsSchoolLessStaffToken()
+    {
+        Guid staffId = Guid.NewGuid();
+        _refresh.Setup(r => r.RotateAsync("raw", null, null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Rotation(AuthActorTypes.Staff, staffId));
+        _staffUsers.Setup(su => su.GetTokenClaimsAsync(staffId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new StaffUserTokenRow { Phone = Phone, KycStatus = "approved", IsActive = true });
+        _access.Setup(a => a.IssueStaffIdentity(staffId, Phone, "approved"))
+            .Returns(new AccessToken { Token = "staff-access", ExpiresAt = DateTime.UtcNow.AddMinutes(30) });
+
+        UnifiedTokens tokens = await CreateSut().RefreshSessionAsync("raw", null, null, CancellationToken.None);
+
+        Assert.Equal("staff-access", tokens.AccessToken);
+    }
+
+    [Fact]
+    public async Task Refresh_OwnerActor_MintsOwnerTokenWithSchoolStatus()
+    {
+        Guid ownerId = Guid.NewGuid();
+        Guid schoolId = Guid.NewGuid();
+        Guid identityId = Guid.NewGuid();
+        _refresh.Setup(r => r.RotateAsync("raw", null, null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Rotation(AuthActorTypes.SchoolOwner, ownerId));
+        _owners.Setup(o => o.GetTokenClaimsAsync(ownerId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SchoolOwnerTokenRow { SchoolId = schoolId, Phone = Phone, IsActive = true });
+        _schools.Setup(s => s.GetStatusAsync(schoolId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SchoolStatusRow { Status = "active", KycStatus = "approved", Subdomain = "divine" });
+        _contexts.Setup(c => c.GetIdentityIdForActorAsync("school", ownerId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(identityId);
+        _access.Setup(a => a.IssueSchoolOwner(ownerId, schoolId, Phone, "active", "approved", "divine",
+                identityId, ownerId))
+            .Returns(new AccessToken { Token = "owner-access", ExpiresAt = DateTime.UtcNow.AddMinutes(30) });
+
+        UnifiedTokens tokens = await CreateSut().RefreshSessionAsync("raw", null, null, CancellationToken.None);
+
+        Assert.Equal("owner-access", tokens.AccessToken);
+    }
+
+    [Fact]
+    public async Task Refresh_FailedRotation_Rejects401()
+    {
+        _refresh.Setup(r => r.RotateAsync("bad", null, null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(RefreshRotationResult.Fail(RefreshTokenStatus.Expired));
+
+        AppErrorException ex = await Assert.ThrowsAsync<AppErrorException>(
+            () => CreateSut().RefreshSessionAsync("bad", null, null, CancellationToken.None));
+        Assert.Equal(401, ex.StatusCode);
+    }
+
+    [Fact]
+    public async Task Refresh_DeactivatedParent_RevokesFamilyAndRejects()
+    {
+        Guid parentId = Guid.NewGuid();
+        _refresh.Setup(r => r.RotateAsync("raw", null, null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Rotation(AuthActorTypes.Parent, parentId));
+        _parents.Setup(p => p.GetTokenClaimsAsync(parentId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ParentTokenRow { Phone = Phone, IsActive = false });
+
+        await Assert.ThrowsAsync<AppErrorException>(
+            () => CreateSut().RefreshSessionAsync("raw", null, null, CancellationToken.None));
+        _refresh.Verify(r => r.RevokeAllForActorAsync(AuthActorTypes.Parent, parentId,
+            It.IsAny<CancellationToken>()), Times.Once);
     }
 }

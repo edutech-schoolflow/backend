@@ -28,17 +28,6 @@ public sealed class ParentAuthController : ControllerBase
 
 
 
-    [HttpPost("refresh")]
-    [EnableRateLimiting("login")]
-    public async Task<ActionResult<ServiceResponses<ParentAuthResponse>>> Refresh(CancellationToken cancellationToken)
-    {
-        string refreshToken = Request.Cookies[RefreshCookie] ?? string.Empty;
-        ParentTokensResult result = await _authService.RefreshAsync(refreshToken, ClientIp(), UserAgent(), cancellationToken);
-        SetAuthCookies(result);
-        return Ok(ServiceResponses<ParentAuthResponse>.Ok(
-            new ParentAuthResponse { AccessTokenExpiresAt = result.AccessTokenExpiresAt }, "Token refreshed."));
-    }
-
     [HttpPost("payment-pin")]
     [Authorize(Policy = "ParentOnly")]
     public async Task<ActionResult<ServiceResponses<string?>>> SetPaymentPin(

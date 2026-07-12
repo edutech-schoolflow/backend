@@ -9,8 +9,8 @@ namespace EduTech.Students.ParentFacing;
 /// ownership-scoped (a parent only ever sees children linked to them via parent_children).
 /// </summary>
 [ApiController]
-[Route("api/v1/parent/children")]
-[Authorize(Policy = "ParentOnly")]
+[Route("api/v1/family/children")]
+[Authorize(Policy = "AuthenticatedIdentity")]
 public sealed class ParentChildrenController : ControllerBase
 {
     private readonly IParentChildrenService _service;

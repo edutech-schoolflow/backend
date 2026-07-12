@@ -6,8 +6,8 @@ namespace EduTech.Students.Admissions;
 
 /// <summary>Parent-side admissions — apply a child to a school and track it. Ownership-scoped.</summary>
 [ApiController]
-[Route("api/v1/parent/applications")]
-[Authorize(Policy = "ParentOnly")]
+[Route("api/v1/family/applications")]
+[Authorize(Policy = "AuthenticatedIdentity")]
 public sealed class ParentApplicationController : ControllerBase
 {
     private readonly IParentApplicationService _service;

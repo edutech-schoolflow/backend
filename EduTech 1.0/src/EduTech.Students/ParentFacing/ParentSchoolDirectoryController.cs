@@ -10,7 +10,7 @@ namespace EduTech.Students.ParentFacing;
 /// context. The data is public-listed schools regardless, so no persona is needed.
 /// </summary>
 [ApiController]
-[Route("api/v1/parent/schools")]
+[Route("api/v1/family/schools")]
 [Authorize(Policy = "AuthenticatedIdentity")]
 public sealed class ParentSchoolDirectoryController : ControllerBase
 {

@@ -57,7 +57,8 @@ internal sealed class StaffInviteService : IStaffInviteService
         _affiliations = affiliations;
         _inviteTokens = inviteTokens;
         _notifications = notifications;
-        _inviteBaseUrl = configuration["App:StaffInviteBaseUrl"] ?? "http://localhost:3000/staff/register";
+        // FE-001: invitations land on the journey route /join (?token=…), never a persona URL.
+        _inviteBaseUrl = configuration["App:StaffInviteBaseUrl"] ?? "http://localhost:3000/join";
     }
 
     public async Task<InviteStaffResponse> InviteAsync(InviteStaffRequest request, CancellationToken cancellationToken)

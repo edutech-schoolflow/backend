@@ -29,17 +29,6 @@ public sealed class StaffAuthController : ControllerBase
 
 
 
-    [HttpPost("refresh")]
-    [EnableRateLimiting("login")]
-    public async Task<ActionResult<ServiceResponses<StaffAuthResponse>>> Refresh(CancellationToken cancellationToken)
-    {
-        string refreshToken = Request.Cookies[RefreshCookie] ?? string.Empty;
-        StaffTokensResult result = await _authService.RefreshAsync(refreshToken, ClientIp(), UserAgent(), cancellationToken);
-        SetAuthCookies(result);
-        return Ok(ServiceResponses<StaffAuthResponse>.Ok(
-            new StaffAuthResponse { AccessTokenExpiresAt = result.AccessTokenExpiresAt }, "Token refreshed."));
-    }
-
 
 
 

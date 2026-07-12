@@ -47,6 +47,12 @@ internal interface IParentRepository
     /// <summary>Sets/replaces the 6-digit payment PIN hash (clears any PIN lockout).</summary>
     Task SetPaymentPinAsync(Guid parentId, string pinHash, CancellationToken cancellationToken);
 
+    /// <summary>The identity's active parent profile id, if the profile exists.</summary>
+    Task<Guid?> GetIdByIdentityIdAsync(Guid identityId, CancellationToken cancellationToken);
+
+    /// <summary>The identity's family profile (name/phone/pin state), if it exists.</summary>
+    Task<ParentProfileRow?> GetProfileByIdentityIdAsync(Guid identityId, CancellationToken cancellationToken);
+
     Task SetPasswordAsync(Guid parentId, string passwordHash, CancellationToken cancellationToken);
 
     /// <summary>Profile for GET /me. Null if not found.</summary>
@@ -232,6 +238,25 @@ internal sealed class ParentRepository : BaseRepository, IParentRepository
         return ExecuteAsync(
             "UPDATE parents SET password_hash = @PasswordHash, updated_at = NOW() WHERE id = @Id",
             new { Id = parentId, PasswordHash = passwordHash }, cancellationToken);
+    }
+
+    public Task<Guid?> GetIdByIdentityIdAsync(Guid identityId, CancellationToken cancellationToken)
+    {
+        return QuerySingleOrDefaultAsync<Guid?>(
+            "SELECT id FROM parents WHERE identity_id = @IdentityId AND is_active = TRUE",
+            new { IdentityId = identityId }, cancellationToken);
+    }
+
+    public Task<ParentProfileRow?> GetProfileByIdentityIdAsync(Guid identityId, CancellationToken cancellationToken)
+    {
+        return QuerySingleOrDefaultAsync<ParentProfileRow>(
+            """
+            SELECT concat_ws(' ', first_name, middle_name, last_name) AS full_name,
+                   phone, email, phone_verified, (payment_pin_hash IS NOT NULL) AS has_payment_pin
+            FROM parents
+            WHERE identity_id = @IdentityId AND is_active = TRUE
+            """,
+            new { IdentityId = identityId }, cancellationToken);
     }
 
     public Task<ParentProfileRow?> GetProfileAsync(Guid parentId, CancellationToken cancellationToken)

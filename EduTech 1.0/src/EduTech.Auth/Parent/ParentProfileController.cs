@@ -10,7 +10,7 @@ namespace EduTech.Auth.Parent;
 /// session: the client follows up with <c>POST /api/v1/auth/select-context</c> to enter it.
 /// </summary>
 [ApiController]
-[Route("api/v1/parents")]
+[Route("api/v1/family")]
 public sealed class ParentProfileController : ControllerBase
 {
     private readonly IParentProfileService _service;
@@ -35,5 +35,38 @@ public sealed class ParentProfileController : ControllerBase
         Guid parentId = await _service.ProvisionAsync(userType, actorId, cancellationToken);
         return Ok(ServiceResponses<object>.Ok(new { contextId = parentId, type = "parent" },
             "Parent profile ready."));
+    }
+
+    /// <summary>The identity's family profile state (P7: works with ANY session, before the profile exists).</summary>
+    [HttpGet("profile")]
+    [Authorize(Policy = "AuthenticatedIdentity")]
+    public async Task<ActionResult<ServiceResponses<FamilyProfileResponse>>> Get(CancellationToken cancellationToken)
+    {
+        string? userType = User.FindFirst("user_type")?.Value;
+        string? sub = User.FindFirst("user_id")?.Value ?? User.FindFirst("sub")?.Value;
+        if (userType is null || !Guid.TryParse(sub, out Guid actorId))
+        {
+            return Unauthorized();
+        }
+
+        FamilyProfileResponse profile = await _service.GetFamilyProfileAsync(userType, actorId, cancellationToken);
+        return Ok(ServiceResponses<FamilyProfileResponse>.Ok(profile, "Family profile."));
+    }
+
+    /// <summary>Sets the payment PIN on the identity's family profile.</summary>
+    [HttpPost("payment-pin")]
+    [Authorize(Policy = "AuthenticatedIdentity")]
+    public async Task<ActionResult<ServiceResponses<string?>>> SetPaymentPin(
+        [FromBody] SetPaymentPinRequest request, CancellationToken cancellationToken)
+    {
+        string? userType = User.FindFirst("user_type")?.Value;
+        string? sub = User.FindFirst("user_id")?.Value ?? User.FindFirst("sub")?.Value;
+        if (userType is null || !Guid.TryParse(sub, out Guid actorId))
+        {
+            return Unauthorized();
+        }
+
+        await _service.SetPaymentPinAsync(userType, actorId, request.Pin, cancellationToken);
+        return Ok(ServiceResponses<string?>.Ok(null, "Payment PIN set."));
     }
 }

@@ -126,6 +126,22 @@ public sealed class UnifiedAuthController : ControllerBase
         return Ok(ServiceResponses<UnifiedMeResponse>.Ok(me, "Profile."));
     }
 
+    /// <summary>
+    /// EDD-005 Principle 6 — the ONE refresh for every session kind. The refresh cookie's session
+    /// record decides what gets minted (identity/parent/staff/owner); the browser URL plays no part.
+    /// </summary>
+    [HttpPost("refresh")]
+    [AllowAnonymous]
+    [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting("login")]
+    public async Task<ActionResult<ServiceResponses<string?>>> Refresh(CancellationToken cancellationToken)
+    {
+        string refreshToken = Request.Cookies[RefreshCookie] ?? string.Empty;
+        UnifiedTokens tokens = await _service.RefreshSessionAsync(refreshToken, ClientIp(),
+            Request.Headers.UserAgent.FirstOrDefault(), cancellationToken);
+        SetAuthCookies(tokens);
+        return Ok(ServiceResponses<string?>.Ok(null, "Session refreshed."));
+    }
+
     /// <summary>Adaptive /welcome (FE-001): pending invites for my phone + draft organizations to resume.</summary>
     [HttpGet("welcome")]
     [Authorize(Policy = "AuthenticatedIdentity")]

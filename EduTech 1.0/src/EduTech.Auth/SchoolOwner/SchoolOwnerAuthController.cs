@@ -47,17 +47,6 @@ public sealed class SchoolOwnerAuthController : ControllerBase
     }
 
 
-    [HttpPost("refresh")]
-    [EnableRateLimiting("login")]
-    public async Task<ActionResult<ServiceResponses<LoginResponse>>> Refresh(CancellationToken cancellationToken)
-    {
-        string refreshToken = Request.Cookies[RefreshCookie] ?? string.Empty;
-        LoginResult result = await _authService.RefreshAsync(refreshToken, ClientIp(), UserAgent(), cancellationToken);
-        SetAuthCookies(result);
-        return Ok(ServiceResponses<LoginResponse>.Ok(
-            new LoginResponse { AccessTokenExpiresAt = result.AccessTokenExpiresAt }, "Token refreshed."));
-    }
-
     [HttpPost("resend-otp")]
     [EnableRateLimiting("otp")]
     public async Task<ActionResult<ServiceResponses<string?>>> ResendOtp(

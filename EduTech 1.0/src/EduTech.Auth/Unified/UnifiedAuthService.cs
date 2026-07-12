@@ -69,6 +69,14 @@ public interface IUnifiedAuthService
     Task<Guid> ResolveIdentityIdAsync(string userType, Guid actorId, CancellationToken cancellationToken);
 
     /// <summary>
+    /// EDD-005 Principle 6 — sessions are independent of routes. The ONE refresh for every session
+    /// kind: rotates the presented refresh token and mints whatever access token its actor implies
+    /// (identity-scope, parent, staff, or owner). The browser URL plays no part.
+    /// </summary>
+    Task<UnifiedTokens> RefreshSessionAsync(string refreshToken, string? ipAddress, string? userAgent,
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// Resolves a workspace URL (FE-001 Phase 2, /o/{slug}) for the signed-in identity: the
     /// organization plus the caller's own context there — 404 unless they belong to it.
     /// </summary>
@@ -442,9 +450,54 @@ internal sealed class UnifiedAuthService : IUnifiedAuthService
             Email = identity.Email,
             PhoneVerified = identity.PhoneVerified,
             Profiles = profiles,
+            Capabilities = await BuildCapabilitiesAsync(identity, contexts, profiles, cancellationToken),
             Contexts = contexts,
             CurrentContextId = currentContextId
         };
+    }
+
+    /// <summary>
+    /// EDD-005 capability model: platform-level actions available to this identity NOW, derived
+    /// from existing state — never stored. Workspace permissions are a different concern and stay
+    /// inside /o/{slug}. Unverified identities can do exactly one thing: verify (empty list).
+    /// </summary>
+    private async Task<IReadOnlyList<string>> BuildCapabilitiesAsync(EduTech.Identity.Domain.Identity identity,
+        IReadOnlyList<AuthContextItem> contexts, IReadOnlyList<string> profiles,
+        CancellationToken cancellationToken)
+    {
+        if (!identity.PhoneVerified)
+        {
+            return Array.Empty<string>();
+        }
+
+        List<string> capabilities = new List<string>();
+
+        if (!contexts.Any(c => c.Type == "owner"))
+        {
+            capabilities.Add("create_school"); // one school per account for now
+        }
+        if (contexts.Any(c => c.Type == "owner" && c.OrganizationName is null))
+        {
+            capabilities.Add("resume_school_setup"); // abandoned Organization Wizard
+        }
+
+        // The parent journey is open to every verified identity; the profile is created on demand.
+        capabilities.Add("find_school");
+        capabilities.Add("add_child");
+
+        if (profiles.Contains("parent"))
+        {
+            capabilities.Add("open_family_home"); // the school-agnostic family view is live for them
+        }
+
+        IReadOnlyList<PendingInviteRow> invites =
+            await _contexts.ListPendingInvitesByPhoneAsync(identity.Phone, cancellationToken);
+        if (invites.Count > 0)
+        {
+            capabilities.Add("accept_invitation");
+        }
+
+        return capabilities;
     }
 
     // ── Login: one flow, contexts decide the portal ───────────────────────────────────────────
@@ -604,6 +657,107 @@ internal sealed class UnifiedAuthService : IUnifiedAuthService
     }
 
     /// <summary>Mints the legacy-shaped portal tokens for the chosen context.</summary>
+    public async Task<UnifiedTokens> RefreshSessionAsync(string refreshToken, string? ipAddress,
+        string? userAgent, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(refreshToken))
+        {
+            throw new AppErrorException("Missing refresh token.", 401, ErrorCodes.Unauthorized,
+                logReason: "Unified refresh: no refresh cookie present.");
+        }
+
+        RefreshRotationResult rotation = await _refreshTokens.RotateAsync(
+            refreshToken, ipAddress, userAgent, cancellationToken);
+        if (!rotation.IsSuccess)
+        {
+            throw new AppErrorException("Session expired. Please log in again.", 401, ErrorCodes.Unauthorized,
+                logReason: $"Unified refresh: rotation failed ({rotation.Status}).");
+        }
+
+        // The session record — never the browser URL — decides what gets minted (EDD-005 P6).
+        AccessToken access = rotation.ActorType switch
+        {
+            "identity" => await MintIdentityAccessAsync(rotation, cancellationToken),
+            AuthActorTypes.Parent => await MintParentAccessAsync(rotation, cancellationToken),
+            AuthActorTypes.Staff => await MintStaffAccessAsync(rotation, cancellationToken),
+            AuthActorTypes.SchoolOwner => await MintOwnerAccessAsync(rotation, cancellationToken),
+            _ => throw new AppErrorException("Session expired. Please log in again.", 401, ErrorCodes.Unauthorized,
+                logReason: $"Unified refresh: unsupported actor type '{rotation.ActorType}'.")
+        };
+
+        return new UnifiedTokens
+        {
+            AccessToken = access.Token,
+            AccessTokenExpiresAt = access.ExpiresAt,
+            RefreshToken = rotation.NewToken!,
+            RefreshTokenExpiresAt = rotation.ExpiresAt
+        };
+    }
+
+    private async Task<AccessToken> MintIdentityAccessAsync(RefreshRotationResult rotation,
+        CancellationToken cancellationToken)
+    {
+        EduTech.Identity.Domain.Identity? identity = await _identities.GetByIdAsync(rotation.ActorId, cancellationToken);
+        if (identity is null || identity.Status != EduTech.Identity.Domain.IdentityStatus.Active)
+        {
+            await RevokeAndRejectAsync(rotation, "identity missing or inactive", cancellationToken);
+        }
+
+        return _accessTokenIssuer.IssueIdentity(identity!.Id, identity.Phone);
+    }
+
+    private async Task<AccessToken> MintParentAccessAsync(RefreshRotationResult rotation,
+        CancellationToken cancellationToken)
+    {
+        ParentTokenRow? parent = await _parents.GetTokenClaimsAsync(rotation.ActorId, cancellationToken);
+        if (parent is null || !parent.IsActive)
+        {
+            await RevokeAndRejectAsync(rotation, "parent missing or deactivated", cancellationToken);
+        }
+
+        Guid? identityId = await _contexts.GetIdentityIdForActorAsync("parent", rotation.ActorId, cancellationToken);
+        return _accessTokenIssuer.IssueParent(rotation.ActorId, parent!.Phone, identityId, rotation.ActorId);
+    }
+
+    private async Task<AccessToken> MintStaffAccessAsync(RefreshRotationResult rotation,
+        CancellationToken cancellationToken)
+    {
+        StaffUserTokenRow? staff = await _staffUsers.GetTokenClaimsAsync(rotation.ActorId, cancellationToken);
+        if (staff is null || !staff.IsActive)
+        {
+            await RevokeAndRejectAsync(rotation, "staff missing or deactivated", cancellationToken);
+        }
+
+        // School-less staff token (same as the legacy staff refresh) — the workspace re-enters
+        // its affiliation context via select-context when it needs the scoped token.
+        return _accessTokenIssuer.IssueStaffIdentity(rotation.ActorId, staff!.Phone, staff.KycStatus);
+    }
+
+    private async Task<AccessToken> MintOwnerAccessAsync(RefreshRotationResult rotation,
+        CancellationToken cancellationToken)
+    {
+        SchoolOwnerTokenRow? owner = await _owners.GetTokenClaimsAsync(rotation.ActorId, cancellationToken);
+        if (owner is null || !owner.IsActive)
+        {
+            await RevokeAndRejectAsync(rotation, "owner missing or deactivated", cancellationToken);
+        }
+
+        SchoolStatusRow status = await _schools.GetStatusAsync(owner!.SchoolId, cancellationToken)
+            ?? throw new AppErrorException("School not found.", 404, ErrorCodes.NotFound);
+
+        Guid? identityId = await _contexts.GetIdentityIdForActorAsync("school", rotation.ActorId, cancellationToken);
+        return _accessTokenIssuer.IssueSchoolOwner(rotation.ActorId, owner.SchoolId, owner.Phone,
+            status.Status, status.KycStatus, status.Subdomain, identityId, rotation.ActorId);
+    }
+
+    private async Task RevokeAndRejectAsync(RefreshRotationResult rotation, string reason,
+        CancellationToken cancellationToken)
+    {
+        await _refreshTokens.RevokeAllForActorAsync(rotation.ActorType!, rotation.ActorId, cancellationToken);
+        throw new AppErrorException("Session is no longer valid. Please log in again.",
+            401, ErrorCodes.Unauthorized, logReason: $"Unified refresh: {reason}.");
+    }
+
     private async Task<UnifiedTokens> EnterContextAsync(EduTech.Identity.Domain.Identity identity,
         AuthContextItem context, string? ipAddress, string? userAgent, CancellationToken cancellationToken)
     {

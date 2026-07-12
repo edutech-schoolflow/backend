@@ -58,6 +58,9 @@ public sealed class UnifiedMeResponse
     public required bool PhoneVerified { get; init; }
     /// <summary>Profile kinds this identity owns (e.g. "parent", "staff") — not the same as contexts.</summary>
     public required IReadOnlyList<string> Profiles { get; init; }
+    /// <summary>Platform-level actions available to this identity right now (EDD-005) — derived,
+    /// never stored. The frontend renders what it receives instead of asking "am I a parent?".</summary>
+    public required IReadOnlyList<string> Capabilities { get; init; }
     public required IReadOnlyList<AuthContextItem> Contexts { get; init; }
     /// <summary>The context this session is currently inside (the token's context_id), or null for an
     /// identity-scope session. Lets the switcher show the current workspace and list only the others.</summary>

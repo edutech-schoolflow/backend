@@ -6,7 +6,7 @@ namespace EduTech.Fees;
 
 /// <summary>Parent-side fees + payments (parent-pull). Ownership-scoped to the parent's own children.</summary>
 [ApiController]
-[Authorize(Policy = "ParentOnly")]
+[Authorize(Policy = "AuthenticatedIdentity")]
 public sealed class ParentFeeController : ControllerBase
 {
     private readonly IParentFeeService _service;
@@ -17,7 +17,7 @@ public sealed class ParentFeeController : ControllerBase
     }
 
     /// <summary>Per child, the approved fees applicable to them (compulsory + optional, tagged).</summary>
-    [HttpGet("api/v1/parent/fees")]
+    [HttpGet("api/v1/family/fees")]
     public async Task<ActionResult<ServiceResponses<IReadOnlyList<ChildFeesResponse>>>> Fees(
         [FromQuery] Guid? studentId, CancellationToken cancellationToken)
     {
@@ -26,7 +26,7 @@ public sealed class ParentFeeController : ControllerBase
     }
 
     /// <summary>Pay (part of) a fee for a child — PIN-authorized. Paying an optional fee subscribes the child.</summary>
-    [HttpPost("api/v1/parent/fees/pay")]
+    [HttpPost("api/v1/family/fees/pay")]
     public async Task<ActionResult<ServiceResponses<PaymentResponse>>> Pay(
         [FromBody] PayFeeRequest request, CancellationToken cancellationToken)
     {
@@ -34,11 +34,4 @@ public sealed class ParentFeeController : ControllerBase
         return Ok(ServiceResponses<PaymentResponse>.Ok(payment, "Payment successful."));
     }
 
-    [HttpGet("api/v1/parent/payments")]
-    public async Task<ActionResult<ServiceResponses<IReadOnlyList<PaymentResponse>>>> Payments(
-        CancellationToken cancellationToken)
-    {
-        IReadOnlyList<PaymentResponse> payments = await _service.ListPaymentsAsync(cancellationToken);
-        return Ok(ServiceResponses<IReadOnlyList<PaymentResponse>>.Ok(payments, "Payment history."));
-    }
 }

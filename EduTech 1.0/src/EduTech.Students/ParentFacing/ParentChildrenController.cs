@@ -41,7 +41,7 @@ public sealed class ParentChildrenController : ControllerBase
     /// <summary>Create a new child profile, or update one I own (when Id is supplied).</summary>
     [HttpPost]
     public async Task<ActionResult<ServiceResponses<object>>> Upsert(
-        [FromBody] UpsertChildProfileRequest request, CancellationToken cancellationToken)
+        [FromForm] UpsertChildProfileRequest request, CancellationToken cancellationToken)
     {
         Guid id = await _service.UpsertChildAsync(request, cancellationToken);
         return Ok(ServiceResponses<object>.Ok(new { childProfileId = id }, "Child profile saved."));

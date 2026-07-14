@@ -23,6 +23,9 @@ public class ParentFeeServiceTests
     private ParentFeeService CreateSut(decimal flatFee = 50m)
     {
         _context.SetupGet(c => c.UserId).Returns(Parent.ToString());
+        // Identity-first resolution (EDD-005 P7): the session's identity maps to the parent profile.
+        _repo.Setup(r => r.GetParentIdByIdentityAsync(Parent, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Parent);
         _settings.Setup(s => s.GetDecimalAsync(It.IsAny<string>(), It.IsAny<decimal>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(flatFee);
         return new ParentFeeService(_repo.Object, _provider.Object, _context.Object, _settings.Object);

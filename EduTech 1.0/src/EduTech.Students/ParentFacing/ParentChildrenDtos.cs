@@ -30,6 +30,8 @@ public sealed class ChildProfileResponse
     public string? PhotoUrl { get; init; }
     public string? PreviousSchool { get; init; }
     public string? MedicalInfo { get; init; }
+    public string? BirthCertUrl { get; init; }
+    public string? MedicalDocUrl { get; init; }
 }
 
 public sealed class UpsertChildProfileRequest
@@ -44,6 +46,12 @@ public sealed class UpsertChildProfileRequest
     public string? PreviousSchool { get; init; }
     public string? MedicalInfo { get; init; }
     public string? Relationship { get; init; }       // mother | father | guardian (on first create)
+
+    // Multipart uploads. Photo and birth certificate are REQUIRED when creating; the medical
+    // document is optional. On update, a provided file replaces the stored one.
+    public Microsoft.AspNetCore.Http.IFormFile? Photo { get; init; }
+    public Microsoft.AspNetCore.Http.IFormFile? BirthCert { get; init; }
+    public Microsoft.AspNetCore.Http.IFormFile? MedicalDoc { get; init; }
 }
 
 public sealed class ChildReportCardSummary

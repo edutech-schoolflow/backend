@@ -18,6 +18,9 @@ public class ParentApplicationServiceTests
     private ParentApplicationService CreateSut()
     {
         _context.SetupGet(c => c.UserId).Returns(Parent.ToString());
+        // Identity-first resolution (EDD-005 P7): the session's identity maps to the parent profile.
+        _repo.Setup(r => r.GetParentIdByIdentityAsync(Parent, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Parent);
         return new ParentApplicationService(_repo.Object, _context.Object);
     }
 

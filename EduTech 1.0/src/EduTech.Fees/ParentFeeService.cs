@@ -35,7 +35,13 @@ internal sealed class ParentFeeService : IParentFeeService
 
     public async Task<IReadOnlyList<ChildFeesResponse>> GetFeesAsync(Guid? studentId, CancellationToken cancellationToken)
     {
-        IReadOnlyList<ChildFeeLineRow> rows = await _repository.GetChildFeesAsync(ParentId, studentId, cancellationToken);
+        Guid? parentId = await _repository.GetParentIdByIdentityAsync(CurrentIdentityId, cancellationToken);
+        if (parentId is not Guid pid)
+        {
+            return Array.Empty<ChildFeesResponse>();
+        }
+
+        IReadOnlyList<ChildFeeLineRow> rows = await _repository.GetChildFeesAsync(pid, studentId, cancellationToken);
 
         return rows.GroupBy(r => r.StudentId).Select(g =>
         {
@@ -63,8 +69,12 @@ internal sealed class ParentFeeService : IParentFeeService
             throw new AppErrorException("Amount must be greater than zero.", 400, ErrorCodes.ValidationError);
         }
 
+        Guid parentId = await _repository.GetParentIdByIdentityAsync(CurrentIdentityId, cancellationToken)
+            ?? throw new AppErrorException("Set a payment PIN before paying.", 400, ErrorCodes.ValidationError,
+                logReason: "Fee pay: identity has no parent profile.");
+
         // Payment PIN (separate from login password) authorizes the charge.
-        string? pinHash = await _repository.GetPaymentPinHashAsync(ParentId, cancellationToken);
+        string? pinHash = await _repository.GetPaymentPinHashAsync(parentId, cancellationToken);
         if (string.IsNullOrEmpty(pinHash))
         {
             throw new AppErrorException("Set a payment PIN before paying.", 400, ErrorCodes.ValidationError);
@@ -73,11 +83,11 @@ internal sealed class ParentFeeService : IParentFeeService
         if (string.IsNullOrWhiteSpace(request.Pin) || !BCrypt.Net.BCrypt.Verify(request.Pin.Trim(), pinHash))
         {
             throw new AppErrorException("Incorrect payment PIN.", 401, ErrorCodes.Unauthorized,
-                logReason: $"Parent {ParentId} wrong payment PIN on fee {request.FeeTypeId}.");
+                logReason: $"Parent {parentId} wrong payment PIN on fee {request.FeeTypeId}.");
         }
 
         // Must be an approved fee applicable to a child the parent owns.
-        PayableFeeRow fee = await _repository.GetPayableFeeAsync(ParentId, request.StudentId, request.FeeTypeId, cancellationToken)
+        PayableFeeRow fee = await _repository.GetPayableFeeAsync(parentId, request.StudentId, request.FeeTypeId, cancellationToken)
             ?? throw new AppErrorException("Fee not found for this child.", 404, ErrorCodes.NotFound);
 
         decimal balance = fee.Amount - fee.Paid;
@@ -97,7 +107,7 @@ internal sealed class ParentFeeService : IParentFeeService
 
         ChargeResult charge = await _provider.ChargeAsync(new ChargeRequest
         {
-            ParentId = ParentId, SchoolId = fee.SchoolId, TotalCharged = totalCharged,
+            ParentId = parentId, SchoolId = fee.SchoolId, TotalCharged = totalCharged,
             Reference = Guid.NewGuid().ToString("N")
         }, cancellationToken);
 
@@ -109,7 +119,7 @@ internal sealed class ParentFeeService : IParentFeeService
         // Paying an optional fee subscribes the child to it.
         bool subscribeOptional = SnakeCaseEnum.Parse<FeeCategory>(fee.Category) == FeeCategory.Optional;
 
-        Guid paymentId = await _repository.RecordPaymentAsync(ParentId, request.StudentId, fee.SchoolId,
+        Guid paymentId = await _repository.RecordPaymentAsync(parentId, request.StudentId, fee.SchoolId,
             request.FeeTypeId, fee.TermId, request.Amount, platformFee, totalCharged, charge.Method,
             charge.ProviderReference, subscribeOptional, cancellationToken);
 
@@ -122,7 +132,7 @@ internal sealed class ParentFeeService : IParentFeeService
     }
 
     public Task<IReadOnlyList<PaymentResponse>> ListPaymentsAsync(CancellationToken cancellationToken)
-        => FetchPaymentsAsync(ParentId, cancellationToken);
+        => ListMyPaymentsAsync(cancellationToken);
 
     public async Task<IReadOnlyList<PaymentResponse>> ListMyPaymentsAsync(CancellationToken cancellationToken)
     {
@@ -143,10 +153,6 @@ internal sealed class ParentFeeService : IParentFeeService
         }).ToList();
     }
 
-    private Guid ParentId =>
-        Guid.TryParse(_context.UserId, out Guid id)
-            ? id
-            : throw new AppErrorException("Authentication required.", 401, ErrorCodes.Unauthorized);
 
     // The identity behind the session: identity_id claim (org tokens) or user_id (identity session).
     private Guid CurrentIdentityId =>

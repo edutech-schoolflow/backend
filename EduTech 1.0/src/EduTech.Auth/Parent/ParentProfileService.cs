@@ -2,23 +2,17 @@ using EduTech.Auth.Security;
 using EduTech.Auth.Unified;
 using EduTech.Shared.Constants;
 using EduTech.Shared.Exceptions;
-
 namespace EduTech.Auth.Parent;
 
-/// <summary>
-/// The signed-in identity's FAMILY profile (EDD-005 P7: identity pages never require memberships).
-/// Creation is idempotent and never changes the session; reads/PIN resolve the profile from the
-/// identity — any authenticated session kind works.
-/// </summary>
+
+
 public interface IParentProfileService
 {
     Task<Guid> ProvisionAsync(string userType, Guid actorId, CancellationToken cancellationToken);
 
-    /// <summary>The identity's family profile state — safe to call before the profile exists.</summary>
     Task<FamilyProfileResponse> GetFamilyProfileAsync(string userType, Guid actorId,
         CancellationToken cancellationToken);
 
-    /// <summary>Sets the 6-digit payment PIN on the identity's family profile.</summary>
     Task SetPaymentPinAsync(string userType, Guid actorId, string? pin, CancellationToken cancellationToken);
 }
 

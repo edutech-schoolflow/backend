@@ -36,6 +36,8 @@ internal sealed class ChildProfileInsert
     public string? PhotoUrl { get; init; }
     public string? PreviousSchool { get; init; }
     public string? MedicalInfo { get; init; }
+    public string? BirthCertUrl { get; init; }
+    public string? MedicalDocUrl { get; init; }
 }
 
 internal sealed class ParentChildRow
@@ -64,6 +66,8 @@ internal sealed class ChildProfileDetailRow
     public string? PhotoUrl { get; init; }
     public string? PreviousSchool { get; init; }
     public string? MedicalInfo { get; init; }
+    public string? BirthCertUrl { get; init; }
+    public string? MedicalDocUrl { get; init; }
 }
 
 internal sealed class ChildReportCardRow
@@ -170,7 +174,8 @@ internal sealed class ParentChildrenRepository : BaseRepository, IParentChildren
             """
             SELECT id AS Id, first_name AS FirstName, middle_name AS MiddleName, last_name AS LastName,
                    date_of_birth AS DateOfBirth, gender AS Gender, photo_url AS PhotoUrl,
-                   previous_school AS PreviousSchool, medical_info AS MedicalInfo
+                   previous_school AS PreviousSchool, medical_info AS MedicalInfo,
+                   birth_cert_url AS BirthCertUrl, medical_doc_url AS MedicalDocUrl
             FROM child_profiles
             WHERE id = @Id
             """,
@@ -186,15 +191,16 @@ internal sealed class ParentChildrenRepository : BaseRepository, IParentChildren
             """
             INSERT INTO child_profiles
                 (parent_id, first_name, middle_name, last_name, date_of_birth, gender, photo_url,
-                 previous_school, medical_info)
+                 previous_school, medical_info, birth_cert_url, medical_doc_url)
             VALUES (@ParentId, @FirstName, @MiddleName, @LastName, @DateOfBirth, @Gender, @PhotoUrl,
-                 @PreviousSchool, @MedicalInfo)
+                 @PreviousSchool, @MedicalInfo, @BirthCertUrl, @MedicalDocUrl)
             RETURNING id
             """,
             new
             {
                 ParentId = parentId, insert.FirstName, insert.MiddleName, insert.LastName, insert.DateOfBirth,
-                insert.Gender, insert.PhotoUrl, insert.PreviousSchool, insert.MedicalInfo
+                insert.Gender, insert.PhotoUrl, insert.PreviousSchool, insert.MedicalInfo,
+                insert.BirthCertUrl, insert.MedicalDocUrl
             },
             cancellationToken, transaction.Transaction);
 
@@ -217,14 +223,19 @@ internal sealed class ParentChildrenRepository : BaseRepository, IParentChildren
             """
             UPDATE child_profiles
                SET first_name = @FirstName, middle_name = @MiddleName, last_name = @LastName,
-                   date_of_birth = @DateOfBirth, gender = @Gender, photo_url = @PhotoUrl,
-                   previous_school = @PreviousSchool, medical_info = @MedicalInfo, updated_at = NOW()
+                   date_of_birth = @DateOfBirth, gender = @Gender,
+                   photo_url = COALESCE(@PhotoUrl, photo_url),
+                   previous_school = @PreviousSchool, medical_info = @MedicalInfo,
+                   birth_cert_url = COALESCE(@BirthCertUrl, birth_cert_url),
+                   medical_doc_url = COALESCE(@MedicalDocUrl, medical_doc_url),
+                   updated_at = NOW()
              WHERE id = @Id
             """,
             new
             {
                 Id = childProfileId, insert.FirstName, insert.MiddleName, insert.LastName, insert.DateOfBirth,
-                insert.Gender, insert.PhotoUrl, insert.PreviousSchool, insert.MedicalInfo
+                insert.Gender, insert.PhotoUrl, insert.PreviousSchool, insert.MedicalInfo,
+                insert.BirthCertUrl, insert.MedicalDocUrl
             },
             cancellationToken);
     }

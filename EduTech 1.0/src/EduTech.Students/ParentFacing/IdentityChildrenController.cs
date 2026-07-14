@@ -37,7 +37,7 @@ public sealed class IdentityChildrenController : ControllerBase
     /// </summary>
     [HttpPost]
     public async Task<ActionResult<ServiceResponses<object>>> Save(
-        [FromBody] UpsertChildProfileRequest request, CancellationToken cancellationToken)
+        [FromForm] UpsertChildProfileRequest request, CancellationToken cancellationToken)
     {
         Guid childProfileId = await _service.UpsertMyChildAsync(request, cancellationToken);
         return Ok(ServiceResponses<object>.Ok(new { childProfileId }, "Child saved."));

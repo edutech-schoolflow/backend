@@ -33,17 +33,19 @@ internal sealed class ParentChildrenService : IParentChildrenService
     private readonly IParentChildrenRepository _repository;
     private readonly IEduTechRequestContext _context;
     private readonly IStudentFeeBalanceProvider _feeBalances;
+    private readonly EduTech.Shared.Storage.IFileStorage _fileStorage;
 
     public ParentChildrenService(IParentChildrenRepository repository, IEduTechRequestContext context,
-        IStudentFeeBalanceProvider feeBalances)
+        IStudentFeeBalanceProvider feeBalances, EduTech.Shared.Storage.IFileStorage fileStorage)
     {
         _repository = repository;
         _context = context;
         _feeBalances = feeBalances;
+        _fileStorage = fileStorage;
     }
 
     public Task<IReadOnlyList<ParentChildResponse>> GetChildrenAsync(CancellationToken cancellationToken)
-        => FetchChildrenAsync(ParentId, cancellationToken);
+        => GetMyChildrenAsync(cancellationToken);
 
     public async Task<IReadOnlyList<ParentChildResponse>> GetMyChildrenAsync(CancellationToken cancellationToken)
     {
@@ -92,12 +94,14 @@ internal sealed class ParentChildrenService : IParentChildrenService
             Gender = SnakeCaseEnum.TryParse<Gender>(row.Gender, out Gender g) ? g : null,
             PhotoUrl = row.PhotoUrl,
             PreviousSchool = row.PreviousSchool,
-            MedicalInfo = row.MedicalInfo
+            MedicalInfo = row.MedicalInfo,
+            BirthCertUrl = row.BirthCertUrl,
+            MedicalDocUrl = row.MedicalDocUrl
         };
     }
 
     public Task<Guid> UpsertChildAsync(UpsertChildProfileRequest request, CancellationToken cancellationToken)
-        => UpsertForParentAsync(ParentId, request, cancellationToken);
+        => UpsertMyChildAsync(request, cancellationToken);
 
     public async Task<Guid> UpsertMyChildAsync(UpsertChildProfileRequest request, CancellationToken cancellationToken)
     {
@@ -120,6 +124,22 @@ internal sealed class ParentChildrenService : IParentChildrenService
             throw new AppErrorException("A valid date of birth is required.", 400, ErrorCodes.ValidationError);
         }
 
+        bool creating = request.Id is null;
+        if (creating && (request.Photo is null || request.Photo.Length == 0))
+        {
+            throw new AppErrorException("The child's photo is required.", 400, ErrorCodes.ValidationError);
+        }
+        if (creating && (request.BirthCert is null || request.BirthCert.Length == 0))
+        {
+            throw new AppErrorException("The birth certificate is required.", 400, ErrorCodes.ValidationError);
+        }
+
+        // Upload before the DB write (KYC pattern): a later failure orphans an object at worst,
+        // never a half-written profile. The medical document stays optional.
+        string? photoUrl = await UploadDocumentAsync(parentId, "photo", request.Photo, cancellationToken);
+        string? birthCertUrl = await UploadDocumentAsync(parentId, "birth_cert", request.BirthCert, cancellationToken);
+        string? medicalDocUrl = await UploadDocumentAsync(parentId, "medical_doc", request.MedicalDoc, cancellationToken);
+
         ChildProfileInsert insert = new ChildProfileInsert
         {
             FirstName = request.FirstName.Trim(),
@@ -127,9 +147,11 @@ internal sealed class ParentChildrenService : IParentChildrenService
             LastName = request.LastName.Trim(),
             DateOfBirth = request.DateOfBirth,
             Gender = request.Gender is Gender g ? SnakeCaseEnum.ToWire(g) : null,
-            PhotoUrl = request.PhotoUrl,
+            PhotoUrl = photoUrl ?? request.PhotoUrl,
             PreviousSchool = request.PreviousSchool,
-            MedicalInfo = request.MedicalInfo
+            MedicalInfo = request.MedicalInfo,
+            BirthCertUrl = birthCertUrl,
+            MedicalDocUrl = medicalDocUrl
         };
 
         if (request.Id is Guid id)
@@ -141,6 +163,26 @@ internal sealed class ParentChildrenService : IParentChildrenService
 
         return await _repository.InsertChildProfileAsync(parentId, insert,
             string.IsNullOrWhiteSpace(request.Relationship) ? null : request.Relationship.Trim(), cancellationToken);
+    }
+
+    private const long MaxDocumentBytes = 10 * 1024 * 1024; // 10 MB, same ceiling as KYC documents
+
+    private async Task<string?> UploadDocumentAsync(Guid parentId, string kind,
+        Microsoft.AspNetCore.Http.IFormFile? file, CancellationToken cancellationToken)
+    {
+        if (file is null || file.Length == 0)
+        {
+            return null;
+        }
+
+        if (file.Length > MaxDocumentBytes)
+        {
+            throw new AppErrorException("Each document must be 10 MB or smaller.", 400, ErrorCodes.ValidationError);
+        }
+
+        string key = $"children/{parentId}/{Guid.NewGuid():N}-{kind}{Path.GetExtension(file.FileName)}";
+        await using Stream stream = file.OpenReadStream();
+        return await _fileStorage.UploadAsync(stream, key, file.ContentType, cancellationToken);
     }
 
     public async Task<IReadOnlyList<ChildReportCardSummary>> GetReportCardsAsync(Guid childProfileId,
@@ -182,16 +224,12 @@ internal sealed class ParentChildrenService : IParentChildrenService
     /// <summary>404 (not 403) if the child isn't the caller's — don't reveal that it exists.</summary>
     private async Task EnsureOwnsAsync(Guid childProfileId, CancellationToken cancellationToken)
     {
-        if (!await _repository.OwnsChildAsync(ParentId, childProfileId, cancellationToken))
+        Guid? parentId = await _repository.GetParentIdByIdentityAsync(CurrentIdentityId, cancellationToken);
+        if (parentId is null || !await _repository.OwnsChildAsync(parentId.Value, childProfileId, cancellationToken))
         {
             throw new AppErrorException("Child not found.", 404, ErrorCodes.NotFound);
         }
     }
-
-    private Guid ParentId =>
-        Guid.TryParse(_context.UserId, out Guid id)
-            ? id
-            : throw new AppErrorException("Authentication required.", 401, ErrorCodes.Unauthorized);
 
     // The identity behind the session: the identity_id claim (org tokens) or the user_id itself (an
     // identity-scope session, where user_id IS the identity).

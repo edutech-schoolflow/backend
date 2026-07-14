@@ -15,6 +15,9 @@ public static class SchoolServiceCollectionExtensions
         services.AddScoped<ISchoolKycRepository, SchoolKycRepository>();
         services.AddScoped<ISchoolKycService, SchoolKycService>();
         // Organization lifecycle management by the platform (EDD-002 V4 — moved out of Auth).
+        services.AddScoped<Dashboard.ISchoolDashboardRepository, Dashboard.SchoolDashboardRepository>();
+        services.AddScoped<Dashboard.ISchoolDashboardService, Dashboard.SchoolDashboardService>();
+
         services.AddScoped<PlatformAdmin.IAdminSchoolRepository, PlatformAdmin.AdminSchoolRepository>();
         services.AddScoped<PlatformAdmin.ISchoolKycAdminService, PlatformAdmin.SchoolKycAdminService>();
 

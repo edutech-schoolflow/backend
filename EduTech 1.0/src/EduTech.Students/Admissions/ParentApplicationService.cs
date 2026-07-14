@@ -34,7 +34,8 @@ internal sealed class ParentApplicationService : IParentApplicationService
             throw new AppErrorException("Child and school are required.", 400, ErrorCodes.ValidationError);
         }
 
-        if (!await _repository.ParentOwnsChildAsync(ParentId, request.ChildProfileId, cancellationToken))
+        Guid parentId = await RequireParentIdAsync(cancellationToken);
+        if (!await _repository.ParentOwnsChildAsync(parentId, request.ChildProfileId, cancellationToken))
         {
             throw new AppErrorException("Child not found.", 404, ErrorCodes.NotFound);
         }
@@ -55,16 +56,13 @@ internal sealed class ParentApplicationService : IParentApplicationService
                 409, ErrorCodes.Conflict);
         }
 
-        ApplicationRow row = await _repository.SubmitAsync(ParentId, request.ChildProfileId, request.SchoolId,
+        ApplicationRow row = await _repository.SubmitAsync(parentId, request.ChildProfileId, request.SchoolId,
             request.DesiredClass?.Trim(), request.TermId, cancellationToken);
         return ApplicationMapper.Map(row);
     }
 
-    public async Task<IReadOnlyList<ApplicationResponse>> ListAsync(CancellationToken cancellationToken)
-    {
-        IReadOnlyList<ApplicationRow> rows = await _repository.ListByParentAsync(ParentId, cancellationToken);
-        return rows.Select(ApplicationMapper.Map).ToList();
-    }
+    public Task<IReadOnlyList<ApplicationResponse>> ListAsync(CancellationToken cancellationToken)
+        => ListMineAsync(cancellationToken);
 
     public async Task<IReadOnlyList<ApplicationResponse>> ListMineAsync(CancellationToken cancellationToken)
     {
@@ -80,7 +78,8 @@ internal sealed class ParentApplicationService : IParentApplicationService
 
     public async Task<ApplicationResponse> GetAsync(Guid applicationId, CancellationToken cancellationToken)
     {
-        ApplicationRow row = await _repository.GetForParentAsync(ParentId, applicationId, cancellationToken)
+        Guid parentId = await RequireParentIdAsync(cancellationToken);
+        ApplicationRow row = await _repository.GetForParentAsync(parentId, applicationId, cancellationToken)
             ?? throw new AppErrorException("Application not found.", 404, ErrorCodes.NotFound);
         return ApplicationMapper.Map(row);
     }
@@ -88,7 +87,8 @@ internal sealed class ParentApplicationService : IParentApplicationService
     public async Task<ApplicationResponse> PayAsync(Guid applicationId, CancellationToken cancellationToken)
     {
         // Stub: no real money yet (Monnify lands with the Fees module). Mark paid + a placeholder ref.
-        int changed = await _repository.MarkPaidAsync(ParentId, applicationId, $"STUB-{Guid.NewGuid():N}", cancellationToken);
+        Guid parentId = await RequireParentIdAsync(cancellationToken);
+        int changed = await _repository.MarkPaidAsync(parentId, applicationId, $"STUB-{Guid.NewGuid():N}", cancellationToken);
         if (changed == 0)
         {
             throw new AppErrorException("Application not found.", 404, ErrorCodes.NotFound);
@@ -97,10 +97,13 @@ internal sealed class ParentApplicationService : IParentApplicationService
         return await GetAsync(applicationId, cancellationToken);
     }
 
-    private Guid ParentId =>
-        Guid.TryParse(_context.UserId, out Guid id)
-            ? id
-            : throw new AppErrorException("Authentication required.", 401, ErrorCodes.Unauthorized);
+    /// <summary>The identity's parent profile — 404 (don't reveal) when they have none yet.</summary>
+    private async Task<Guid> RequireParentIdAsync(CancellationToken cancellationToken)
+    {
+        return await _repository.GetParentIdByIdentityAsync(CurrentIdentityId, cancellationToken)
+            ?? throw new AppErrorException("Child not found.", 404, ErrorCodes.NotFound,
+                logReason: "Family applications: identity has no parent profile.");
+    }
 
     // The identity behind the session: identity_id claim (org tokens) or user_id (identity session).
     private Guid CurrentIdentityId =>

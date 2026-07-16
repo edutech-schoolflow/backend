@@ -13,6 +13,7 @@ using EduTech.Shared.Persistence;
 using EduTech.Workforce;
 using EduTech.Membership;
 using EduTech.Membership.Domain;
+using EduTech.People;
 
 
 
@@ -51,6 +52,7 @@ internal sealed class StaffInviteAcceptService : IStaffInviteAcceptService
     private readonly IRefreshTokenService _refreshTokenService;
     private readonly IAuthContextRepository _identityLinks;
     private readonly IMembershipRepository _memberships;
+    private readonly IEmploymentRepository _employments;
     private readonly IDomainEventPublisher _events;
 
     public StaffInviteAcceptService(
@@ -65,6 +67,7 @@ internal sealed class StaffInviteAcceptService : IStaffInviteAcceptService
         IRefreshTokenService refreshTokenService,
         IAuthContextRepository identityLinks,
         IMembershipRepository memberships,
+        IEmploymentRepository employments,
         IDomainEventPublisher events)
     {
         _connectionFactory = connectionFactory;
@@ -78,6 +81,7 @@ internal sealed class StaffInviteAcceptService : IStaffInviteAcceptService
         _refreshTokenService = refreshTokenService;
         _identityLinks = identityLinks;
         _memberships = memberships;
+        _employments = employments;
         _events = events;
 
     }
@@ -161,6 +165,10 @@ internal sealed class StaffInviteAcceptService : IStaffInviteAcceptService
             await _memberships.EnsureActiveAsync(identityId, affiliation.SchoolId, MembershipKind.Staff,
                 cancellationToken);
         }
+
+        // Canonical working relationship (EDD-009): the active affiliation IS a 'staff' employment,
+        // driven through the People context (resolves the membership + position from the affiliation).
+        await _employments.EnsureFromAffiliationAsync(affiliation.Id, cancellationToken);
 
         await _events.PublishAsync(new EmploymentStartedEvent(affiliation.Id, affiliation.SchoolId,
             staffUserId, affiliation.Role, link.Name), cancellationToken);

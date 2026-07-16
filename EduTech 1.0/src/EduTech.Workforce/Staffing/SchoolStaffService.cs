@@ -3,6 +3,7 @@ using EduTech.Shared.Context;
 using EduTech.Shared.Exceptions;
 using EduTech.Membership;
 using EduTech.Membership.Domain;
+using EduTech.People;
 
 namespace EduTech.Workforce;
 
@@ -20,13 +21,15 @@ internal sealed class SchoolStaffService : ISchoolStaffService
     private readonly IEduTechRequestContext _requestContext;
     private readonly IStaffAffiliationRepository _affiliations;
     private readonly IMembershipRepository _memberships;
+    private readonly IEmploymentRepository _employments;
 
     public SchoolStaffService(IEduTechRequestContext requestContext, IStaffAffiliationRepository affiliations,
-        IMembershipRepository memberships)
+        IMembershipRepository memberships, IEmploymentRepository employments)
     {
         _requestContext = requestContext;
         _affiliations = affiliations;
         _memberships = memberships;
+        _employments = employments;
     }
 
     public async Task<IReadOnlyList<StaffDirectoryItemResponse>> ListAsync(CancellationToken cancellationToken)
@@ -86,6 +89,17 @@ internal sealed class SchoolStaffService : ISchoolStaffService
             {
                 await _memberships.EndAsync(identityId, schoolId, MembershipKind.Staff, cancellationToken);
             }
+        }
+
+        // Keep the canonical 'staff' employment (EDD-009) in step with the affiliation, alongside the
+        // membership: reactivate restores it, deactivate ends it.
+        if (status == "active")
+        {
+            await _employments.EnsureFromAffiliationAsync(affiliationId, cancellationToken);
+        }
+        else
+        {
+            await _employments.EndByAffiliationAsync(affiliationId, cancellationToken);
         }
 
         return await GetOrThrowAsync(affiliationId, schoolId, cancellationToken);

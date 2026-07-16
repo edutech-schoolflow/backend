@@ -9,8 +9,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Employment (C2) and other People-domain consumers use this context's internals during the
-         EDD-008 transition. -->
+    <!-- Auth and Workforce drive Employment lifecycle through this context (EDD-009) via the internal
+         repository; the transition also lets them read Position/Employment internals. -->
+    <InternalsVisibleTo Include="EduTech.Auth" />
+    <InternalsVisibleTo Include="EduTech.Workforce" />
     <InternalsVisibleTo Include="EduTech.Auth.Tests" />
     <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>

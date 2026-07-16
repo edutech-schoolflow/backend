@@ -11,6 +11,7 @@ public static class PeopleServiceCollectionExtensions
     public static IServiceCollection AddPeopleModule(this IServiceCollection services)
     {
         services.AddScoped<IPositionRepository, PositionRepository>();
+        services.AddScoped<IEmploymentRepository, EmploymentRepository>();
         return services;
     }
 }

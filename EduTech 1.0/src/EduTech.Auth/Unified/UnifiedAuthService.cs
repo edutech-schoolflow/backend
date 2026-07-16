@@ -15,6 +15,7 @@ using Npgsql;
 using EduTech.Workforce;
 using EduTech.Membership;
 using EduTech.Membership.Domain;
+using EduTech.People;
 
 namespace EduTech.Auth.Unified;
 
@@ -124,6 +125,7 @@ internal sealed class UnifiedAuthService : IUnifiedAuthService
     private readonly ISchoolRepository _schools;
     private readonly ISchoolOwnerRepository _owners;
     private readonly IMembershipRepository _memberships;
+    private readonly IEmploymentRepository _employments;
     private readonly IDbConnectionFactory _connectionFactory;
 
     public UnifiedAuthService(
@@ -142,11 +144,13 @@ internal sealed class UnifiedAuthService : IUnifiedAuthService
         ISchoolRepository schools,
         ISchoolOwnerRepository owners,
         IMembershipRepository memberships,
+        IEmploymentRepository employments,
         IDbConnectionFactory connectionFactory)
     {
         _schools = schools;
         _owners = owners;
         _memberships = memberships;
+        _employments = employments;
         _connectionFactory = connectionFactory;
         _identities = identities;
         _contexts = contexts;
@@ -703,6 +707,7 @@ internal sealed class UnifiedAuthService : IUnifiedAuthService
             await _memberships.EnsureActiveAsync(ownerIdentityId, ownerLink.SchoolId, MembershipKind.Owner,
                 cancellationToken);
         }
+        await _employments.EnsureFromOwnerAsync(ownerId, cancellationToken);
 
         IReadOnlyList<AuthContextItem> contexts = await BuildContextsAsync(identityId, cancellationToken);
         AuthContextItem selected = contexts.First(c => c.Id == ownerId);

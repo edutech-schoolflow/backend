@@ -9,6 +9,7 @@
     <ProjectReference Include="..\EduTech.Identity\EduTech.Identity.csproj" />
     <ProjectReference Include="..\EduTech.Workforce\EduTech.Workforce.csproj" />
     <ProjectReference Include="..\EduTech.Membership\EduTech.Membership.csproj" />
+    <ProjectReference Include="..\EduTech.People\EduTech.People.csproj" />
   </ItemGroup>
 
   <ItemGroup>

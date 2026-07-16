@@ -37,13 +37,14 @@ public class UnifiedAuthServiceTests
     private readonly Mock<EduTech.Auth.SchoolOwner.ISchoolRepository> _schools = new();
     private readonly Mock<EduTech.Auth.SchoolOwner.ISchoolOwnerRepository> _owners = new();
     private readonly Mock<EduTech.Membership.IMembershipRepository> _memberships = new();
+    private readonly Mock<EduTech.People.IEmploymentRepository> _employments = new();
     private readonly Mock<EduTech.Shared.Persistence.IDbConnectionFactory> _dbFactory = new();
 
     private UnifiedAuthService CreateSut() => new(
         _identities.Object, _contexts.Object, _parents.Object, _hasher.Object, _otp.Object,
         _sms.Object, _access.Object, _refresh.Object, _staffUsers.Object, _affiliations.Object,
         _templates.Object, _overrides.Object, _schools.Object, _owners.Object, _memberships.Object,
-        _dbFactory.Object);
+        _employments.Object, _dbFactory.Object);
 
     private const string Phone = "+2348033334444";
 

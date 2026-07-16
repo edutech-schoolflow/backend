@@ -1,4 +1,5 @@
 using EduTech.Shared.Auth;
+using EduTech.Shared.Authorization;
 using EduTech.Shared.Constants;
 using EduTech.Shared.Models;
 using Microsoft.AspNetCore.Authorization;
@@ -22,7 +23,7 @@ public sealed class SubjectController : ControllerBase
     }
 
     [HttpGet("api/v1/classes/{classId:guid}/subjects")]
-    [RequireFeature(StaffFeatureFlags.ViewStudentRecords)]
+    [RequireCapability(Capabilities.Student.Read)]
     public async Task<ActionResult<ServiceResponses<IReadOnlyList<SubjectResponse>>>> List(
         Guid classId, CancellationToken cancellationToken)
     {
@@ -31,7 +32,7 @@ public sealed class SubjectController : ControllerBase
     }
 
     [HttpGet("api/v1/classes/{classId:guid}/subjects/suggestions")]
-    [RequireFeature(StaffFeatureFlags.ViewStudentRecords)]
+    [RequireCapability(Capabilities.Student.Read)]
     public async Task<ActionResult<ServiceResponses<IReadOnlyList<string>>>> Suggestions(
         Guid classId, CancellationToken cancellationToken)
     {
@@ -40,7 +41,7 @@ public sealed class SubjectController : ControllerBase
     }
 
     [HttpPost("api/v1/classes/{classId:guid}/subjects")]
-    [RequireFeature(StaffFeatureFlags.ManageAdmissions)]
+    [RequireCapability(Capabilities.Admissions.Manage)]
     public async Task<ActionResult<ServiceResponses<SubjectResponse>>> Create(
         Guid classId, [FromBody] CreateSubjectRequest request, CancellationToken cancellationToken)
     {
@@ -49,7 +50,7 @@ public sealed class SubjectController : ControllerBase
     }
 
     [HttpPost("api/v1/classes/{classId:guid}/subjects/seed")]
-    [RequireFeature(StaffFeatureFlags.ManageAdmissions)]
+    [RequireCapability(Capabilities.Admissions.Manage)]
     public async Task<ActionResult<ServiceResponses<int>>> SeedDefaults(
         Guid classId, CancellationToken cancellationToken)
     {
@@ -58,7 +59,7 @@ public sealed class SubjectController : ControllerBase
     }
 
     [HttpDelete("api/v1/subjects/{id:guid}")]
-    [RequireFeature(StaffFeatureFlags.ManageAdmissions)]
+    [RequireCapability(Capabilities.Admissions.Manage)]
     public async Task<ActionResult<ServiceResponses<string?>>> Delete(Guid id, CancellationToken cancellationToken)
     {
         await _service.DeleteAsync(id, cancellationToken);

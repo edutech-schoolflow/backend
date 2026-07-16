@@ -1,4 +1,5 @@
 using EduTech.Shared.Auth;
+using EduTech.Shared.Authorization;
 using EduTech.Shared.Constants;
 using EduTech.Shared.Models;
 using Microsoft.AspNetCore.Authorization;
@@ -19,7 +20,7 @@ public sealed class ClassController : ControllerBase
     }
 
     [HttpGet("api/v1/classes")]
-    [RequireFeature(StaffFeatureFlags.ViewStudentRecords)]
+    [RequireCapability(Capabilities.Student.Read)]
     public async Task<ActionResult<ServiceResponses<IReadOnlyList<SchoolClassResponse>>>> ListClasses(
         CancellationToken cancellationToken)
     {
@@ -28,7 +29,7 @@ public sealed class ClassController : ControllerBase
     }
 
     [HttpPost("api/v1/classes")]
-    [RequireFeature(StaffFeatureFlags.ManageAdmissions)]
+    [RequireCapability(Capabilities.Admissions.Manage)]
     public async Task<ActionResult<ServiceResponses<SchoolClassResponse>>> CreateClass(
         [FromBody] CreateClassRequest request, CancellationToken cancellationToken)
     {
@@ -37,7 +38,7 @@ public sealed class ClassController : ControllerBase
     }
 
     [HttpGet("api/v1/classes/{id:guid}")]
-    [RequireFeature(StaffFeatureFlags.ViewStudentRecords)]
+    [RequireCapability(Capabilities.Student.Read)]
     public async Task<ActionResult<ServiceResponses<SchoolClassResponse>>> GetClass(Guid id,
         CancellationToken cancellationToken)
     {
@@ -46,7 +47,7 @@ public sealed class ClassController : ControllerBase
     }
 
     [HttpDelete("api/v1/classes/{id:guid}")]
-    [RequireFeature(StaffFeatureFlags.ManageAdmissions)]
+    [RequireCapability(Capabilities.Admissions.Manage)]
     public async Task<ActionResult<ServiceResponses<string?>>> DeleteClass(Guid id, CancellationToken cancellationToken)
     {
         await _service.DeleteClassAsync(id, cancellationToken);
@@ -54,7 +55,7 @@ public sealed class ClassController : ControllerBase
     }
 
     [HttpPut("api/v1/classes/{id:guid}/class-teacher")]
-    [RequireFeature(StaffFeatureFlags.ManageAdmissions)]
+    [RequireCapability(Capabilities.Admissions.Manage)]
     public async Task<ActionResult<ServiceResponses<string?>>> SetClassLevelTeacher(Guid id,
         [FromBody] SetClassTeacherRequest request, CancellationToken cancellationToken)
     {
@@ -63,7 +64,7 @@ public sealed class ClassController : ControllerBase
     }
 
     [HttpGet("api/v1/classes/{id:guid}/arms")]
-    [RequireFeature(StaffFeatureFlags.ViewStudentRecords)]
+    [RequireCapability(Capabilities.Student.Read)]
     public async Task<ActionResult<ServiceResponses<IReadOnlyList<ClassArmResponse>>>> ListArms(Guid id,
         CancellationToken cancellationToken)
     {
@@ -72,7 +73,7 @@ public sealed class ClassController : ControllerBase
     }
 
     [HttpPost("api/v1/classes/{id:guid}/arms")]
-    [RequireFeature(StaffFeatureFlags.ManageAdmissions)]
+    [RequireCapability(Capabilities.Admissions.Manage)]
     public async Task<ActionResult<ServiceResponses<ClassArmResponse>>> AddArm(Guid id,
         [FromBody] AddArmRequest request, CancellationToken cancellationToken)
     {
@@ -81,7 +82,7 @@ public sealed class ClassController : ControllerBase
     }
 
     [HttpPut("api/v1/arms/{id:guid}/class-teacher")]
-    [RequireFeature(StaffFeatureFlags.ManageAdmissions)]
+    [RequireCapability(Capabilities.Admissions.Manage)]
     public async Task<ActionResult<ServiceResponses<string?>>> SetClassTeacher(Guid id,
         [FromBody] SetClassTeacherRequest request, CancellationToken cancellationToken)
     {
@@ -90,7 +91,7 @@ public sealed class ClassController : ControllerBase
     }
 
     [HttpPost("api/v1/arms/{id:guid}/subject-teachers")]
-    [RequireFeature(StaffFeatureFlags.ManageAdmissions)]
+    [RequireCapability(Capabilities.Admissions.Manage)]
     public async Task<ActionResult<ServiceResponses<SubjectTeacherResponse>>> AddSubjectTeacher(Guid id,
         [FromBody] AddSubjectTeacherRequest request, CancellationToken cancellationToken)
     {
@@ -99,7 +100,7 @@ public sealed class ClassController : ControllerBase
     }
 
     [HttpDelete("api/v1/subject-teachers/{id:guid}")]
-    [RequireFeature(StaffFeatureFlags.ManageAdmissions)]
+    [RequireCapability(Capabilities.Admissions.Manage)]
     public async Task<ActionResult<ServiceResponses<string?>>> RemoveSubjectTeacher(Guid id,
         CancellationToken cancellationToken)
     {

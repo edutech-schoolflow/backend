@@ -1,5 +1,6 @@
 using EduTech.Shared.Audit;
 using EduTech.Shared.Auth;
+using EduTech.Shared.Authorization;
 using EduTech.Shared.Constants;
 using EduTech.Shared.Models;
 using Microsoft.AspNetCore.Authorization;
@@ -21,7 +22,7 @@ public sealed class AuditController : ControllerBase
     }
 
     [HttpGet]
-    [RequireFeature(StaffFeatureFlags.ViewSchoolOverview)]
+    [RequireCapability(Capabilities.School.ViewOverview)]
     public async Task<ActionResult<ServiceResponses<IReadOnlyList<AuditLogEntry>>>> List(
         [FromQuery] string? entityType, [FromQuery] Guid? entityId,
         [FromQuery] int page = 1, [FromQuery] int limit = 50, CancellationToken cancellationToken = default)

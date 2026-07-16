@@ -1,4 +1,5 @@
 using EduTech.Shared.Auth;
+using EduTech.Shared.Authorization;
 using EduTech.Shared.Constants;
 using EduTech.Shared.Models;
 using Microsoft.AspNetCore.Authorization;
@@ -24,7 +25,7 @@ public sealed class AttendanceController : ControllerBase
 
     /// <summary>Arms the caller may mark (their class-teacher arms; all arms for the owner).</summary>
     [HttpGet("api/v1/attendance/arms")]
-    [RequireFeature(StaffFeatureFlags.MarkStudentAttendance)]
+    [RequireCapability(Capabilities.Attendance.Record)]
     public async Task<ActionResult<ServiceResponses<IReadOnlyList<MarkableArmResponse>>>> ListArms(
         CancellationToken cancellationToken)
     {
@@ -37,7 +38,7 @@ public sealed class AttendanceController : ControllerBase
     /// a specific arm (omit armId to load the whole arm-less class).
     /// </summary>
     [HttpGet("api/v1/attendance/roster")]
-    [RequireFeature(StaffFeatureFlags.MarkStudentAttendance)]
+    [RequireCapability(Capabilities.Attendance.Record)]
     public async Task<ActionResult<ServiceResponses<AttendanceRosterResponse>>> Roster(
         [FromQuery] Guid classId, [FromQuery] Guid? armId, [FromQuery] DateOnly? date,
         CancellationToken cancellationToken)
@@ -48,7 +49,7 @@ public sealed class AttendanceController : ControllerBase
 
     /// <summary>Submit (or re-submit, replacing) a day's register for an arm.</summary>
     [HttpPost("api/v1/attendance")]
-    [RequireFeature(StaffFeatureFlags.MarkStudentAttendance)]
+    [RequireCapability(Capabilities.Attendance.Record)]
     [RequiresCurrentTerm]
     public async Task<ActionResult<ServiceResponses<AttendanceRecordResponse>>> Submit(
         [FromBody] SubmitAttendanceRequest request, CancellationToken cancellationToken)
@@ -59,7 +60,7 @@ public sealed class AttendanceController : ControllerBase
 
     /// <summary>School-wide attendance board for a date (per-arm stats + absentees).</summary>
     [HttpGet("api/v1/attendance/overview")]
-    [RequireFeature(StaffFeatureFlags.ViewStaffAttendanceBoard)]
+    [RequireCapability(Capabilities.StaffAttendance.ViewBoard)]
     public async Task<ActionResult<ServiceResponses<AttendanceOverviewResponse>>> Overview(
         [FromQuery] DateOnly? date, CancellationToken cancellationToken)
     {

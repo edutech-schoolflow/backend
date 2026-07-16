@@ -1,4 +1,5 @@
 using EduTech.Shared.Auth;
+using EduTech.Shared.Authorization;
 using EduTech.Shared.Constants;
 using EduTech.Shared.Models;
 using Microsoft.AspNetCore.Authorization;
@@ -20,7 +21,7 @@ public sealed class GradingScaleController : ControllerBase
     }
 
     [HttpGet("api/v1/grading-scale")]
-    [RequireFeature(StaffFeatureFlags.ViewStudentRecords)]
+    [RequireCapability(Capabilities.Student.Read)]
     public async Task<ActionResult<ServiceResponses<IReadOnlyList<GradeBoundaryDto>>>> Get(
         CancellationToken cancellationToken)
     {
@@ -29,7 +30,7 @@ public sealed class GradingScaleController : ControllerBase
     }
 
     [HttpPut("api/v1/grading-scale")]
-    [RequireFeature(StaffFeatureFlags.ManageAdmissions)]
+    [RequireCapability(Capabilities.Admissions.Manage)]
     public async Task<ActionResult<ServiceResponses<string?>>> Save(
         [FromBody] SaveGradingScaleRequest request, CancellationToken cancellationToken)
     {

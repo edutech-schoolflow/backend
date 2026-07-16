@@ -12,6 +12,7 @@
     <ProjectReference Include="..\EduTech.Notifications\EduTech.Notifications.csproj" />
     <ProjectReference Include="..\EduTech.Compliance\EduTech.Compliance.csproj" />
     <ProjectReference Include="..\EduTech.Shared\EduTech.Shared.csproj" />
+    <ProjectReference Include="..\EduTech.Membership\EduTech.Membership.csproj" />
   </ItemGroup>
 
   <ItemGroup>

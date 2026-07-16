@@ -11,6 +11,8 @@ using EduTech.Shared.Exceptions;
 using EduTech.Shared.Notifications;
 using EduTech.Shared.Persistence;
 using EduTech.Workforce;
+using EduTech.Membership;
+using EduTech.Membership.Domain;
 
 
 
@@ -48,6 +50,7 @@ internal sealed class StaffInviteAcceptService : IStaffInviteAcceptService
     private readonly IAccessTokenIssuer _accessTokenIssuer;
     private readonly IRefreshTokenService _refreshTokenService;
     private readonly IAuthContextRepository _identityLinks;
+    private readonly IMembershipRepository _memberships;
     private readonly IDomainEventPublisher _events;
 
     public StaffInviteAcceptService(
@@ -61,6 +64,7 @@ internal sealed class StaffInviteAcceptService : IStaffInviteAcceptService
         IAccessTokenIssuer accessTokenIssuer,
         IRefreshTokenService refreshTokenService,
         IAuthContextRepository identityLinks,
+        IMembershipRepository memberships,
         IDomainEventPublisher events)
     {
         _connectionFactory = connectionFactory;
@@ -71,7 +75,9 @@ internal sealed class StaffInviteAcceptService : IStaffInviteAcceptService
         _otpService = otpService;
         _notifications = notifications;
         _accessTokenIssuer = accessTokenIssuer;
-        _refreshTokenService = refreshTokenService;        _identityLinks = identityLinks;
+        _refreshTokenService = refreshTokenService;
+        _identityLinks = identityLinks;
+        _memberships = memberships;
         _events = events;
 
     }
@@ -145,10 +151,19 @@ internal sealed class StaffInviteAcceptService : IStaffInviteAcceptService
 
         // Identity platform (EDD-001): the accepted employment links to its identity + position, and
         // the fact is published (audited via IAuditableEvent; Authorization/Communication react later).
-        string staffName = await _identityLinks.EnsureStaffIdentityLinksAsync(staffUserId, affiliation.Id,
+        StaffIdentityLink link = await _identityLinks.EnsureStaffIdentityLinksAsync(staffUserId, affiliation.Id,
             cancellationToken);
+
+        // Canonical belonging edge (EDD-007): the active affiliation IS a 'staff' membership. Driven
+        // here through the Membership context — Auth no longer writes memberships itself.
+        if (link.IdentityId is Guid identityId)
+        {
+            await _memberships.EnsureActiveAsync(identityId, affiliation.SchoolId, MembershipKind.Staff,
+                cancellationToken);
+        }
+
         await _events.PublishAsync(new EmploymentStartedEvent(affiliation.Id, affiliation.SchoolId,
-            staffUserId, affiliation.Role, staffName), cancellationToken);
+            staffUserId, affiliation.Role, link.Name), cancellationToken);
 
         return await IssueTokensAsync(staffUserId, state.Phone, state.KycStatus, ipAddress, userAgent,
             cancellationToken);

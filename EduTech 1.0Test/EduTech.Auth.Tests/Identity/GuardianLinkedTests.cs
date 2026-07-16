@@ -15,10 +15,11 @@ public class GuardianLinkedTests
 {
     private readonly Mock<IIdentityRepository> _identities = new();
     private readonly Mock<IAuthContextRepository> _contexts = new();
+    private readonly Mock<EduTech.Membership.IMembershipRepository> _memberships = new();
     private readonly Mock<IParentRepository> _parents = new();
 
     private EnsureIdentityOnGuardianLinked CreateSut() =>
-        new(_identities.Object, _contexts.Object, _parents.Object,
+        new(_identities.Object, _contexts.Object, _memberships.Object, _parents.Object,
             NullLogger<EnsureIdentityOnGuardianLinked>.Instance);
 
     private const string Phone = "+2348030000009";

@@ -29,12 +29,14 @@ public class SchoolOwnerAuthServiceTests
     private readonly Mock<IAccessTokenIssuer> _access = new();
     private readonly Mock<IRefreshTokenService> _refresh = new();
     private readonly Mock<EduTech.Auth.Unified.IAuthContextRepository> _identityLinks = new();
+    private readonly Mock<EduTech.Membership.IMembershipRepository> _memberships = new();
 
     private SchoolOwnerAuthService CreateSut()
     {
         return new SchoolOwnerAuthService(
             _context.Object, _db.Object, _schools.Object, _owners.Object, _hasher.Object,
-            _otp.Object, _sms.Object, _access.Object, _refresh.Object, _identityLinks.Object);
+            _otp.Object, _sms.Object, _access.Object, _refresh.Object, _identityLinks.Object,
+            _memberships.Object);
     }
 
     private static SchoolOwnerLoginRow Owner(bool verified = true, bool active = true,

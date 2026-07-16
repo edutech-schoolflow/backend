@@ -212,6 +212,7 @@ public class StaffParentDualPersonaFeasibilityTests
             staffUsers.Object, affiliations.Object, templates.Object, overrides.Object,
             new Mock<EduTech.Auth.SchoolOwner.ISchoolRepository>().Object,
             new Mock<EduTech.Auth.SchoolOwner.ISchoolOwnerRepository>().Object,
+            new Mock<EduTech.Membership.IMembershipRepository>().Object,
             new Mock<EduTech.Shared.Persistence.IDbConnectionFactory>().Object);
 
         access.Setup(a => a.IssueIdentity(identity.Id, SharedPhone))

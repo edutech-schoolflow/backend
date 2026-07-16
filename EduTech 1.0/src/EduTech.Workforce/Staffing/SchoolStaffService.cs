@@ -1,6 +1,8 @@
 using EduTech.Shared.Constants;
 using EduTech.Shared.Context;
 using EduTech.Shared.Exceptions;
+using EduTech.Membership;
+using EduTech.Membership.Domain;
 
 namespace EduTech.Workforce;
 
@@ -17,11 +19,14 @@ internal sealed class SchoolStaffService : ISchoolStaffService
 {
     private readonly IEduTechRequestContext _requestContext;
     private readonly IStaffAffiliationRepository _affiliations;
+    private readonly IMembershipRepository _memberships;
 
-    public SchoolStaffService(IEduTechRequestContext requestContext, IStaffAffiliationRepository affiliations)
+    public SchoolStaffService(IEduTechRequestContext requestContext, IStaffAffiliationRepository affiliations,
+        IMembershipRepository memberships)
     {
         _requestContext = requestContext;
         _affiliations = affiliations;
+        _memberships = memberships;
     }
 
     public async Task<IReadOnlyList<StaffDirectoryItemResponse>> ListAsync(CancellationToken cancellationToken)
@@ -66,6 +71,21 @@ internal sealed class SchoolStaffService : ISchoolStaffService
         if (updated == 0)
         {
             throw new AppErrorException("Staff member not found.", 404, ErrorCodes.NotFound);
+        }
+
+        // Keep the canonical 'staff' membership (EDD-007) in step with the affiliation: deactivating
+        // ends the belonging edge, reactivating restores it. Closes the lifecycle gap where a
+        // deactivated staff member kept an active membership.
+        if (await _affiliations.GetIdentityIdAsync(affiliationId, schoolId, cancellationToken) is Guid identityId)
+        {
+            if (status == "active")
+            {
+                await _memberships.EnsureActiveAsync(identityId, schoolId, MembershipKind.Staff, cancellationToken);
+            }
+            else
+            {
+                await _memberships.EndAsync(identityId, schoolId, MembershipKind.Staff, cancellationToken);
+            }
         }
 
         return await GetOrThrowAsync(affiliationId, schoolId, cancellationToken);

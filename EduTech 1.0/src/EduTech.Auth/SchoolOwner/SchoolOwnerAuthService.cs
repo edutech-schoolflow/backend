@@ -9,6 +9,8 @@ using EduTech.Shared.Exceptions;
 using EduTech.Shared.Notifications;
 using EduTech.Shared.Persistence;
 using EduTech.Shared.Phone;
+using EduTech.Membership;
+using EduTech.Membership.Domain;
 using Npgsql;
 
 namespace EduTech.Auth.SchoolOwner;
@@ -29,6 +31,7 @@ internal sealed class SchoolOwnerAuthService : ISchoolOwnerAuthService
     private readonly ISchoolOwnerRepository _ownerRepository;
     private readonly IPasswordHasher _passwordHasher;
     private readonly IAuthContextRepository _identityLinks;
+    private readonly IMembershipRepository _memberships;
     private readonly IOtpService _otpService;
     private readonly INotificationDispatcher _notifications;
     private readonly IAccessTokenIssuer _accessTokenIssuer;
@@ -44,7 +47,8 @@ internal sealed class SchoolOwnerAuthService : ISchoolOwnerAuthService
         INotificationDispatcher notifications,
         IAccessTokenIssuer accessTokenIssuer,
         IRefreshTokenService refreshTokenService,
-        IAuthContextRepository identityLinks)
+        IAuthContextRepository identityLinks,
+        IMembershipRepository memberships)
     {
         _requestContext = requestContext;
         _connectionFactory = connectionFactory;
@@ -54,9 +58,19 @@ internal sealed class SchoolOwnerAuthService : ISchoolOwnerAuthService
         _otpService = otpService;
         _notifications = notifications;
         _accessTokenIssuer = accessTokenIssuer;
-        _refreshTokenService = refreshTokenService;        _identityLinks = identityLinks;
-
+        _refreshTokenService = refreshTokenService;
+        _identityLinks = identityLinks;
+        _memberships = memberships;
     }
+
+    /// <summary>
+    /// Drives the canonical 'owner' membership (EDD-007) from the identity-link result — Auth routes
+    /// the write through the Membership context rather than owning it.
+    /// </summary>
+    private Task EnsureOwnerMembershipAsync(OwnerIdentityLink link, CancellationToken cancellationToken) =>
+        link.IdentityId is Guid identityId
+            ? _memberships.EnsureActiveAsync(identityId, link.SchoolId, MembershipKind.Owner, cancellationToken)
+            : Task.CompletedTask;
 
     public async Task RegisterAsync(RegisterSchoolOwnerRequest request, CancellationToken cancellationToken)
     {
@@ -117,7 +131,8 @@ internal sealed class SchoolOwnerAuthService : ISchoolOwnerAuthService
 
         // Identity platform: the owner IS an identity — create/claim + link (idempotent), so the
         // unified login works the moment they verify. (EDD-001; owner row = employment record.)
-        await _identityLinks.EnsureOwnerIdentityLinksAsync(ownerId, cancellationToken);
+        OwnerIdentityLink ownerLink = await _identityLinks.EnsureOwnerIdentityLinksAsync(ownerId, cancellationToken);
+        await EnsureOwnerMembershipAsync(ownerLink, cancellationToken);
 
         // After commit — if OTP/SMS fail here, the account still exists and the owner can request a
         // resend, so we deliberately keep this out of the transaction.
@@ -158,7 +173,8 @@ internal sealed class SchoolOwnerAuthService : ISchoolOwnerAuthService
             case OtpVerifyResult.Success:
                 await _ownerRepository.MarkPhoneVerifiedAsync(ownerId.Value, cancellationToken);
                 // The unified login gates on the IDENTITY's phone_verified — keep it in step.
-                await _identityLinks.EnsureOwnerIdentityLinksAsync(ownerId.Value, cancellationToken);
+                OwnerIdentityLink ownerLink = await _identityLinks.EnsureOwnerIdentityLinksAsync(ownerId.Value, cancellationToken);
+                await EnsureOwnerMembershipAsync(ownerLink, cancellationToken);
                 await _identityLinks.MarkOwnerIdentityVerifiedAsync(ownerId.Value, cancellationToken);
                 return;
 

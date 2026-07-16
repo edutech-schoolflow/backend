@@ -45,6 +45,9 @@ internal interface IStaffAffiliationRepository
     /// <summary>Set affiliation status (active | inactive) at this school. Returns rows affected.</summary>
     Task<int> SetStatusAsync(Guid affiliationId, Guid schoolId, string status, CancellationToken cancellationToken);
 
+    /// <summary>The identity linked to this affiliation at the school (null if unlinked or not found).</summary>
+    Task<Guid?> GetIdentityIdAsync(Guid affiliationId, Guid schoolId, CancellationToken cancellationToken);
+
     Task<Guid> CreateInvitedAsync(Guid staffUserId, Guid schoolId, string role, string? position,
         string employmentType, Guid? invitedBy, IDbTransaction transaction, CancellationToken cancellationToken);
 
@@ -271,6 +274,13 @@ internal sealed class StaffAffiliationRepository : BaseRepository, IStaffAffilia
             WHERE id = @Id AND school_id = @SchoolId
             """,
             new { Id = affiliationId, SchoolId = schoolId, Status = status }, cancellationToken);
+    }
+
+    public Task<Guid?> GetIdentityIdAsync(Guid affiliationId, Guid schoolId, CancellationToken cancellationToken)
+    {
+        return QuerySingleOrDefaultAsync<Guid?>(
+            "SELECT identity_id FROM staff_affiliations WHERE id = @Id AND school_id = @SchoolId",
+            new { Id = affiliationId, SchoolId = schoolId }, cancellationToken);
     }
 
     public async Task<Guid> CreateInvitedAsync(Guid staffUserId, Guid schoolId, string role, string? position,

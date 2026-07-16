@@ -55,8 +55,9 @@ internal interface IAuthContextRepository
     Task<IReadOnlyList<DraftOrganizationRow>> ListDraftOrganizationsAsync(Guid identityId, CancellationToken cancellationToken);
 
     /// <summary>Registration/verification of a school owner keeps their identity in step (create-or-claim,
-    /// link identity_id + the 'owner' position). Idempotent — mirrors the staff variant below.</summary>
-    Task EnsureOwnerIdentityLinksAsync(Guid ownerId, CancellationToken cancellationToken);
+    /// link identity_id + the 'owner' position). Idempotent — mirrors the staff variant below. Returns
+    /// the linked identity + school so the caller can drive the 'owner' membership (EDD-007).</summary>
+    Task<OwnerIdentityLink> EnsureOwnerIdentityLinksAsync(Guid ownerId, CancellationToken cancellationToken);
 
     /// <summary>Owner phone verified → the identity's phone is verified too (unified login gates on it).</summary>
     Task MarkOwnerIdentityVerifiedAsync(Guid ownerId, CancellationToken cancellationToken);
@@ -64,10 +65,17 @@ internal interface IAuthContextRepository
     /// <summary>
     /// After an invite is accepted: ensures an identity exists for the staff member (created from the
     /// staff row if the phone is new), and links staff_users.identity_id + the affiliation's
-    /// identity_id/position_id. Idempotent. Returns the staff member's full name for the event.
+    /// identity_id/position_id. Idempotent. Returns the linked identity + full name so the caller can
+    /// drive the 'staff' membership (EDD-007) and publish the employment event.
     /// </summary>
-    Task<string> EnsureStaffIdentityLinksAsync(Guid staffUserId, Guid affiliationId, CancellationToken cancellationToken);
+    Task<StaffIdentityLink> EnsureStaffIdentityLinksAsync(Guid staffUserId, Guid affiliationId, CancellationToken cancellationToken);
 }
+
+/// <summary>The identity + school linked to a school owner — what the caller needs to drive the owner membership.</summary>
+internal sealed record OwnerIdentityLink(Guid? IdentityId, Guid SchoolId);
+
+/// <summary>The identity + display name linked to a staff member.</summary>
+internal sealed record StaffIdentityLink(Guid? IdentityId, string Name);
 
 internal sealed class ContextRecencyRow
 {
@@ -318,9 +326,11 @@ internal sealed class AuthContextRepository : BaseRepository, IAuthContextReposi
             new { IdentityId = identityId }, cancellationToken);
     }
 
-    public Task EnsureOwnerIdentityLinksAsync(Guid ownerId, CancellationToken cancellationToken)
+    public async Task<OwnerIdentityLink> EnsureOwnerIdentityLinksAsync(Guid ownerId, CancellationToken cancellationToken)
     {
-        return ExecuteAsync(
+        // The 'owner' membership is now driven by the caller via the Membership context (EDD-007);
+        // this method owns only the identity link + the access_contexts projection.
+        await ExecuteAsync(
             """
             INSERT INTO identities (first_name, middle_name, last_name, phone, password_hash,
                                     phone_verified, email_verified, status)
@@ -353,16 +363,13 @@ internal sealed class AuthContextRepository : BaseRepository, IAuthContextReposi
             FROM school_owners o
             WHERE o.id = @OwnerId AND o.identity_id IS NOT NULL AND o.is_active = TRUE
             ON CONFLICT (type, reference_id, organization_id) DO UPDATE SET status = 'active', updated_at = NOW();
-
-            -- Canonical belonging edge (EDD-007): the owner IS an 'owner' membership. Mirrors the
-            -- parent membership write; keeps `memberships` complete for new owners after 0045's backfill.
-            INSERT INTO memberships (identity_id, school_id, kind)
-            SELECT o.identity_id, o.school_id, 'owner'
-            FROM school_owners o
-            WHERE o.id = @OwnerId AND o.identity_id IS NOT NULL AND o.is_active = TRUE
-            ON CONFLICT (identity_id, school_id, kind) DO UPDATE SET status = 'active', ended_at = NULL;
             """,
             new { OwnerId = ownerId }, cancellationToken);
+
+        return await QuerySingleOrDefaultAsync<OwnerIdentityLink>(
+            "SELECT identity_id AS IdentityId, school_id AS SchoolId FROM school_owners WHERE id = @OwnerId",
+            new { OwnerId = ownerId }, cancellationToken)
+            ?? new OwnerIdentityLink(null, Guid.Empty);
     }
 
     public Task MarkOwnerIdentityVerifiedAsync(Guid ownerId, CancellationToken cancellationToken)
@@ -379,7 +386,7 @@ internal sealed class AuthContextRepository : BaseRepository, IAuthContextReposi
             new { OwnerId = ownerId }, cancellationToken);
     }
 
-    public async Task<string> EnsureStaffIdentityLinksAsync(Guid staffUserId, Guid affiliationId,
+    public async Task<StaffIdentityLink> EnsureStaffIdentityLinksAsync(Guid staffUserId, Guid affiliationId,
         CancellationToken cancellationToken)
     {
         // Email intentionally omitted on identity creation here (identities.email is unique and the
@@ -426,20 +433,16 @@ internal sealed class AuthContextRepository : BaseRepository, IAuthContextReposi
             FROM staff_affiliations a
             WHERE a.id = @AffiliationId AND a.identity_id IS NOT NULL AND a.status = 'active'
             ON CONFLICT (type, reference_id, organization_id) DO UPDATE SET status = 'active', updated_at = NOW();
-
-            -- Canonical belonging edge (EDD-007): an active affiliation IS a 'staff' membership.
-            -- Mirrors the parent write; keeps `memberships` complete for new staff after 0045's backfill.
-            INSERT INTO memberships (identity_id, school_id, kind)
-            SELECT a.identity_id, a.school_id, 'staff'
-            FROM staff_affiliations a
-            WHERE a.id = @AffiliationId AND a.identity_id IS NOT NULL AND a.status = 'active'
-            ON CONFLICT (identity_id, school_id, kind) DO UPDATE SET status = 'active', ended_at = NULL;
             """,
             new { StaffUserId = staffUserId, AffiliationId = affiliationId }, cancellationToken);
 
-        return await ExecuteScalarAsync<string>(
-            "SELECT concat_ws(' ', first_name, last_name) FROM staff_users WHERE id = @Id",
-            new { Id = staffUserId }, cancellationToken) ?? "Staff member";
+        // The 'staff' membership is now driven by the caller via the Membership context (EDD-007).
+        StaffIdentityLink? link = await QuerySingleOrDefaultAsync<StaffIdentityLink>(
+            "SELECT identity_id AS IdentityId, concat_ws(' ', first_name, last_name) AS Name FROM staff_users WHERE id = @Id",
+            new { Id = staffUserId }, cancellationToken);
+        return link is null || string.IsNullOrWhiteSpace(link.Name)
+            ? new StaffIdentityLink(link?.IdentityId, "Staff member")
+            : link;
     }
 
     public async Task<IReadOnlyList<string>> ListProfileKindsAsync(Guid identityId, CancellationToken cancellationToken)
@@ -455,14 +458,11 @@ internal sealed class AuthContextRepository : BaseRepository, IAuthContextReposi
 
     public Task EnsureParentMembershipAsync(Guid identityId, Guid schoolId, CancellationToken cancellationToken)
     {
-        // The parent's membership at this school AND its org-scoped AccessContext (EDD-002 revision):
-        // one context per school, reference_id = parent_id, so login lists it like a staff context.
+        // The parent's org-scoped AccessContext (EDD-002 revision): one context per school,
+        // reference_id = parent_id, so login lists it like a staff context. The 'parent' membership
+        // itself is now driven by the caller via the Membership context (EDD-007).
         return ExecuteAsync(
             """
-            INSERT INTO memberships (identity_id, school_id, kind)
-            VALUES (@IdentityId, @SchoolId, 'parent')
-            ON CONFLICT (identity_id, school_id, kind) DO UPDATE SET status = 'active', ended_at = NULL;
-
             INSERT INTO access_contexts (identity_id, type, reference_id, organization_id)
             SELECT @IdentityId, 'parent', p.id, @SchoolId
             FROM parents p

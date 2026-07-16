@@ -6,12 +6,13 @@
 
   <ItemGroup>
     <ProjectReference Include="..\EduTech.Shared\EduTech.Shared.csproj" />
-    <ProjectReference Include="..\EduTech.Membership\EduTech.Membership.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Auth's staff token/OTP orchestration consumes these internals until token primitives move to Identity. -->
+    <!-- EduTech.Auth and EduTech.Workforce drive adult membership lifecycle through this context
+         during the EDD-007 transition; they consume its repository via the internal interface. -->
     <InternalsVisibleTo Include="EduTech.Auth" />
+    <InternalsVisibleTo Include="EduTech.Workforce" />
     <InternalsVisibleTo Include="EduTech.Auth.Tests" />
     <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>

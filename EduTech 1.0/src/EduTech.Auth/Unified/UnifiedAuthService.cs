@@ -13,6 +13,8 @@ using EduTech.Shared.Persistence;
 using EduTech.Shared.Phone;
 using Npgsql;
 using EduTech.Workforce;
+using EduTech.Membership;
+using EduTech.Membership.Domain;
 
 namespace EduTech.Auth.Unified;
 
@@ -121,6 +123,7 @@ internal sealed class UnifiedAuthService : IUnifiedAuthService
     private readonly IStaffFeatureOverrideRepository _overrides;
     private readonly ISchoolRepository _schools;
     private readonly ISchoolOwnerRepository _owners;
+    private readonly IMembershipRepository _memberships;
     private readonly IDbConnectionFactory _connectionFactory;
 
     public UnifiedAuthService(
@@ -138,10 +141,12 @@ internal sealed class UnifiedAuthService : IUnifiedAuthService
         IStaffFeatureOverrideRepository overrides,
         ISchoolRepository schools,
         ISchoolOwnerRepository owners,
+        IMembershipRepository memberships,
         IDbConnectionFactory connectionFactory)
     {
         _schools = schools;
         _owners = owners;
+        _memberships = memberships;
         _connectionFactory = connectionFactory;
         _identities = identities;
         _contexts = contexts;
@@ -692,7 +697,12 @@ internal sealed class UnifiedAuthService : IUnifiedAuthService
         }
 
         await _owners.MarkPhoneVerifiedAsync(ownerId, cancellationToken);
-        await _contexts.EnsureOwnerIdentityLinksAsync(ownerId, cancellationToken);
+        OwnerIdentityLink ownerLink = await _contexts.EnsureOwnerIdentityLinksAsync(ownerId, cancellationToken);
+        if (ownerLink.IdentityId is Guid ownerIdentityId)
+        {
+            await _memberships.EnsureActiveAsync(ownerIdentityId, ownerLink.SchoolId, MembershipKind.Owner,
+                cancellationToken);
+        }
 
         IReadOnlyList<AuthContextItem> contexts = await BuildContextsAsync(identityId, cancellationToken);
         AuthContextItem selected = contexts.First(c => c.Id == ownerId);

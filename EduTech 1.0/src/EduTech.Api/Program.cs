@@ -11,6 +11,7 @@ using EduTech.Fees;
 using EduTech.Grades;
 using EduTech.Identity;
 using EduTech.Membership;
+using EduTech.People;
 using EduTech.Notifications;
 using EduTech.Students;
 using EduTech.School;
@@ -261,6 +262,7 @@ builder.Services.AddAuthModule();
 builder.Services.AddWorkforceModule();
 builder.Services.AddIdentityModule();   // EDD-001 Sprint 1 — global identities (unified auth lands Sprint 2)
 builder.Services.AddMembershipModule(); // EDD-007 Sprint B1 — canonical belonging edge (adult lifecycle)
+builder.Services.AddPeopleModule();     // EDD-008 Sprint C1 — Position catalog (Employment lands next)
 builder.Services.AddNotificationsModule(config);
 builder.Services.AddSchoolModule(config);
 builder.Services.AddComplianceModule(config);

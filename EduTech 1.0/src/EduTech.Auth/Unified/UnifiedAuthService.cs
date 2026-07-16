@@ -92,6 +92,13 @@ public interface IUnifiedAuthService
 
     /// <summary>What /welcome should offer this identity: pending invites + unfinished organizations.</summary>
     Task<WelcomeResponse> GetWelcomeAsync(Guid identityId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// EDD-005 — the identity home: one call carrying identity, profiles, capabilities,
+    /// organizations, invitations, drafts and family counts. The platform landing renders from it.
+    /// </summary>
+    Task<PlatformHomeProjection> GetPlatformHomeAsync(Guid identityId, Guid? currentContextId,
+        CancellationToken cancellationToken);
 }
 
 internal sealed class UnifiedAuthService : IUnifiedAuthService
@@ -404,6 +411,61 @@ internal sealed class UnifiedAuthService : IUnifiedAuthService
 
         // Re-resolve at the new slug so the response reflects the rename (name + slug).
         return await GetOrganizationWorkspaceAsync(identityId, newSlug, cancellationToken);
+    }
+
+    public async Task<PlatformHomeProjection> GetPlatformHomeAsync(Guid identityId, Guid? currentContextId,
+        CancellationToken cancellationToken)
+    {
+        UnifiedMeResponse me = await GetMeByIdentityAsync(identityId, currentContextId, cancellationToken);
+        WelcomeResponse welcome = await GetWelcomeAsync(identityId, cancellationToken);
+        FamilySummaryRow family = await _contexts.GetFamilySummaryAsync(identityId, cancellationToken);
+        IReadOnlyList<ContextRecencyRow> recency = await _contexts.ListContextRecencyAsync(identityId, cancellationToken);
+
+        // Switcher: every ORGANIZATION workspace ordered by last entry (refresh-token issuance).
+        // "Current" reflects the SESSION's token — the page decides whether to exclude it (a person
+        // reading the family home isn't "inside" the workspace their token was minted for).
+        Dictionary<Guid, DateTime?> lastActive = recency.ToDictionary(r => r.ContextId, r => r.LastActiveAt);
+        List<WorkspaceRef> workspaces = me.Contexts
+            .Where(c => c.OrganizationId is not null)
+            .Select(c => new WorkspaceRef
+            {
+                ContextId = c.Id,
+                Type = c.Type,
+                Role = c.Role,
+                OrganizationId = c.OrganizationId,
+                OrganizationName = c.OrganizationName,
+                OrganizationSlug = c.OrganizationSlug,
+                LastActiveAt = lastActive.GetValueOrDefault(c.Id)
+            })
+            .OrderByDescending(w => w.LastActiveAt ?? DateTime.MinValue)
+            .ToList();
+
+        return new PlatformHomeProjection
+        {
+            Identity = new IdentitySummary
+            {
+                FullName = me.FullName,
+                Phone = me.Phone,
+                Email = me.Email,
+                PhoneVerified = me.PhoneVerified
+            },
+            Profiles = me.Profiles,
+            Capabilities = me.Capabilities,
+            Organizations = me.Contexts,
+            CurrentContextId = me.CurrentContextId,
+            PendingInvitations = welcome.PendingInvites,
+            DraftOrganizations = welcome.DraftOrganizations,
+            Family = new FamilySummary
+            {
+                Children = family.Children,
+                OpenApplications = family.OpenApplications
+            },
+            Switcher = new SwitcherProjection
+            {
+                CurrentWorkspace = workspaces.FirstOrDefault(w => w.ContextId == me.CurrentContextId),
+                RecentWorkspaces = workspaces
+            }
+        };
     }
 
     public async Task<WelcomeResponse> GetWelcomeAsync(Guid identityId, CancellationToken cancellationToken)

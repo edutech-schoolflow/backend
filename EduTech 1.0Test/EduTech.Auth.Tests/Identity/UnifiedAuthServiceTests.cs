@@ -606,4 +606,43 @@ public class UnifiedAuthServiceTests
         _refresh.Verify(r => r.RevokeAllForActorAsync(AuthActorTypes.Parent, parentId,
             It.IsAny<CancellationToken>()), Times.Once);
     }
+
+    // ── /identity/home — the ONE rich projection (EDD-005) ─────────────────────────
+
+    [Fact]
+    public async Task IdentityHome_ComposesIdentityCapabilitiesOrganizationsInvitesAndFamily()
+    {
+        IdentityAggregate identity = Identity(passwordHash: "h", phoneVerified: true, status: IdentityStatus.Active);
+        Guid ownerId = Guid.NewGuid();
+        Guid schoolId = Guid.NewGuid();
+        MeBaseline(identity,
+            contexts: new[] { new AccessContextRow
+                { ReferenceId = ownerId, Type = "owner", OrganizationId = schoolId,
+                  OrganizationName = "Divine Wisdom", OrganizationSlug = "divine-wisdom" } },
+            invites: new[] { new PendingInviteRow
+                { SchoolName = "Greenfield", Role = "teacher", ExpiresAt = DateTime.UtcNow.AddDays(2) } },
+            profiles: new[] { "parent" });
+        _contexts.Setup(c => c.ListDraftOrganizationsAsync(identity.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<DraftOrganizationRow>());
+        _contexts.Setup(c => c.GetFamilySummaryAsync(identity.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new FamilySummaryRow { Children = 2, OpenApplications = 1 });
+        _contexts.Setup(c => c.ListContextRecencyAsync(identity.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { new ContextRecencyRow { ContextId = ownerId, LastActiveAt = DateTime.UtcNow } });
+
+        PlatformHomeProjection home = await CreateSut().GetPlatformHomeAsync(identity.Id, null, CancellationToken.None);
+
+        Assert.Equal("Ada Obi", home.Identity.FullName);
+        Assert.Contains("open_family_home", home.Capabilities);   // parent profile exists
+        Assert.Contains("accept_invitation", home.Capabilities);  // pending invite
+        Assert.DoesNotContain("create_school", home.Capabilities); // already owns one
+        Assert.Single(home.Organizations);
+        Assert.Equal("divine-wisdom", home.Organizations[0].OrganizationSlug);
+        Assert.Single(home.PendingInvitations);
+        Assert.Equal(2, home.Family.Children);
+        Assert.Equal(1, home.Family.OpenApplications);
+        Assert.Single(home.Switcher.RecentWorkspaces);
+        Assert.Equal("divine-wisdom", home.Switcher.RecentWorkspaces[0].OrganizationSlug);
+        Assert.NotNull(home.Switcher.RecentWorkspaces[0].LastActiveAt);
+        Assert.Null(home.Switcher.CurrentWorkspace); // identity-scope session — no current workspace
+    }
 }

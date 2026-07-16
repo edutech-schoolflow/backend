@@ -98,33 +98,6 @@ public sealed class UnifiedAuthController : ControllerBase
         return Ok(ServiceResponses<string?>.Ok(null, "Password updated. You can now log in."));
     }
 
-    /// <summary>Who am I — works with ANY portal token; resolves the persona to its identity.</summary>
-    [HttpGet("me")]
-    [Authorize(Policy = "AuthenticatedIdentity")]
-    public async Task<ActionResult<ServiceResponses<UnifiedMeResponse>>> Me(CancellationToken cancellationToken)
-    {
-        // The context this session is inside (org tokens carry it) — lets the switcher mark the current
-        // workspace and list only the others.
-        Guid? currentContextId = Guid.TryParse(User.FindFirst("context_id")?.Value, out Guid cc) ? cc : null;
-
-        // Org-context tokens carry identity_id directly — the actor-resolution fallback serves
-        // sessions minted before this claim existed and dies with them.
-        if (Guid.TryParse(User.FindFirst("identity_id")?.Value, out Guid identityId))
-        {
-            UnifiedMeResponse direct = await _service.GetMeByIdentityAsync(identityId, currentContextId, cancellationToken);
-            return Ok(ServiceResponses<UnifiedMeResponse>.Ok(direct, "Profile."));
-        }
-
-        string? userType = User.FindFirst("user_type")?.Value;
-        string? sub = User.FindFirst("user_id")?.Value ?? User.FindFirst("sub")?.Value;
-        if (userType is null || !Guid.TryParse(sub, out Guid actorId))
-        {
-            return Unauthorized();
-        }
-
-        UnifiedMeResponse me = await _service.GetMeAsync(userType, actorId, currentContextId, cancellationToken);
-        return Ok(ServiceResponses<UnifiedMeResponse>.Ok(me, "Profile."));
-    }
 
     /// <summary>
     /// EDD-005 Principle 6 — the ONE refresh for every session kind. The refresh cookie's session
@@ -142,20 +115,6 @@ public sealed class UnifiedAuthController : ControllerBase
         return Ok(ServiceResponses<string?>.Ok(null, "Session refreshed."));
     }
 
-    /// <summary>Adaptive /welcome (FE-001): pending invites for my phone + draft organizations to resume.</summary>
-    [HttpGet("welcome")]
-    [Authorize(Policy = "AuthenticatedIdentity")]
-    public async Task<ActionResult<ServiceResponses<WelcomeResponse>>> Welcome(CancellationToken cancellationToken)
-    {
-        Guid? identityId = await ResolveIdentityIdAsync(cancellationToken);
-        if (identityId is null)
-        {
-            return Unauthorized();
-        }
-
-        WelcomeResponse welcome = await _service.GetWelcomeAsync(identityId.Value, cancellationToken);
-        return Ok(ServiceResponses<WelcomeResponse>.Ok(welcome, "Welcome."));
-    }
 
     [HttpPost("select-context")]
     [Authorize(Policy = "AuthenticatedIdentity")]
@@ -178,23 +137,6 @@ public sealed class UnifiedAuthController : ControllerBase
             "Welcome back."));
     }
 
-    /// <summary>Org-context tokens carry identity_id; older sessions resolve via their portal actor.</summary>
-    private async Task<Guid?> ResolveIdentityIdAsync(CancellationToken cancellationToken)
-    {
-        if (Guid.TryParse(User.FindFirst("identity_id")?.Value, out Guid identityId))
-        {
-            return identityId;
-        }
-
-        string? userType = User.FindFirst("user_type")?.Value;
-        string? sub = User.FindFirst("user_id")?.Value ?? User.FindFirst("sub")?.Value;
-        if (userType is null || !Guid.TryParse(sub, out Guid actorId))
-        {
-            return null;
-        }
-
-        return await _service.ResolveIdentityIdAsync(userType, actorId, cancellationToken);
-    }
 
     private void SetAuthCookies(UnifiedTokens tokens)
     {

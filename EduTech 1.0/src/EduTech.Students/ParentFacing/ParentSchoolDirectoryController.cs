@@ -32,11 +32,11 @@ public sealed class ParentSchoolDirectoryController : ControllerBase
 
     /// <summary>A single public school's profile.</summary>
     [HttpGet("{schoolId:guid}")]
-    public async Task<ActionResult<ServiceResponses<ParentSchoolListItem>>> Get(
+    public async Task<ActionResult<ServiceResponses<ParentSchoolProfileResponse>>> Get(
         Guid schoolId, CancellationToken cancellationToken)
     {
-        ParentSchoolListItem school = await _service.GetAsync(schoolId, cancellationToken);
-        return Ok(ServiceResponses<ParentSchoolListItem>.Ok(school, "School."));
+        ParentSchoolProfileResponse school = await _service.GetAsync(schoolId, cancellationToken);
+        return Ok(ServiceResponses<ParentSchoolProfileResponse>.Ok(school, "School."));
     }
 
     /// <summary>The classes a public school offers — the parent's desired-class options when applying.</summary>

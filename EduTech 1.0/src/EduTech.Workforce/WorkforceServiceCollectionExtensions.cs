@@ -17,6 +17,10 @@ public static class WorkforceServiceCollectionExtensions
         services.AddScoped<IStaffFeatureOverrideRepository, StaffFeatureOverrideRepository>();
         services.AddScoped<IStaffInviteService, StaffInviteService>();
         services.AddScoped<ISchoolStaffService, SchoolStaffService>();
+        services.AddScoped<Staffing.IStaffProfileService, Staffing.StaffProfileService>();
+        services.AddScoped<StaffAttendance.IStaffAttendanceRepository, StaffAttendance.StaffAttendanceRepository>();
+        services.AddScoped<StaffAttendance.IStaffAttendanceService, StaffAttendance.StaffAttendanceService>();
+
         return services;
     }
 }

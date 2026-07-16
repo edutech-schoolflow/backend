@@ -25,6 +25,13 @@ internal interface IAuthContextRepository
     /// <summary>Records that this identity belongs to the school as a parent; idempotent.</summary>
     Task EnsureParentMembershipAsync(Guid identityId, Guid schoolId, CancellationToken cancellationToken);
 
+    /// <summary>Per-context last activity (latest refresh-token issue for its actor) — SELECT-only.
+    /// Entering a workspace mints a refresh token, so issuance time IS the "last entered" signal.</summary>
+    Task<IReadOnlyList<ContextRecencyRow>> ListContextRecencyAsync(Guid identityId, CancellationToken cancellationToken);
+
+    /// <summary>Family counts for the identity home — SELECT-only projection (EDD-005).</summary>
+    Task<FamilySummaryRow> GetFamilySummaryAsync(Guid identityId, CancellationToken cancellationToken);
+
     /// <summary>Profile kinds this identity owns ("parent", "staff") — distinct from contexts.</summary>
     Task<IReadOnlyList<string>> ListProfileKindsAsync(Guid identityId, CancellationToken cancellationToken);
 
@@ -60,6 +67,18 @@ internal interface IAuthContextRepository
     /// identity_id/position_id. Idempotent. Returns the staff member's full name for the event.
     /// </summary>
     Task<string> EnsureStaffIdentityLinksAsync(Guid staffUserId, Guid affiliationId, CancellationToken cancellationToken);
+}
+
+internal sealed class ContextRecencyRow
+{
+    public Guid ContextId { get; init; }
+    public DateTime? LastActiveAt { get; init; }
+}
+
+internal sealed class FamilySummaryRow
+{
+    public int Children { get; init; }
+    public int OpenApplications { get; init; }
 }
 
 internal sealed class AccessContextRow
@@ -124,6 +143,41 @@ internal sealed class AuthContextRepository : BaseRepository, IAuthContextReposi
 {
     public AuthContextRepository(IDbConnectionFactory connectionFactory) : base(connectionFactory)
     {
+    }
+
+    public Task<IReadOnlyList<ContextRecencyRow>> ListContextRecencyAsync(Guid identityId,
+        CancellationToken cancellationToken)
+    {
+        return QueryAsync<ContextRecencyRow>(
+            """
+            SELECT ac.reference_id AS ContextId,
+                   MAX(rt.issued_at) AS LastActiveAt
+            FROM access_contexts ac
+            LEFT JOIN refresh_tokens rt
+              ON (ac.type = 'owner'  AND rt.actor_type = 'school_owner' AND rt.actor_id = ac.reference_id)
+              OR (ac.type = 'parent' AND rt.actor_type = 'parent'       AND rt.actor_id = ac.reference_id)
+              OR (ac.type = 'staff'  AND rt.actor_type = 'staff'
+                  AND rt.actor_id = (SELECT sa.staff_user_id FROM staff_affiliations sa WHERE sa.id = ac.reference_id))
+            WHERE ac.identity_id = @IdentityId AND ac.status = 'active'
+            GROUP BY ac.reference_id
+            """,
+            new { IdentityId = identityId }, cancellationToken);
+    }
+
+    public async Task<FamilySummaryRow> GetFamilySummaryAsync(Guid identityId, CancellationToken cancellationToken)
+    {
+        return await QuerySingleOrDefaultAsync<FamilySummaryRow>(
+            """
+            SELECT
+                (SELECT COUNT(*) FROM parent_children pc
+                   JOIN parents p ON p.id = pc.parent_id
+                  WHERE p.identity_id = @IdentityId AND p.is_active = TRUE) AS Children,
+                (SELECT COUNT(*) FROM applications a
+                   JOIN parents p ON p.id = a.parent_id
+                  WHERE p.identity_id = @IdentityId
+                    AND a.status NOT IN ('admitted', 'rejected', 'withdrawn')) AS OpenApplications
+            """,
+            new { IdentityId = identityId }, cancellationToken) ?? new FamilySummaryRow();
     }
 
     public Task<IReadOnlyList<AccessContextRow>> ListAccessContextsAsync(Guid identityId,

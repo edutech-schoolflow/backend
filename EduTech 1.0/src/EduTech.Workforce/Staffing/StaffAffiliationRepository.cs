@@ -38,6 +38,10 @@ internal interface IStaffAffiliationRepository
     /// <summary>Update role/position for a staff member at this school. Returns rows affected.</summary>
     Task<int> UpdateRoleAsync(Guid affiliationId, Guid schoolId, string role, string? position, CancellationToken cancellationToken);
 
+    /// <summary>Role + permission template per ACTIVE affiliation — feeds effective-feature resolution.</summary>
+    Task<IReadOnlyList<AffiliationPermissionMetaRow>> ListPermissionMetaForSchoolAsync(Guid schoolId,
+        CancellationToken cancellationToken);
+
     /// <summary>Set affiliation status (active | inactive) at this school. Returns rows affected.</summary>
     Task<int> SetStatusAsync(Guid affiliationId, Guid schoolId, string status, CancellationToken cancellationToken);
 
@@ -96,6 +100,13 @@ internal sealed class StaffInviteDetailsRow
 }
 
 /// <summary>Active affiliation fields needed to mint a school-scoped token.</summary>
+internal sealed class AffiliationPermissionMetaRow
+{
+    public Guid AffiliationId { get; init; }
+    public string Role { get; init; } = string.Empty;
+    public Guid? PermissionTemplateId { get; init; }
+}
+
 internal sealed class StaffSwitchRow
 {
     public Guid AffiliationId { get; init; }
@@ -210,6 +221,18 @@ internal sealed class StaffAffiliationRepository : BaseRepository, IStaffAffilia
             JOIN staff_users u ON u.id = a.staff_user_id
             WHERE a.school_id = @SchoolId
             ORDER BY a.created_at DESC
+            """,
+            new { SchoolId = schoolId }, cancellationToken);
+    }
+
+    public Task<IReadOnlyList<AffiliationPermissionMetaRow>> ListPermissionMetaForSchoolAsync(Guid schoolId,
+        CancellationToken cancellationToken)
+    {
+        return QueryAsync<AffiliationPermissionMetaRow>(
+            """
+            SELECT id AS AffiliationId, role AS Role, permission_template_id AS PermissionTemplateId
+            FROM staff_affiliations
+            WHERE school_id = @SchoolId AND status = 'active'
             """,
             new { SchoolId = schoolId }, cancellationToken);
     }

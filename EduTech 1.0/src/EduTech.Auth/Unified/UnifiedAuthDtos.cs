@@ -68,6 +68,56 @@ public sealed class UnifiedMeResponse
 }
 
 /// <summary>
+/// EDD-005 — the ONE rich identity projection behind the platform home: who I am, what I can do,
+/// where I belong, and what's waiting for me. The landing experience renders entirely from this.
+/// </summary>
+public sealed class PlatformHomeProjection
+{
+    public required IdentitySummary Identity { get; init; }
+    public required IReadOnlyList<string> Profiles { get; init; }
+    public required IReadOnlyList<string> Capabilities { get; init; }
+    public required IReadOnlyList<AuthContextItem> Organizations { get; init; }
+    public Guid? CurrentContextId { get; init; }
+    public required IReadOnlyList<PendingInviteItem> PendingInvitations { get; init; }
+    public required IReadOnlyList<DraftOrganizationItem> DraftOrganizations { get; init; }
+    public required FamilySummary Family { get; init; }
+    /// <summary>Slack-style workspace switcher: the token's current workspace + every workspace
+    /// ordered by last activity. "Current" is the SESSION's — the page decides what to exclude.</summary>
+    public required SwitcherProjection Switcher { get; init; }
+}
+
+public sealed class SwitcherProjection
+{
+    public WorkspaceRef? CurrentWorkspace { get; init; }
+    public required IReadOnlyList<WorkspaceRef> RecentWorkspaces { get; init; }
+}
+
+public sealed class WorkspaceRef
+{
+    public required Guid ContextId { get; init; }
+    public required string Type { get; init; }          // owner | staff | parent
+    public string? Role { get; init; }
+    public Guid? OrganizationId { get; init; }
+    public string? OrganizationName { get; init; }
+    public string? OrganizationSlug { get; init; }
+    public DateTime? LastActiveAt { get; init; }
+}
+
+public sealed class IdentitySummary
+{
+    public required string FullName { get; init; }
+    public required string Phone { get; init; }
+    public string? Email { get; init; }
+    public required bool PhoneVerified { get; init; }
+}
+
+public sealed class FamilySummary
+{
+    public int Children { get; init; }
+    public int OpenApplications { get; init; }
+}
+
+/// <summary>
 /// One organization relationship the identity can act in — structured, no string keys to parse.
 /// <see cref="Id"/> is the relationship row's id (owner / affiliation / parent profile id today;
 /// employment / membership id after the Workforce extraction).

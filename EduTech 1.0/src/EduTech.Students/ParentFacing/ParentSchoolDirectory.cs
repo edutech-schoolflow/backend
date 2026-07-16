@@ -19,6 +19,25 @@ public sealed class ParentSchoolListItem
     public decimal ApplicationFee { get; init; }
 }
 
+/// <summary>
+/// The full PUBLIC profile of a school — everything a parent may see before applying: identity,
+/// contact details, and the class ladder. Nothing internal (finances, rosters) ever rides here.
+/// </summary>
+public sealed class ParentSchoolProfileResponse
+{
+    public required Guid Id { get; init; }
+    public required string Name { get; init; }
+    public string? Type { get; init; }
+    public string? Location { get; init; }
+    public string? Address { get; init; }
+    public string? Phone { get; init; }
+    public string? Email { get; init; }
+    public string? LogoUrl { get; init; }
+    public bool Verified { get; init; }
+    public decimal ApplicationFee { get; init; }
+    public required IReadOnlyList<ParentSchoolClass> Classes { get; init; }
+}
+
 /// <summary>A class a school offers, as a parent picking a desired class sees it.</summary>
 public sealed class ParentSchoolClass
 {
@@ -30,7 +49,7 @@ public sealed class ParentSchoolClass
 public interface IParentSchoolDirectoryService
 {
     Task<IReadOnlyList<ParentSchoolListItem>> SearchAsync(string? query, string? type, CancellationToken cancellationToken);
-    Task<ParentSchoolListItem> GetAsync(Guid schoolId, CancellationToken cancellationToken);
+    Task<ParentSchoolProfileResponse> GetAsync(Guid schoolId, CancellationToken cancellationToken);
     Task<IReadOnlyList<ParentSchoolClass>> GetClassesAsync(Guid schoolId, CancellationToken cancellationToken);
 }
 
@@ -47,18 +66,50 @@ internal sealed class ParentSchoolDirectoryService : IParentSchoolDirectoryServi
         CancellationToken cancellationToken)
         => _repository.SearchAsync(query, type, cancellationToken);
 
-    public async Task<ParentSchoolListItem> GetAsync(Guid schoolId, CancellationToken cancellationToken)
-        => await _repository.GetByIdAsync(schoolId, cancellationToken)
-           ?? throw new AppErrorException("School not found.", 404, ErrorCodes.NotFound);
+    public async Task<ParentSchoolProfileResponse> GetAsync(Guid schoolId, CancellationToken cancellationToken)
+    {
+        ParentSchoolProfileRow row = await _repository.GetByIdAsync(schoolId, cancellationToken)
+            ?? throw new AppErrorException("School not found.", 404, ErrorCodes.NotFound);
+        IReadOnlyList<ParentSchoolClass> classes = await _repository.GetClassesAsync(schoolId, cancellationToken);
+
+        return new ParentSchoolProfileResponse
+        {
+            Id = row.Id,
+            Name = row.Name,
+            Type = row.Type,
+            Location = row.Location,
+            Address = row.Address,
+            Phone = row.Phone,
+            Email = row.Email,
+            LogoUrl = row.LogoUrl,
+            Verified = row.Verified,
+            ApplicationFee = row.ApplicationFee,
+            Classes = classes
+        };
+    }
 
     public Task<IReadOnlyList<ParentSchoolClass>> GetClassesAsync(Guid schoolId, CancellationToken cancellationToken)
         => _repository.GetClassesAsync(schoolId, cancellationToken);
 }
 
+internal sealed class ParentSchoolProfileRow
+{
+    public Guid Id { get; init; }
+    public string Name { get; init; } = string.Empty;
+    public string? Type { get; init; }
+    public string? Location { get; init; }
+    public string? Address { get; init; }
+    public string? Phone { get; init; }
+    public string? Email { get; init; }
+    public string? LogoUrl { get; init; }
+    public bool Verified { get; init; }
+    public decimal ApplicationFee { get; init; }
+}
+
 internal interface IParentSchoolDirectoryRepository
 {
     Task<IReadOnlyList<ParentSchoolListItem>> SearchAsync(string? query, string? type, CancellationToken cancellationToken);
-    Task<ParentSchoolListItem?> GetByIdAsync(Guid schoolId, CancellationToken cancellationToken);
+    Task<ParentSchoolProfileRow?> GetByIdAsync(Guid schoolId, CancellationToken cancellationToken);
     Task<IReadOnlyList<ParentSchoolClass>> GetClassesAsync(Guid schoolId, CancellationToken cancellationToken);
 }
 
@@ -93,15 +144,19 @@ internal sealed class ParentSchoolDirectoryRepository : BaseRepository, IParentS
             new { Like = like, Type = typeFilter }, cancellationToken);
     }
 
-    public Task<ParentSchoolListItem?> GetByIdAsync(Guid schoolId, CancellationToken cancellationToken)
+    public Task<ParentSchoolProfileRow?> GetByIdAsync(Guid schoolId, CancellationToken cancellationToken)
     {
         // Only publicly-listed schools are viewable — a parent can't open a hidden school's profile.
-        return QuerySingleOrDefaultAsync<ParentSchoolListItem?>(
+        return QuerySingleOrDefaultAsync<ParentSchoolProfileRow?>(
             """
             SELECT s.id AS Id,
                    s.name AS Name,
                    s.type AS Type,
                    NULLIF(concat_ws(', ', s.city, s.state), '') AS Location,
+                   s.address AS Address,
+                   s.phone AS Phone,
+                   s.email AS Email,
+                   s.logo_url AS LogoUrl,
                    (s.kyc_status = 'approved') AS Verified,
                    0::numeric AS ApplicationFee
             FROM schools s

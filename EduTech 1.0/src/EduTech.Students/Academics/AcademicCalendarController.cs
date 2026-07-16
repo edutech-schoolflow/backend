@@ -1,4 +1,5 @@
 using EduTech.Shared.Auth;
+using EduTech.Shared.Authorization;
 using EduTech.Shared.Constants;
 using EduTech.Shared.Models;
 using Microsoft.AspNetCore.Authorization;
@@ -22,7 +23,7 @@ public sealed class AcademicCalendarController : ControllerBase
     }
 
     [HttpGet("api/v1/academic-years")]
-    [RequireFeature(StaffFeatureFlags.ViewStudentRecords)]
+    [RequireCapability(Capabilities.Student.Read)]
     public async Task<ActionResult<ServiceResponses<IReadOnlyList<AcademicYearResponse>>>> ListYears(
         CancellationToken cancellationToken)
     {
@@ -31,7 +32,7 @@ public sealed class AcademicCalendarController : ControllerBase
     }
 
     [HttpPost("api/v1/academic-years")]
-    [RequireFeature(StaffFeatureFlags.ManageAdmissions)]
+    [RequireCapability(Capabilities.Admissions.Manage)]
     public async Task<ActionResult<ServiceResponses<AcademicYearResponse>>> CreateYear(
         [FromBody] CreateAcademicYearRequest request, CancellationToken cancellationToken)
     {
@@ -40,7 +41,7 @@ public sealed class AcademicCalendarController : ControllerBase
     }
 
     [HttpPut("api/v1/academic-years/{id:guid}/current")]
-    [RequireFeature(StaffFeatureFlags.ManageAdmissions)]
+    [RequireCapability(Capabilities.Admissions.Manage)]
     public async Task<ActionResult<ServiceResponses<string?>>> SetCurrentYear(Guid id,
         CancellationToken cancellationToken)
     {
@@ -49,7 +50,7 @@ public sealed class AcademicCalendarController : ControllerBase
     }
 
     [HttpPut("api/v1/academic-years/{id:guid}")]
-    [RequireFeature(StaffFeatureFlags.ManageAdmissions)]
+    [RequireCapability(Capabilities.Admissions.Manage)]
     public async Task<ActionResult<ServiceResponses<string?>>> UpdateYear(Guid id,
         [FromBody] UpdateAcademicYearRequest request, CancellationToken cancellationToken)
     {
@@ -58,7 +59,7 @@ public sealed class AcademicCalendarController : ControllerBase
     }
 
     [HttpDelete("api/v1/academic-years/{id:guid}")]
-    [RequireFeature(StaffFeatureFlags.ManageAdmissions)]
+    [RequireCapability(Capabilities.Admissions.Manage)]
     public async Task<ActionResult<ServiceResponses<string?>>> DeleteYear(Guid id, CancellationToken cancellationToken)
     {
         await _service.DeleteYearAsync(id, cancellationToken);
@@ -66,7 +67,7 @@ public sealed class AcademicCalendarController : ControllerBase
     }
 
     [HttpGet("api/v1/terms")]
-    [RequireFeature(StaffFeatureFlags.ViewStudentRecords)]
+    [RequireCapability(Capabilities.Student.Read)]
     public async Task<ActionResult<ServiceResponses<IReadOnlyList<TermResponse>>>> ListTerms(
         [FromQuery] Guid? academicYearId, CancellationToken cancellationToken)
     {
@@ -75,7 +76,7 @@ public sealed class AcademicCalendarController : ControllerBase
     }
 
     [HttpPost("api/v1/terms")]
-    [RequireFeature(StaffFeatureFlags.ManageAdmissions)]
+    [RequireCapability(Capabilities.Admissions.Manage)]
     public async Task<ActionResult<ServiceResponses<TermResponse>>> CreateTerm(
         [FromBody] CreateTermRequest request, CancellationToken cancellationToken)
     {
@@ -84,7 +85,7 @@ public sealed class AcademicCalendarController : ControllerBase
     }
 
     [HttpPut("api/v1/terms/{id:guid}/current")]
-    [RequireFeature(StaffFeatureFlags.ManageAdmissions)]
+    [RequireCapability(Capabilities.Admissions.Manage)]
     public async Task<ActionResult<ServiceResponses<string?>>> SetCurrentTerm(Guid id,
         CancellationToken cancellationToken)
     {
@@ -93,7 +94,7 @@ public sealed class AcademicCalendarController : ControllerBase
     }
 
     [HttpPut("api/v1/terms/{id:guid}")]
-    [RequireFeature(StaffFeatureFlags.ManageAdmissions)]
+    [RequireCapability(Capabilities.Admissions.Manage)]
     public async Task<ActionResult<ServiceResponses<string?>>> UpdateTerm(Guid id,
         [FromBody] UpdateTermDatesRequest request, CancellationToken cancellationToken)
     {
@@ -102,7 +103,7 @@ public sealed class AcademicCalendarController : ControllerBase
     }
 
     [HttpDelete("api/v1/terms/{id:guid}")]
-    [RequireFeature(StaffFeatureFlags.ManageAdmissions)]
+    [RequireCapability(Capabilities.Admissions.Manage)]
     public async Task<ActionResult<ServiceResponses<string?>>> DeleteTerm(Guid id, CancellationToken cancellationToken)
     {
         await _service.DeleteTermAsync(id, cancellationToken);

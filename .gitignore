@@ -40,4 +40,6 @@ appsettings.Production.json
 
 
 # ── Internal docs ─────────────────────────────────────────────────────────────
-docs/
+docs/*
+# …but architecture EDDs are versioned — code references (EDD-00x) must resolve.
+!docs/architecture/

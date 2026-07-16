@@ -1,4 +1,5 @@
 using EduTech.Shared.Auth;
+using EduTech.Shared.Authorization;
 using EduTech.Shared.Constants;
 using EduTech.Shared.Models;
 using Microsoft.AspNetCore.Authorization;
@@ -20,7 +21,7 @@ public sealed class SchoolApplicationController : ControllerBase
     }
 
     [HttpGet]
-    [RequireFeature(StaffFeatureFlags.ViewStudentRecords)]
+    [RequireCapability(Capabilities.Student.Read)]
     public async Task<ActionResult<ServiceResponses<IReadOnlyList<ApplicationResponse>>>> List(
         [FromQuery] string? status, CancellationToken cancellationToken)
     {
@@ -29,7 +30,7 @@ public sealed class SchoolApplicationController : ControllerBase
     }
 
     [HttpGet("{applicationId:guid}")]
-    [RequireFeature(StaffFeatureFlags.ViewStudentRecords)]
+    [RequireCapability(Capabilities.Student.Read)]
     public async Task<ActionResult<ServiceResponses<ApplicationResponse>>> Get(
         Guid applicationId, CancellationToken cancellationToken)
     {
@@ -38,7 +39,7 @@ public sealed class SchoolApplicationController : ControllerBase
     }
 
     [HttpPost("{applicationId:guid}/exam")]
-    [RequireFeature(StaffFeatureFlags.ManageAdmissions)]
+    [RequireCapability(Capabilities.Admissions.Manage)]
     public async Task<ActionResult<ServiceResponses<ApplicationResponse>>> ScheduleExam(
         Guid applicationId, [FromBody] ScheduleExamRequest request, CancellationToken cancellationToken)
     {
@@ -47,7 +48,7 @@ public sealed class SchoolApplicationController : ControllerBase
     }
 
     [HttpPost("{applicationId:guid}/assessment")]
-    [RequireFeature(StaffFeatureFlags.ManageAdmissions)]
+    [RequireCapability(Capabilities.Admissions.Manage)]
     public async Task<ActionResult<ServiceResponses<ApplicationResponse>>> RecordAssessment(
         Guid applicationId, [FromBody] RecordAssessmentRequest request, CancellationToken cancellationToken)
     {
@@ -56,7 +57,7 @@ public sealed class SchoolApplicationController : ControllerBase
     }
 
     [HttpPost("{applicationId:guid}/admit")]
-    [RequireFeature(StaffFeatureFlags.ManageAdmissions)]
+    [RequireCapability(Capabilities.Admissions.Manage)]
     public async Task<ActionResult<ServiceResponses<ApplicationResponse>>> Admit(
         Guid applicationId, [FromBody] AdmitApplicationRequest request, CancellationToken cancellationToken)
     {
@@ -65,7 +66,7 @@ public sealed class SchoolApplicationController : ControllerBase
     }
 
     [HttpPost("{applicationId:guid}/reject")]
-    [RequireFeature(StaffFeatureFlags.ManageAdmissions)]
+    [RequireCapability(Capabilities.Admissions.Manage)]
     public async Task<ActionResult<ServiceResponses<ApplicationResponse>>> Reject(
         Guid applicationId, [FromBody] RejectApplicationRequest request, CancellationToken cancellationToken)
     {

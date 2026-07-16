@@ -1,4 +1,5 @@
 using EduTech.Shared.Auth;
+using EduTech.Shared.Authorization;
 using EduTech.Shared.Constants;
 using EduTech.Shared.Models;
 using Microsoft.AspNetCore.Authorization;
@@ -20,7 +21,7 @@ public sealed class StudentController : ControllerBase
     }
 
     [HttpGet]
-    [RequireFeature(StaffFeatureFlags.ViewStudentRecords)]
+    [RequireCapability(Capabilities.Student.Read)]
     public async Task<ActionResult<ServiceResponses<StudentListResponse>>> List(
         [FromQuery] Guid? classId, [FromQuery] string? status,
         [FromQuery] int page = 1, [FromQuery] int limit = 20, CancellationToken cancellationToken = default)
@@ -30,7 +31,7 @@ public sealed class StudentController : ControllerBase
     }
 
     [HttpGet("{id:guid}")]
-    [RequireFeature(StaffFeatureFlags.ViewStudentRecords)]
+    [RequireCapability(Capabilities.Student.Read)]
     public async Task<ActionResult<ServiceResponses<StudentResponse>>> Get(Guid id, CancellationToken cancellationToken)
     {
         StudentResponse student = await _service.GetAsync(id, cancellationToken);
@@ -38,7 +39,7 @@ public sealed class StudentController : ControllerBase
     }
 
     [HttpPost]
-    [RequireFeature(StaffFeatureFlags.ManageAdmissions)]
+    [RequireCapability(Capabilities.Admissions.Manage)]
     public async Task<ActionResult<ServiceResponses<StudentResponse>>> Create(
         [FromBody] CreateStudentRequest request, CancellationToken cancellationToken)
     {
@@ -48,7 +49,7 @@ public sealed class StudentController : ControllerBase
 
     /// <summary>Search for an existing guardian by phone while admitting a student (link vs create).</summary>
     [HttpGet("parent-lookup")]
-    [RequireFeature(StaffFeatureFlags.ManageAdmissions)]
+    [RequireCapability(Capabilities.Admissions.Manage)]
     public async Task<ActionResult<ServiceResponses<ParentLookupResponse>>> LookupParent(
         [FromQuery] string phone, CancellationToken cancellationToken)
     {
@@ -60,7 +61,7 @@ public sealed class StudentController : ControllerBase
     }
 
     [HttpPut("{id:guid}/contact")]
-    [RequireFeature(StaffFeatureFlags.ManageAdmissions)]
+    [RequireCapability(Capabilities.Admissions.Manage)]
     public async Task<ActionResult<ServiceResponses<string?>>> UpdateContact(Guid id,
         [FromBody] UpdateGuardiansRequest request, CancellationToken cancellationToken)
     {
@@ -69,7 +70,7 @@ public sealed class StudentController : ControllerBase
     }
 
     [HttpPost("{id:guid}/withdraw")]
-    [RequireFeature(StaffFeatureFlags.ManageAdmissions)]
+    [RequireCapability(Capabilities.Admissions.Manage)]
     public async Task<ActionResult<ServiceResponses<string?>>> Withdraw(Guid id, CancellationToken cancellationToken)
     {
         await _service.WithdrawAsync(id, cancellationToken);
@@ -77,7 +78,7 @@ public sealed class StudentController : ControllerBase
     }
 
     [HttpPost("{id:guid}/re-admit")]
-    [RequireFeature(StaffFeatureFlags.ManageAdmissions)]
+    [RequireCapability(Capabilities.Admissions.Manage)]
     public async Task<ActionResult<ServiceResponses<string?>>> ReAdmit(Guid id, CancellationToken cancellationToken)
     {
         await _service.ReAdmitAsync(id, cancellationToken);
@@ -86,7 +87,7 @@ public sealed class StudentController : ControllerBase
 
     /// <summary>Undo the student's most recent lifecycle action (withdraw / re-admit / transfer).</summary>
     [HttpPost("{id:guid}/undo-last")]
-    [RequireFeature(StaffFeatureFlags.ManageAdmissions)]
+    [RequireCapability(Capabilities.Admissions.Manage)]
     public async Task<ActionResult<ServiceResponses<string?>>> UndoLast(Guid id, CancellationToken cancellationToken)
     {
         string summary = await _service.UndoLastAsync(id, cancellationToken);
@@ -94,7 +95,7 @@ public sealed class StudentController : ControllerBase
     }
 
     [HttpPost("{id:guid}/transfer")]
-    [RequireFeature(StaffFeatureFlags.ManageAdmissions)]
+    [RequireCapability(Capabilities.Admissions.Manage)]
     public async Task<ActionResult<ServiceResponses<string?>>> Transfer(Guid id,
         [FromBody] TransferStudentRequest request, CancellationToken cancellationToken)
     {
@@ -104,7 +105,7 @@ public sealed class StudentController : ControllerBase
 
     /// <summary>End-of-session promotion: advance/repeat/graduate a set of students into a target session.</summary>
     [HttpPost("promote")]
-    [RequireFeature(StaffFeatureFlags.ManageAdmissions)]
+    [RequireCapability(Capabilities.Admissions.Manage)]
     public async Task<ActionResult<ServiceResponses<PromotionResultResponse>>> Promote(
         [FromBody] PromoteStudentsRequest request, CancellationToken cancellationToken)
     {

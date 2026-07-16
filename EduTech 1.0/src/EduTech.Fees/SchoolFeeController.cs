@@ -1,4 +1,5 @@
 using EduTech.Shared.Auth;
+using EduTech.Shared.Authorization;
 using EduTech.Shared.Constants;
 using EduTech.Shared.Models;
 using Microsoft.AspNetCore.Authorization;
@@ -20,7 +21,7 @@ public sealed class SchoolFeeController : ControllerBase
     }
 
     [HttpPost("fee-types")]
-    [RequireFeature(StaffFeatureFlags.ManageFees)]
+    [RequireCapability(Capabilities.Fees.Manage)]
     public async Task<ActionResult<ServiceResponses<FeeTypeResponse>>> CreateFeeType(
         [FromBody] CreateFeeTypeRequest request, CancellationToken cancellationToken)
     {
@@ -29,7 +30,7 @@ public sealed class SchoolFeeController : ControllerBase
     }
 
     [HttpGet("fee-types")]
-    [RequireFeature(StaffFeatureFlags.ViewInvoices)]
+    [RequireCapability(Capabilities.Fees.Invoice.View)]
     public async Task<ActionResult<ServiceResponses<IReadOnlyList<FeeTypeResponse>>>> ListFeeTypes(
         [FromQuery] Guid? termId, [FromQuery] string? status, [FromQuery] string? category,
         CancellationToken cancellationToken)
@@ -40,7 +41,7 @@ public sealed class SchoolFeeController : ControllerBase
 
     /// <summary>Owner-only: approve a pending fee type (makes it visible to parents).</summary>
     [HttpPost("fee-types/{feeTypeId:guid}/approve")]
-    [RequireFeature(StaffFeatureFlags.ManageFees)]
+    [RequireCapability(Capabilities.Fees.Manage)]
     public async Task<ActionResult<ServiceResponses<FeeTypeResponse>>> ApproveFeeType(
         Guid feeTypeId, CancellationToken cancellationToken)
     {
@@ -49,7 +50,7 @@ public sealed class SchoolFeeController : ControllerBase
     }
 
     [HttpPost("fee-types/{feeTypeId:guid}/reject")]
-    [RequireFeature(StaffFeatureFlags.ManageFees)]
+    [RequireCapability(Capabilities.Fees.Manage)]
     public async Task<ActionResult<ServiceResponses<FeeTypeResponse>>> RejectFeeType(
         Guid feeTypeId, [FromBody] RejectFeeTypeRequest request, CancellationToken cancellationToken)
     {
@@ -58,7 +59,7 @@ public sealed class SchoolFeeController : ControllerBase
     }
 
     [HttpPut("fee-types/{feeTypeId:guid}")]
-    [RequireFeature(StaffFeatureFlags.ManageFees)]
+    [RequireCapability(Capabilities.Fees.Manage)]
     public async Task<ActionResult<ServiceResponses<FeeTypeResponse>>> UpdateFeeType(
         Guid feeTypeId, [FromBody] UpdateFeeTypeRequest request, CancellationToken cancellationToken)
     {
@@ -68,7 +69,7 @@ public sealed class SchoolFeeController : ControllerBase
 
     /// <summary>Hard-deletes a never-used fee type; archives one that has already billed students.</summary>
     [HttpDelete("fee-types/{feeTypeId:guid}")]
-    [RequireFeature(StaffFeatureFlags.ManageFees)]
+    [RequireCapability(Capabilities.Fees.Manage)]
     public async Task<ActionResult<ServiceResponses<object>>> DeleteFeeType(
         Guid feeTypeId, CancellationToken cancellationToken)
     {
@@ -79,7 +80,7 @@ public sealed class SchoolFeeController : ControllerBase
 
     /// <summary>Payment-based collections for a term: per fee type expected vs collected + totals.</summary>
     [HttpGet("fees/collections")]
-    [RequireFeature(StaffFeatureFlags.ViewInvoices)]
+    [RequireCapability(Capabilities.Fees.Invoice.View)]
     public async Task<ActionResult<ServiceResponses<BursarCollectionsResponse>>> Collections(
         [FromQuery] Guid termId, CancellationToken cancellationToken)
     {

@@ -6,10 +6,12 @@ using Microsoft.AspNetCore.Mvc.Filters;
 namespace EduTech.Shared.Auth;
 
 /// <summary>
-/// Gates an endpoint on one of the 13 staff feature flags.
-/// School owners (isOwner = true) bypass this check entirely.
-/// Only valid for staff-portal endpoints (user_type = "staff" | "school").
+/// LEGACY (EDD-006) — use <see cref="RequireCapabilityAttribute"/> instead. Gates an endpoint on
+/// one of the 13 staff feature flags. School owners (isOwner = true) bypass this check entirely.
+/// Only valid for staff-portal endpoints (user_type = "staff" | "school"). Retained as a
+/// compatibility shim during the capabilities migration; no new endpoint should use it.
 /// </summary>
+[Obsolete("Authorization is expressed as capabilities (EDD-006). Use [RequireCapability] with a Capabilities.* key.")]
 [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method)]
 public class RequireFeatureAttribute : Attribute, IAuthorizationFilter
 {

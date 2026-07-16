@@ -1,4 +1,5 @@
 using EduTech.Shared.Auth;
+using EduTech.Shared.Authorization;
 using EduTech.Shared.Constants;
 using EduTech.Shared.Models;
 using Microsoft.AspNetCore.Authorization;
@@ -23,7 +24,7 @@ public sealed class ReportCardController : ControllerBase
 
     /// <summary>Report-card list for an arm + term (name, overall average, status).</summary>
     [HttpGet("api/v1/report-cards")]
-    [RequireFeature(StaffFeatureFlags.ViewStudentRecords)]
+    [RequireCapability(Capabilities.Student.Read)]
     public async Task<ActionResult<ServiceResponses<IReadOnlyList<ReportSummaryResponse>>>> List(
         [FromQuery] Guid armId, [FromQuery] Guid termId, CancellationToken cancellationToken)
     {
@@ -33,7 +34,7 @@ public sealed class ReportCardController : ControllerBase
 
     /// <summary>The full computed report card for a student + term.</summary>
     [HttpGet("api/v1/report-cards/{studentId:guid}")]
-    [RequireFeature(StaffFeatureFlags.ViewStudentRecords)]
+    [RequireCapability(Capabilities.Student.Read)]
     public async Task<ActionResult<ServiceResponses<ReportCardResponse>>> Get(
         Guid studentId, [FromQuery] Guid termId, CancellationToken cancellationToken)
     {
@@ -43,7 +44,7 @@ public sealed class ReportCardController : ControllerBase
 
     /// <summary>Save a report's comments, behavioral ratings and resumption date (draft only).</summary>
     [HttpPut("api/v1/report-cards/{studentId:guid}")]
-    [RequireFeature(StaffFeatureFlags.EnterGrades)]
+    [RequireCapability(Capabilities.Grades.Enter)]
     public async Task<ActionResult<ServiceResponses<string?>>> SaveMeta(
         Guid studentId, [FromQuery] Guid termId, [FromBody] SaveReportMetaRequest request,
         CancellationToken cancellationToken)

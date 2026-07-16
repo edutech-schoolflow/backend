@@ -1,4 +1,5 @@
 using EduTech.Shared.Auth;
+using EduTech.Shared.Authorization;
 using EduTech.Shared.Constants;
 using EduTech.Shared.Models;
 using Microsoft.AspNetCore.Authorization;
@@ -31,7 +32,7 @@ public sealed class StaffProfileController : ControllerBase
 
     /// <summary>Every active staff member with their EFFECTIVE features (the permissions matrix).</summary>
     [HttpGet("api/v1/school/staff/permissions")]
-    [RequireFeature(StaffFeatureFlags.ManagePermissions)]
+    [RequireCapability(Capabilities.Permissions.Manage)]
     public async Task<ActionResult<ServiceResponses<IReadOnlyList<StaffWithPermissionsResponse>>>> Permissions(
         CancellationToken cancellationToken)
     {

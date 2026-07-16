@@ -1,8 +1,11 @@
 namespace EduTech.Shared.Constants;
 
 /// <summary>
-/// The 13 boolean feature flags that control staff access.
-/// These are embedded as claims in the JWT and checked by RequireFeatureAttribute.
+/// LEGACY (EDD-006). The 13 boolean feature flags that control staff access, embedded as JWT
+/// claims. The canonical authorization vocabulary is now <c>EduTech.Shared.Authorization.Capabilities</c>;
+/// each flag here is the migration-time projection target of exactly one capability (see
+/// <c>CapabilityRegistry</c>). These flags remain the token contract until the JWT is slimmed
+/// (Sprint C). Do not add new flags — express new authorization as capabilities.
 /// </summary>
 public static class StaffFeatureFlags
 {

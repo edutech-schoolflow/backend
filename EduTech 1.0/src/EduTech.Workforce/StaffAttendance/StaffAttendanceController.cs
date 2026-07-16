@@ -1,4 +1,5 @@
 using EduTech.Shared.Auth;
+using EduTech.Shared.Authorization;
 using EduTech.Shared.Constants;
 using EduTech.Shared.Models;
 using Microsoft.AspNetCore.Authorization;
@@ -66,7 +67,7 @@ public sealed class StaffAttendanceController : ControllerBase
 
     /// <summary>The day's board: every check-in for the school (missing staff read as absent).</summary>
     [HttpGet]
-    [RequireFeature(StaffFeatureFlags.ViewStaffAttendanceBoard)]
+    [RequireCapability(Capabilities.StaffAttendance.ViewBoard)]
     public async Task<ActionResult<ServiceResponses<IReadOnlyList<StaffCheckInResponse>>>> ForDate(
         [FromQuery] DateOnly? date, CancellationToken cancellationToken)
     {

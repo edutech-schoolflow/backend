@@ -1,4 +1,5 @@
 using EduTech.Shared.Auth;
+using EduTech.Shared.Authorization;
 using EduTech.Shared.Constants;
 using EduTech.Shared.Models;
 using Microsoft.AspNetCore.Authorization;
@@ -23,7 +24,7 @@ public sealed class GradeController : ControllerBase
 
     /// <summary>Arms the caller may enter grades for (class-teacher arms + subject-teacher arms).</summary>
     [HttpGet("api/v1/grades/arms")]
-    [RequireFeature(StaffFeatureFlags.EnterGrades)]
+    [RequireCapability(Capabilities.Grades.Enter)]
     public async Task<ActionResult<ServiceResponses<IReadOnlyList<GradeableArmResponse>>>> Arms(
         CancellationToken cancellationToken)
     {
@@ -33,7 +34,7 @@ public sealed class GradeController : ControllerBase
 
     /// <summary>The score grid for (arm, subject, term, assessment), pre-filled with existing scores.</summary>
     [HttpGet("api/v1/grades/record")]
-    [RequireFeature(StaffFeatureFlags.EnterGrades)]
+    [RequireCapability(Capabilities.Grades.Enter)]
     public async Task<ActionResult<ServiceResponses<GradeRecordResponse>>> Record(
         [FromQuery] Guid armId, [FromQuery] Guid subjectId, [FromQuery] Guid termId,
         [FromQuery] string? assessmentType, CancellationToken cancellationToken)
@@ -47,7 +48,7 @@ public sealed class GradeController : ControllerBase
 
     /// <summary>Submit (or re-submit, replacing) the scores for an assessment column.</summary>
     [HttpPost("api/v1/grades")]
-    [RequireFeature(StaffFeatureFlags.EnterGrades)]
+    [RequireCapability(Capabilities.Grades.Enter)]
     [RequiresCurrentTerm]
     public async Task<ActionResult<ServiceResponses<GradeRecordSummaryResponse>>> Submit(
         [FromBody] SubmitGradesRequest request, CancellationToken cancellationToken)
@@ -58,7 +59,7 @@ public sealed class GradeController : ControllerBase
 
     /// <summary>Publish one record (draft → published, visible to parents).</summary>
     [HttpPost("api/v1/grades/{recordId:guid}/publish")]
-    [RequireFeature(StaffFeatureFlags.EnterGrades)]
+    [RequireCapability(Capabilities.Grades.Enter)]
     public async Task<ActionResult<ServiceResponses<string?>>> Publish(Guid recordId, CancellationToken cancellationToken)
     {
         await _service.PublishAsync(recordId, cancellationToken);
@@ -80,7 +81,7 @@ public sealed class GradeController : ControllerBase
 
     /// <summary>School-wide grades board for a term (per-record averages + pass/fail).</summary>
     [HttpGet("api/v1/grades/overview")]
-    [RequireFeature(StaffFeatureFlags.EnterGrades)]
+    [RequireCapability(Capabilities.Grades.Enter)]
     public async Task<ActionResult<ServiceResponses<GradesOverviewResponse>>> Overview(
         [FromQuery] Guid termId, CancellationToken cancellationToken)
     {

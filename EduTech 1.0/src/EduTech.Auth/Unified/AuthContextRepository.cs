@@ -353,6 +353,14 @@ internal sealed class AuthContextRepository : BaseRepository, IAuthContextReposi
             FROM school_owners o
             WHERE o.id = @OwnerId AND o.identity_id IS NOT NULL AND o.is_active = TRUE
             ON CONFLICT (type, reference_id, organization_id) DO UPDATE SET status = 'active', updated_at = NOW();
+
+            -- Canonical belonging edge (EDD-007): the owner IS an 'owner' membership. Mirrors the
+            -- parent membership write; keeps `memberships` complete for new owners after 0045's backfill.
+            INSERT INTO memberships (identity_id, school_id, kind)
+            SELECT o.identity_id, o.school_id, 'owner'
+            FROM school_owners o
+            WHERE o.id = @OwnerId AND o.identity_id IS NOT NULL AND o.is_active = TRUE
+            ON CONFLICT (identity_id, school_id, kind) DO UPDATE SET status = 'active', ended_at = NULL;
             """,
             new { OwnerId = ownerId }, cancellationToken);
     }
@@ -418,6 +426,14 @@ internal sealed class AuthContextRepository : BaseRepository, IAuthContextReposi
             FROM staff_affiliations a
             WHERE a.id = @AffiliationId AND a.identity_id IS NOT NULL AND a.status = 'active'
             ON CONFLICT (type, reference_id, organization_id) DO UPDATE SET status = 'active', updated_at = NOW();
+
+            -- Canonical belonging edge (EDD-007): an active affiliation IS a 'staff' membership.
+            -- Mirrors the parent write; keeps `memberships` complete for new staff after 0045's backfill.
+            INSERT INTO memberships (identity_id, school_id, kind)
+            SELECT a.identity_id, a.school_id, 'staff'
+            FROM staff_affiliations a
+            WHERE a.id = @AffiliationId AND a.identity_id IS NOT NULL AND a.status = 'active'
+            ON CONFLICT (identity_id, school_id, kind) DO UPDATE SET status = 'active', ended_at = NULL;
             """,
             new { StaffUserId = staffUserId, AffiliationId = affiliationId }, cancellationToken);
 

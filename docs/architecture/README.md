@@ -29,7 +29,10 @@ built **foundation-first** via a strangler migration off the legacy actor tables
 | — | Access Context — the login-read **projection** of Membership/Employment (regenerable) | (B2) |
 
 ### Platform Domain — *cross-cutting services* (school-agnostic)
-Events / Event Catalog · Notifications · Documents · Search · Audit.
+| EDD | Concern | Status |
+| --- | --- | --- |
+| EDD-011 | Event Catalog — the canonical messaging contract (`AggregatePastTense`, per-event contract) | ✅ |
+| — | Notifications · Documents · Search · Audit | (Audit live; rest planned) |
 
 ## The Sacred Six (frozen platform tables)
 
@@ -41,8 +44,11 @@ projection, regenerable from Membership/Employment/Guardian, never canonical sta
 
 ```
 Membership (B1) ✅ → Position (C1) ✅ → Employment (C2) ✅ → Organization (D) ✅ →
-Event Catalog → Authentication Finalization (B2: access_contexts projection + slim JWT +
-capability resolver)
+Event Catalog ✅ → Authentication Finalization (B2: access_contexts projection + slim JWT +
+capability resolver) → business modules
+
+Rule: no authentication rewrites while the foundation is still changing — B2 comes only after the
+foundation (incl. the Event Catalog) is fixed.
 ```
 
 Then domain modules — Admissions first — are built on the frozen platform.

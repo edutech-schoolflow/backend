@@ -170,7 +170,7 @@ internal sealed class StaffInviteAcceptService : IStaffInviteAcceptService
         // driven through the People context (resolves the membership + position from the affiliation).
         await _employments.EnsureFromAffiliationAsync(affiliation.Id, cancellationToken);
 
-        await _events.PublishAsync(new EmploymentStartedEvent(affiliation.Id, affiliation.SchoolId,
+        await _events.PublishAsync(new EmploymentActivated(affiliation.Id, affiliation.SchoolId,
             staffUserId, affiliation.Role, link.Name), cancellationToken);
 
         return await IssueTokensAsync(staffUserId, state.Phone, state.KycStatus, ipAddress, userAgent,

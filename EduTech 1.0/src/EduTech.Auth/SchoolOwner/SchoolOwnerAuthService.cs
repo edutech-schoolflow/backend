@@ -34,6 +34,7 @@ internal sealed class SchoolOwnerAuthService : ISchoolOwnerAuthService
     private readonly IAuthContextRepository _identityLinks;
     private readonly IMembershipRepository _memberships;
     private readonly IEmploymentRepository _employments;
+    private readonly IAccessContextProjector _projector;
     private readonly IOtpService _otpService;
     private readonly INotificationDispatcher _notifications;
     private readonly IAccessTokenIssuer _accessTokenIssuer;
@@ -51,7 +52,8 @@ internal sealed class SchoolOwnerAuthService : ISchoolOwnerAuthService
         IRefreshTokenService refreshTokenService,
         IAuthContextRepository identityLinks,
         IMembershipRepository memberships,
-        IEmploymentRepository employments)
+        IEmploymentRepository employments,
+        IAccessContextProjector projector)
     {
         _requestContext = requestContext;
         _connectionFactory = connectionFactory;
@@ -65,6 +67,7 @@ internal sealed class SchoolOwnerAuthService : ISchoolOwnerAuthService
         _identityLinks = identityLinks;
         _memberships = memberships;
         _employments = employments;
+        _projector = projector;
     }
 
     /// <summary>
@@ -78,9 +81,14 @@ internal sealed class SchoolOwnerAuthService : ISchoolOwnerAuthService
         if (link.IdentityId is Guid identityId)
         {
             await _memberships.EnsureActiveAsync(identityId, link.SchoolId, MembershipKind.Owner, cancellationToken);
+            await _employments.EnsureFromOwnerAsync(ownerId, cancellationToken);
+            // Project the owner access_context from the canonical edge just written (EDD-012 B2a).
+            await _projector.ProjectForIdentityAsync(identityId, cancellationToken);
         }
-
-        await _employments.EnsureFromOwnerAsync(ownerId, cancellationToken);
+        else
+        {
+            await _employments.EnsureFromOwnerAsync(ownerId, cancellationToken);
+        }
     }
 
     public async Task RegisterAsync(RegisterSchoolOwnerRequest request, CancellationToken cancellationToken)

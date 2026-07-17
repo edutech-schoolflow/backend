@@ -22,9 +22,6 @@ internal interface IAuthContextRepository
     /// <summary>Links a (possibly pre-existing) parent profile to its identity; no-op if already linked.</summary>
     Task LinkParentAsync(Guid parentId, Guid identityId, CancellationToken cancellationToken);
 
-    /// <summary>Records that this identity belongs to the school as a parent; idempotent.</summary>
-    Task EnsureParentMembershipAsync(Guid identityId, Guid schoolId, CancellationToken cancellationToken);
-
     /// <summary>Per-context last activity (latest refresh-token issue for its actor) — SELECT-only.
     /// Entering a workspace mints a refresh token, so issuance time IS the "last entered" signal.</summary>
     Task<IReadOnlyList<ContextRecencyRow>> ListContextRecencyAsync(Guid identityId, CancellationToken cancellationToken);
@@ -357,14 +354,10 @@ internal sealed class AuthContextRepository : BaseRepository, IAuthContextReposi
             UPDATE school_owners o SET position_id = p.id
             FROM positions p
             WHERE o.id = @OwnerId AND o.position_id IS NULL AND p.school_id IS NULL AND p.slug = 'owner';
-
-            INSERT INTO access_contexts (identity_id, type, reference_id, organization_id)
-            SELECT o.identity_id, 'owner', o.id, o.school_id
-            FROM school_owners o
-            WHERE o.id = @OwnerId AND o.identity_id IS NOT NULL AND o.is_active = TRUE
-            ON CONFLICT (type, reference_id, organization_id) DO UPDATE SET status = 'active', updated_at = NOW();
             """,
             new { OwnerId = ownerId }, cancellationToken);
+        // The owner access_context is projected by AccessContextProjector (EDD-012 B2a); this method
+        // now only keeps the identity link + position.
 
         return await QuerySingleOrDefaultAsync<OwnerIdentityLink>(
             "SELECT identity_id AS IdentityId, school_id AS SchoolId FROM school_owners WHERE id = @OwnerId",
@@ -427,16 +420,11 @@ internal sealed class AuthContextRepository : BaseRepository, IAuthContextReposi
             FROM positions p
             WHERE a.id = @AffiliationId AND a.position_id IS NULL
               AND p.school_id IS NULL AND p.slug = a.role;
-
-            INSERT INTO access_contexts (identity_id, type, reference_id, organization_id)
-            SELECT a.identity_id, 'staff', a.id, a.school_id
-            FROM staff_affiliations a
-            WHERE a.id = @AffiliationId AND a.identity_id IS NOT NULL AND a.status = 'active'
-            ON CONFLICT (type, reference_id, organization_id) DO UPDATE SET status = 'active', updated_at = NOW();
             """,
             new { StaffUserId = staffUserId, AffiliationId = affiliationId }, cancellationToken);
 
-        // The 'staff' membership is now driven by the caller via the Membership context (EDD-007).
+        // The 'staff' membership (EDD-007) and the access_context (EDD-012 B2a) are both driven by the
+        // caller — via the Membership context and the AccessContextProjector. This keeps only the link.
         StaffIdentityLink? link = await QuerySingleOrDefaultAsync<StaffIdentityLink>(
             "SELECT identity_id AS IdentityId, concat_ws(' ', first_name, last_name) AS Name FROM staff_users WHERE id = @Id",
             new { Id = staffUserId }, cancellationToken);
@@ -456,19 +444,4 @@ internal sealed class AuthContextRepository : BaseRepository, IAuthContextReposi
             new { Id = identityId }, cancellationToken);
     }
 
-    public Task EnsureParentMembershipAsync(Guid identityId, Guid schoolId, CancellationToken cancellationToken)
-    {
-        // The parent's org-scoped AccessContext (EDD-002 revision): one context per school,
-        // reference_id = parent_id, so login lists it like a staff context. The 'parent' membership
-        // itself is now driven by the caller via the Membership context (EDD-007).
-        return ExecuteAsync(
-            """
-            INSERT INTO access_contexts (identity_id, type, reference_id, organization_id)
-            SELECT @IdentityId, 'parent', p.id, @SchoolId
-            FROM parents p
-            WHERE p.identity_id = @IdentityId AND p.is_active = TRUE
-            ON CONFLICT (type, reference_id, organization_id) DO UPDATE SET status = 'active', updated_at = NOW();
-            """,
-            new { IdentityId = identityId, SchoolId = schoolId }, cancellationToken);
-    }
 }

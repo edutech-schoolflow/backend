@@ -53,6 +53,7 @@ internal sealed class StaffInviteAcceptService : IStaffInviteAcceptService
     private readonly IAuthContextRepository _identityLinks;
     private readonly IMembershipRepository _memberships;
     private readonly IEmploymentRepository _employments;
+    private readonly IAccessContextProjector _projector;
     private readonly IDomainEventPublisher _events;
 
     public StaffInviteAcceptService(
@@ -158,17 +159,16 @@ internal sealed class StaffInviteAcceptService : IStaffInviteAcceptService
         StaffIdentityLink link = await _identityLinks.EnsureStaffIdentityLinksAsync(staffUserId, affiliation.Id,
             cancellationToken);
 
-        // Canonical belonging edge (EDD-007): the active affiliation IS a 'staff' membership. Driven
-        // here through the Membership context — Auth no longer writes memberships itself.
+        // Canonical belonging edge (EDD-007) + working relationship (EDD-009): the active affiliation
+        // IS a 'staff' membership + employment, driven through the Membership/People contexts.
+        await _employments.EnsureFromAffiliationAsync(affiliation.Id, cancellationToken);
         if (link.IdentityId is Guid identityId)
         {
             await _memberships.EnsureActiveAsync(identityId, affiliation.SchoolId, MembershipKind.Staff,
                 cancellationToken);
+            // Project the staff access_context from the canonical edges just written (EDD-012 B2a).
+            await _projector.ProjectForIdentityAsync(identityId, cancellationToken);
         }
-
-        // Canonical working relationship (EDD-009): the active affiliation IS a 'staff' employment,
-        // driven through the People context (resolves the membership + position from the affiliation).
-        await _employments.EnsureFromAffiliationAsync(affiliation.Id, cancellationToken);
 
         await _events.PublishAsync(new EmploymentActivated(affiliation.Id, affiliation.SchoolId,
             staffUserId, affiliation.Role, link.Name), cancellationToken);

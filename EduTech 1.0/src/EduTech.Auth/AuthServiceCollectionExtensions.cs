@@ -51,6 +51,7 @@ public static class AuthServiceCollectionExtensions
 
         // EDD-001 Sprint 2 — unified identity auth (one register/login; contexts pick the portal).
         services.AddScoped<Unified.IAuthContextRepository, Unified.AuthContextRepository>();
+        services.AddScoped<Unified.IAccessContextProjector, Unified.AccessContextProjector>();
         services.AddScoped<Unified.IUnifiedAuthService, Unified.UnifiedAuthService>();
         services.AddScoped<Parent.IParentProfileService, Parent.ParentProfileService>();
         services.AddScoped<EduTech.Shared.Events.IDomainEventHandler<EduTech.Shared.Events.GuardianLinkedEvent>,

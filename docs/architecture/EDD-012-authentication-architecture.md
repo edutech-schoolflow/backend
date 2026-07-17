@@ -5,6 +5,11 @@
 **Thesis:** Authentication owns nothing. It **projects** the platform:
 `Identity → Membership → Employment → Organization → Access Context → JWT`.
 
+> **The contract for the entire authentication system:** `access_contexts` is **not** a domain model.
+> It is a **disposable projection** built entirely from canonical aggregates (Identity, Membership,
+> Employment, Organization). It may be **deleted and rebuilt at any time without loss of business
+> data.** If that is ever untrue, the projection is wrong — not the aggregates.
+
 This is the definitive spec for the login pipeline. It documents the pipeline as it **is** today and
 the **target** it converges to across B2a–B2d, so that afterwards Authentication is as stable as
 Identity itself.
@@ -149,8 +154,16 @@ projections derived from them, but **never** legacy actor tables. When no login 
 ## 9. The B2 sprints (each isolated; foundation is frozen)
 
 - **B2a — Access Context Projection.** `access_contexts` is rebuilt as a projection of
-  Membership/Employment/Organization instead of the silos. JWT and frontend **unchanged**. Prove the
-  projection is fully **rebuildable** from canonical data (drop → rebuild → identical).
+  Membership/Employment/Organization instead of the silos, via a single `AccessContextProjector`. JWT
+  and frontend **unchanged**. Proven **rebuildable** (drop → rebuild → byte-identical).
+  **Projection invariants:**
+  1. `DELETE FROM access_contexts` loses no business data.
+  2. Idempotent — running the projection twice yields identical rows.
+  3. Order-independent — owner/staff/parent in any order → identical result (set-based SQL).
+  4. No business rules in the projector — they live in Membership/Employment/Organization.
+  5. Runs synchronously / after a lifecycle change / nightly — same output.
+  *Existence, status, and organization come only from canonical aggregates; the legacy actor table is
+  dereferenced solely to fill `reference_id` (the login-compat pointer), which B2c removes.*
 - **B2b — Capability Resolver.** Introduce the server-side resolver (`context → position → template →
   capabilities`); `[RequireCapability]` consults it. Flags still in the token for now (removed next).
 - **B2c — JWT Slimming.** Token becomes `identity_id · membership_id · context_id · organization_id ·

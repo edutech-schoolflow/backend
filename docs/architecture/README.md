@@ -41,15 +41,37 @@ built **foundation-first** via a strangler migration off the legacy actor tables
 `permission_templates`. **`access_contexts` is deliberately *not* here** — it is a disposable
 projection, regenerable from Membership/Employment/Guardian, never canonical state.
 
-## Sprint sequence
+## What SchoolFlow is
+
+An **identity-centric education platform**, not a school-management system. Identity, Organizations,
+Memberships, and Capabilities are the *operating system*; a `school` is just one `OrganizationType`.
+Admissions, Students, Finance, Workforce, Learning, … are **applications** running on top. Modules
+never leak platform concerns back into the foundation.
+
+## Governing rules
+
+- **Foundation freeze (until v2):** no new foundational aggregate and no structural rewrite of
+  Identity / Membership / Employment / Organization / Position / Authentication. Bug fixes and
+  refinements: yes. Redesigns: no. The foundation is done.
+- **No authentication rewrites while the foundation is still changing** (satisfied — foundation is complete).
+- **Authentication must never resolve permissions** (EDD-012): auth ends at *issue token → context_id*;
+  everything after is Authorization.
+- **Platform-maturity test (the real next milestone):** *can a brand-new module be built without
+  modifying Identity, Membership, Employment, Organization, or Authentication?* When yes, the platform
+  is mature.
+
+## Roadmap
 
 ```
-Membership (B1) ✅ → Position (C1) ✅ → Employment (C2) ✅ → Organization (D) ✅ →
-Event Catalog ✅ → Authentication Finalization (B2: access_contexts projection + slim JWT +
-capability resolver) → business modules
-
-Rule: no authentication rewrites while the foundation is still changing — B2 comes only after the
-foundation (incl. the Event Catalog) is fixed.
+Platform Foundation ✅  (Identity · Membership · Position · Employment · Organization · Event Catalog)
+        ↓
+Platform Integration    B2a ✅ Access Context projection · B2b Capability Resolver · B2c JWT slim · B2d legacy retirement
+        ↓
+Core Product Modules    Admissions → Students → Academics → Finance → Workforce → …   (vertical slices:
+        ↓                Domain · Repository · Events · API · Frontend · Tests — no foundation changes)
+Platform Services · Marketplace / Ecosystem
 ```
 
-Then domain modules — Admissions first — are built on the frozen platform.
+**Sequencing note:** after **B2b**, build **Admissions** on the new platform *before* B2c — it validates
+the abstractions and surfaces missing seams while the legacy compat layer is still present, turning B2c
+into low-risk cleanup rather than a leap of faith.

@@ -85,12 +85,19 @@ the staff JWT. Owners bypass (`isOwner`). `[RequireCapability]`/`[RequireFeature
 (EDD-006 Sprint A moved the *language* to capabilities while keeping the flag bridge).
 
 ### Target — B2b
-A server-side `CapabilityResolver`, keyed on the request's `context_id`:
+A server-side `CapabilityResolver`, keyed on the request's `context_id`, **completely actor-neutral**:
 ```
-context → employment → position → permission template → capabilities
+context_id → Access Context → Membership → Employment → Position → Permission Template → Capabilities
 ```
-with a per-request cache. `[RequireCapability]` asks the resolver, not the token. The 13 flag claims
-disappear from the JWT (B2c). Owner-bypass becomes a capability set on the owner position.
+with a per-request cache. `[RequireCapability]` asks the resolver, not the token. The resolver knows
+**nothing** about Staff / Owner / Parent / Teacher / Bursar / Principal — those are emergent from
+Position + Membership, never branched on. The 13 flag claims disappear from the JWT (B2c). Owner-bypass
+becomes a capability set on the owner Position.
+
+> **Boundary invariant: Authentication must never resolve permissions.** Authentication ends at
+> *issue token → context_id*. Everything after that — turning `context_id` into capabilities — is
+> Authorization. No capability, feature flag, or permission is ever written into the token or resolved
+> by the auth layer. This prevents the slow rot of "let's just put this permission in the token."
 
 ---
 
@@ -164,8 +171,10 @@ projections derived from them, but **never** legacy actor tables. When no login 
   5. Runs synchronously / after a lifecycle change / nightly — same output.
   *Existence, status, and organization come only from canonical aggregates; the legacy actor table is
   dereferenced solely to fill `reference_id` (the login-compat pointer), which B2c removes.*
-- **B2b — Capability Resolver.** Introduce the server-side resolver (`context → position → template →
-  capabilities`); `[RequireCapability]` consults it. Flags still in the token for now (removed next).
+- **B2b — Capability Resolver.** Introduce the server-side, **actor-neutral** resolver
+  (`context → membership → employment → position → template → capabilities`); `[RequireCapability]`
+  consults it. Authentication is untouched (auth never resolves permissions — see §4). Flags still in
+  the token for now (removed in B2c).
 - **B2c — JWT Slimming.** Token becomes `identity_id · membership_id · context_id · organization_id ·
   role`; one signing key / `user_type`; refresh re-keyed on identity + context. Capabilities and
   legacy actor ids leave the token.

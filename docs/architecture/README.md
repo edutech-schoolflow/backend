@@ -27,7 +27,7 @@ built **foundation-first** via a strangler migration off the legacy actor tables
 | EDD-006 | Capabilities — `resource.action`, roles as capability sets | ✅ |
 | EDD-012 | Authentication Architecture — auth projects the platform; the B2 target spec | ✅ (spec) |
 | — | Permission Templates — position → capability sets | (partial) |
-| — | Access Context — the login-read **projection** of Membership/Employment (regenerable) | (B2a) |
+| — | Access Context — the login-read **projection** of Membership/Employment (regenerable) | ✅ (B2a) |
 
 ### Platform Domain — *cross-cutting services* (school-agnostic)
 | EDD | Concern | Status |

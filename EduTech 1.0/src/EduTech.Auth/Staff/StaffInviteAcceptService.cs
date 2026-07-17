@@ -69,6 +69,7 @@ internal sealed class StaffInviteAcceptService : IStaffInviteAcceptService
         IAuthContextRepository identityLinks,
         IMembershipRepository memberships,
         IEmploymentRepository employments,
+        IAccessContextProjector projector,
         IDomainEventPublisher events)
     {
         _connectionFactory = connectionFactory;
@@ -83,6 +84,7 @@ internal sealed class StaffInviteAcceptService : IStaffInviteAcceptService
         _identityLinks = identityLinks;
         _memberships = memberships;
         _employments = employments;
+        _projector = projector;
         _events = events;
 
     }

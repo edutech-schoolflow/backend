@@ -31,13 +31,14 @@ public class SchoolOwnerAuthServiceTests
     private readonly Mock<EduTech.Auth.Unified.IAuthContextRepository> _identityLinks = new();
     private readonly Mock<EduTech.Membership.IMembershipRepository> _memberships = new();
     private readonly Mock<EduTech.People.IEmploymentRepository> _employments = new();
+    private readonly Mock<EduTech.Auth.Unified.IAccessContextProjector> _projector = new();
 
     private SchoolOwnerAuthService CreateSut()
     {
         return new SchoolOwnerAuthService(
             _context.Object, _db.Object, _schools.Object, _owners.Object, _hasher.Object,
             _otp.Object, _sms.Object, _access.Object, _refresh.Object, _identityLinks.Object,
-            _memberships.Object, _employments.Object);
+            _memberships.Object, _employments.Object, _projector.Object);
     }
 
     private static SchoolOwnerLoginRow Owner(bool verified = true, bool active = true,

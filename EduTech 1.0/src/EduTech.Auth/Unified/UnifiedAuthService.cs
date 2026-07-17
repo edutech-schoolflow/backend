@@ -126,6 +126,7 @@ internal sealed class UnifiedAuthService : IUnifiedAuthService
     private readonly ISchoolOwnerRepository _owners;
     private readonly IMembershipRepository _memberships;
     private readonly IEmploymentRepository _employments;
+    private readonly IAccessContextProjector _projector;
     private readonly IDbConnectionFactory _connectionFactory;
 
     public UnifiedAuthService(
@@ -145,12 +146,14 @@ internal sealed class UnifiedAuthService : IUnifiedAuthService
         ISchoolOwnerRepository owners,
         IMembershipRepository memberships,
         IEmploymentRepository employments,
+        IAccessContextProjector projector,
         IDbConnectionFactory connectionFactory)
     {
         _schools = schools;
         _owners = owners;
         _memberships = memberships;
         _employments = employments;
+        _projector = projector;
         _connectionFactory = connectionFactory;
         _identities = identities;
         _contexts = contexts;
@@ -702,12 +705,14 @@ internal sealed class UnifiedAuthService : IUnifiedAuthService
 
         await _owners.MarkPhoneVerifiedAsync(ownerId, cancellationToken);
         OwnerIdentityLink ownerLink = await _contexts.EnsureOwnerIdentityLinksAsync(ownerId, cancellationToken);
+        await _employments.EnsureFromOwnerAsync(ownerId, cancellationToken);
         if (ownerLink.IdentityId is Guid ownerIdentityId)
         {
             await _memberships.EnsureActiveAsync(ownerIdentityId, ownerLink.SchoolId, MembershipKind.Owner,
                 cancellationToken);
+            // Project the owner access_context from the canonical edges just written (EDD-012 B2a).
+            await _projector.ProjectForIdentityAsync(ownerIdentityId, cancellationToken);
         }
-        await _employments.EnsureFromOwnerAsync(ownerId, cancellationToken);
 
         IReadOnlyList<AuthContextItem> contexts = await BuildContextsAsync(identityId, cancellationToken);
         AuthContextItem selected = contexts.First(c => c.Id == ownerId);

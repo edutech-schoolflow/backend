@@ -10,7 +10,8 @@ namespace EduTech.People;
 /// During the strangler transition the <c>EnsureFrom…</c> writes read the legacy silos
 /// (<c>staff_affiliations</c>, <c>school_owners</c>) to build the canonical employment — a scoped,
 /// one-row version of the 0046 backfill. That coupling is temporary and disappears when the silos
-/// retire. The table column is still <c>school_id</c>; it re-points to <c>organization_id</c> in Sprint D.
+/// retire. The table column is still <c>school_id</c>; the FK re-points to <c>organizations</c> in a
+/// later strangler sprint (after the EDD-010 root is stable).
 /// </summary>
 internal interface IEmploymentRepository
 {

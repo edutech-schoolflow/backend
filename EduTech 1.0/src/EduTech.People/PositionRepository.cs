@@ -15,8 +15,8 @@ public sealed class PositionResponse
 /// <summary>
 /// Reads the canonical <c>positions</c> catalog (EDD-008). Positions are reference data — platform
 /// global defaults (<c>school_id IS NULL</c>) plus an organization's own — so this derives from
-/// <see cref="BaseRepository"/>. The table column is still <c>school_id</c>; it re-points to
-/// <c>organization_id</c> in Sprint D.
+/// <see cref="BaseRepository"/>. The table column is still <c>school_id</c>; the FK re-points to
+/// <c>organizations</c> in a later strangler sprint (after the EDD-010 root is stable).
 /// </summary>
 public interface IPositionRepository
 {

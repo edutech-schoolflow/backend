@@ -12,7 +12,8 @@ namespace EduTech.Membership;
 ///
 /// Non-tenant: memberships are keyed by identity + organization and authorized by that ownership,
 /// so this derives from <see cref="BaseRepository"/> (like the identities store). The table column
-/// is still <c>school_id</c>; it re-points to <c>organization_id</c> in Sprint D.
+/// is still <c>school_id</c>; the FK re-points to <c>organizations</c> in a later strangler sprint
+/// (after the Organization root from EDD-010 has been stable).
 /// </summary>
 internal interface IMembershipRepository
 {

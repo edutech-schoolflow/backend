@@ -14,9 +14,12 @@ built **foundation-first** via a strangler migration off the legacy actor tables
 | EDD-008 | Position — the job catalog an organization employs into | ✅ |
 | EDD-009 | Employment — the working relationship (Membership × Organization) | ✅ |
 
-### Organization Domain — *the organization and its structure* (planned)
-Organization (extract `organizations`, `schools` FKs up) · Organizational Units
-(faculties/campuses/departments/houses) · Academic Sessions / Calendar.
+### Organization Domain — *the organization and its structure*
+| EDD | Aggregate | Status |
+| --- | --- | --- |
+| EDD-010 | Organization — the platform root (account/company that owns everything) | ✅ (shadow root) |
+| — | OrganizationUnit — schools/campuses/departments/faculties/houses | (planned) |
+| — | Academic Sessions / Calendar | (planned) |
 
 ### Authorization Domain — *what someone may do*
 | EDD | Concern | Status |
@@ -37,9 +40,9 @@ projection, regenerable from Membership/Employment/Guardian, never canonical sta
 ## Sprint sequence
 
 ```
-Membership (B1) ✅ → Position (C1) ✅ → Employment (C2) ✅ →
-Organization (D) → Event Catalog → Authentication Finalization (B2: access_contexts projection +
-slim JWT + capability resolver)
+Membership (B1) ✅ → Position (C1) ✅ → Employment (C2) ✅ → Organization (D) ✅ →
+Event Catalog → Authentication Finalization (B2: access_contexts projection + slim JWT +
+capability resolver)
 ```
 
 Then domain modules — Admissions first — are built on the frozen platform.

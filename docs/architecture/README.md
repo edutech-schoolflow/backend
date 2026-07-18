@@ -48,6 +48,16 @@ Memberships, and Capabilities are the *operating system*; a `school` is just one
 Admissions, Students, Finance, Workforce, Learning, … are **applications** running on top. Modules
 never leak platform concerns back into the foundation.
 
+## Three layers
+
+1. **Platform Core (frozen)** — the OS: Identity · Authentication · Membership · Employment · Position ·
+   Organization · Access Context · Event Catalog. Changes extremely rarely.
+2. **Platform Integration** — infrastructure connecting core to apps: B2b Capability Resolver ·
+   B2c JWT simplification · B2d legacy retirement. After this, authentication is ~invisible.
+3. **Product Applications** — where ~90% of future work lives: Admissions, Students (SIS), Academics,
+   Attendance, Assessment, Finance, Communication, Transport, Library, Health, Hostel, Store, Workforce,
+   Compliance, Analytics. **None may change Layer 1.**
+
 ## Governing rules
 
 - **Foundation freeze (until v2):** no new foundational aggregate and no structural rewrite of
@@ -59,6 +69,17 @@ never leak platform concerns back into the foundation.
 - **Platform-maturity test (the real next milestone):** *can a brand-new module be built without
   modifying Identity, Membership, Employment, Organization, or Authentication?* When yes, the platform
   is mature.
+- **Modules depend on the platform only through published contracts** — Identity · Membership ·
+  Employment · Organization · Capabilities · Events. A module reaching into another module's tables,
+  repositories, or aggregates is a design smell. (Cross-cutting concerns are consumed as **platform
+  services** — Notification · Storage · Search · Audit · Calendar · Identity — never as "shared
+  utilities"; apps don't know where a service is implemented.)
+- **Frozen vocabulary — one word per concept, everywhere** (backend · frontend · DB · API · events ·
+  docs): **Identity · Organization · Membership · Employment · Position · Access Context · Capability ·
+  Workspace**. Avoid synonyms — *User, Account, Employee, StaffUser, SchoolUser, Tenant, Permission,
+  RoleAssignment* — unless a genuinely distinct concept. Governs **new** code and the target state;
+  legacy synonyms (`staff_users`, `school_owners`, `TenantRepository`) are being *retired* by the
+  strangler (through B2d), not renamed in place.
 
 ## Roadmap
 

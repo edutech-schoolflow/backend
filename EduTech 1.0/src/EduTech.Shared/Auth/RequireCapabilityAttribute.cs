@@ -3,21 +3,21 @@ using EduTech.Shared.Constants;
 using EduTech.Shared.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace EduTech.Shared.Auth;
 
 /// <summary>
-/// Gates an endpoint on a capability (EDD-006) — the canonical way to authorize a staff action.
-/// School owners (isOwner = true) bypass the check entirely. Only valid for staff-portal endpoints
-/// (user_type = "staff" | "school").
+/// Gates an endpoint on a capability (EDD-006/013) — the canonical way to authorize a staff action.
 ///
-/// <para>During the strangler migration the token still carries the 13 <c>can_*</c> feature flags,
-/// so this filter resolves the capability's <see cref="CapabilityDefinition.LegacyFlag"/> via
-/// <see cref="CapabilityRegistry"/> and checks that claim. When Sprint B introduces the server-side
-/// resolver, this filter re-points at the resolved capability set — the endpoints don't change.</para>
+/// <para>Authorization is <b>derived, never embedded</b>: this filter asks the server-side
+/// <see cref="ICapabilityResolver"/> what the current workspace (<c>context_id</c>) grants right now.
+/// It reads no capability flag from the token — a permission change takes effect immediately, without
+/// re-minting. It is fully actor-neutral: owners resolve to every capability, parents/admins to none,
+/// staff to their resolved set — no <c>is_owner</c>/<c>user_type</c> branching here.</para>
 /// </summary>
 [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method, AllowMultiple = true)]
-public class RequireCapabilityAttribute : Attribute, IAuthorizationFilter
+public class RequireCapabilityAttribute : Attribute, IAsyncAuthorizationFilter
 {
     private readonly string _capability;
 
@@ -26,7 +26,7 @@ public class RequireCapabilityAttribute : Attribute, IAuthorizationFilter
         _capability = capability;
     }
 
-    public void OnAuthorization(AuthorizationFilterContext context)
+    public async Task OnAuthorizationAsync(AuthorizationFilterContext context)
     {
         System.Security.Claims.ClaimsPrincipal user = context.HttpContext.User;
 
@@ -36,32 +36,18 @@ public class RequireCapabilityAttribute : Attribute, IAuthorizationFilter
             return;
         }
 
-        // School owners hold every capability implicitly.
-        if (user.FindFirst("is_owner")?.Value == "true") return;
-
-        // Parents and platform admins have no staff capabilities — wrong portal.
-        string? userType = user.FindFirst("user_type")?.Value;
-        if (userType == UserTypes.Parent || userType == UserTypes.PlatformAdmin)
+        // The workspace this request belongs to. No context ⇒ no workspace capabilities.
+        if (!Guid.TryParse(user.FindFirst("context_id")?.Value, out Guid contextId))
         {
-            context.Result = Error(403, "This endpoint is for staff only.", ErrorCodes.AccessDenied);
+            context.Result = Error(403, "You do not have permission to perform this action.", ErrorCodes.AccessDenied);
             return;
         }
 
-        // Bridge: the capability's legacy flag is the claim the token currently carries (Sprint A).
-        string? legacyFlag = CapabilityRegistry.LegacyFlagFor(_capability);
-        if (legacyFlag is null)
+        ICapabilityResolver resolver = context.HttpContext.RequestServices.GetRequiredService<ICapabilityResolver>();
+        bool granted = await resolver.HasCapabilityAsync(contextId, _capability, context.HttpContext.RequestAborted);
+        if (!granted)
         {
-            // A capability with no legacy flag can't be granted by today's token — it belongs to a
-            // later sprint's server-side resolver. Deny rather than silently allow.
-            context.Result = Error(403,
-                "You do not have permission to perform this action.", ErrorCodes.AccessDenied);
-            return;
-        }
-
-        if (user.FindFirst(legacyFlag)?.Value != "true")
-        {
-            context.Result = Error(403,
-                "You do not have permission to perform this action.", ErrorCodes.AccessDenied);
+            context.Result = Error(403, "You do not have permission to perform this action.", ErrorCodes.AccessDenied);
         }
     }
 

@@ -26,7 +26,8 @@ built **foundation-first** via a strangler migration off the legacy actor tables
 | --- | --- | --- |
 | EDD-006 | Capabilities — `resource.action`, roles as capability sets | ✅ |
 | EDD-012 | Authentication Architecture — auth projects the platform; the B2 target spec | ✅ (spec) |
-| — | Permission Templates — position → capability sets | (partial) |
+| EDD-013 | Capability Resolver — the single server-side authorization API (`context_id`→capabilities) | ✅ (B2b) |
+| — | Permission Templates — resolved server-side by `ICapabilityResolver` | ✅ (via EDD-013) |
 | — | Access Context — the login-read **projection** of Membership/Employment (regenerable) | ✅ (B2a) |
 
 ### Platform Domain — *cross-cutting services* (school-agnostic)
@@ -86,7 +87,7 @@ never leak platform concerns back into the foundation.
 ```
 Platform Foundation ✅  (Identity · Membership · Position · Employment · Organization · Event Catalog)
         ↓
-Platform Integration    B2a ✅ Access Context projection · B2b Capability Resolver · B2c JWT slim · B2d legacy retirement
+Platform Integration    B2a ✅ Access Context projection · B2b ✅ Capability Resolver · B2c JWT slim · B2d legacy retirement
         ↓
 Core Product Modules    Admissions → Students → Academics → Finance → Workforce → …   (vertical slices:
         ↓                Domain · Repository · Events · API · Frontend · Tests — no foundation changes)

@@ -22,14 +22,17 @@ internal sealed class SchoolStaffService : ISchoolStaffService
     private readonly IStaffAffiliationRepository _affiliations;
     private readonly IMembershipRepository _memberships;
     private readonly IEmploymentRepository _employments;
+    private readonly EduTech.Shared.Authorization.ICapabilityResolver _capabilities;
 
     public SchoolStaffService(IEduTechRequestContext requestContext, IStaffAffiliationRepository affiliations,
-        IMembershipRepository memberships, IEmploymentRepository employments)
+        IMembershipRepository memberships, IEmploymentRepository employments,
+        EduTech.Shared.Authorization.ICapabilityResolver capabilities)
     {
         _requestContext = requestContext;
         _affiliations = affiliations;
         _memberships = memberships;
         _employments = employments;
+        _capabilities = capabilities;
     }
 
     public async Task<IReadOnlyList<StaffDirectoryItemResponse>> ListAsync(CancellationToken cancellationToken)
@@ -57,6 +60,8 @@ internal sealed class SchoolStaffService : ISchoolStaffService
             throw new AppErrorException("Staff member not found.", 404, ErrorCodes.NotFound);
         }
 
+        // Role changed → the workspace's capabilities changed; drop the cached set (EDD-013).
+        _capabilities.Invalidate(affiliationId);
         return await GetOrThrowAsync(affiliationId, schoolId, cancellationToken);
     }
 
@@ -102,6 +107,8 @@ internal sealed class SchoolStaffService : ISchoolStaffService
             await _employments.EndByAffiliationAsync(affiliationId, cancellationToken);
         }
 
+        // Status changed → drop the cached capability set for this workspace (EDD-013).
+        _capabilities.Invalidate(affiliationId);
         return await GetOrThrowAsync(affiliationId, schoolId, cancellationToken);
     }
 

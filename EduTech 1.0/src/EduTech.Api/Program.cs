@@ -18,6 +18,7 @@ using EduTech.Students;
 using EduTech.School;
 using EduTech.Shared.Audit;
 using EduTech.Shared.Auth;
+using EduTech.Shared.Authorization;
 using EduTech.Shared.Caching;
 using EduTech.Shared.Constants;
 using EduTech.Shared.Context;
@@ -259,6 +260,7 @@ builder.Services.AddFeatureFlags();
 builder.Services.AddSlackNotifications(config);     // error alerts -> Slack (real) or logs (dev)
 builder.Services.AddDomainEvents();                 // Observer: publisher; modules register their handlers
 builder.Services.AddAuditLog();                     // Observer: writes every auditable event to the trail
+builder.Services.AddCapabilityResolution();         // EDD-013 B2b — the single server-side authorization API
 builder.Services.AddAuthModule();
 builder.Services.AddWorkforceModule();
 builder.Services.AddIdentityModule();   // EDD-001 Sprint 1 — global identities (unified auth lands Sprint 2)

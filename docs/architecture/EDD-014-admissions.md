@@ -1,9 +1,7 @@
 # EDD-014 — Admissions (the reference module)
 
-**Status:** DESIGN COMPLETE — Parts 1–10 + UX specified (dig · product · domain · workflow · contracts ·
-events · capabilities · physical model · commands/queries · DB mapping). Next: **Part 11 —
-Implementation Plan** (extraction of `EduTech.Admissions`), then code. Design sequence: Product →
-Domain → Physical Model → Commands/Queries → Implementation Plan → Code.
+**Status:** 🔒 FROZEN — Parts 1–11 + UX complete. Design is done; remaining work is code + tests, built
+as 9 independent vertical slices (Part 11). Slice 1 (AdmissionCycle) in progress.
 **Role:** The first module built on the finished platform — the **reference implementation** and the
 **Platform Validation** case: it may not modify the Foundation; any Foundation change it needs is a
 defect, not a new concept.
@@ -225,10 +223,37 @@ Each command maps 1:1 to an API endpoint gated by a Part-7 capability; queries a
   `enrollments` row + `StudentEnrolled` event (the event boundary replaces the direct FK).
 - Backfill: existing `admitted` applications → a default cycle + an `enrollment` row, so history is preserved.
 
-## Part 11 — Implementation Plan *(next artifact, after this design is approved)*
-Stand up `EduTech.Admissions`; migrate the `EduTech.Students/Admissions` code in (keep what the dig
-flagged as worth keeping); reconcile events + capabilities to canon; the Students seam becomes
-`StudentEnrolled`. Staged, plan-first, verified — like every prior sprint.
+## Part 11 — Implementation Plan (the last design artifact — then code)
+
+Stand up **`EduTech.Admissions`** (Layer 3) and build it as **independent vertical slices**, each a
+full `Domain · Repository · Events · API · Tests` (+ Frontend later) that is buildable, testable, and
+deployable on its own. The existing `EduTech.Students/Admissions` flow keeps working and is migrated in
+across the slices; the Admissions↔Students seam becomes the `StudentEnrolled` event (the
+`applications.admitted_student_id` FK retires with it).
+
+**Slices (deploy after each):**
+1. **AdmissionCycle** — module scaffold + cycle CRUD/lifecycle.
+2. **Inquiry** — pre-application interest + book-a-visit + convert.
+3. **Application** — draft → submit → withdraw; migrate the existing applications flow in.
+4. **Documents** — checklist + per-document verification lifecycle.
+5. **Assessment** — typed assessments + results.
+6. **Decision** — approved/conditional/waitlisted/rejected/withdrawn.
+7. **Offer** — issue/accept/decline/withdraw/expire.
+8. **Enrollment** — enroll/cancel (the platform-transition point).
+9. **StudentEnrolled event** — the handoff; Students consumes it; retire the direct FK.
+
+**Per-slice gate (the maturity test, enforced):** zero changes to Identity / Membership / Employment /
+Organization / Access Context / Authentication; depends only on published contracts + services;
+build + tests green; migration verified on throwaway Postgres.
+
+**Conventions:** migrations `0048…`; tables use `organization_id → schools(id)` (canonical vocabulary,
+operational FK — re-points with the rest of the platform in the FK-repointing sprint, exactly like
+`access_contexts.organization_id`). Capabilities start on the existing coarse
+`Admissions.Manage`/`Student.Read` (which the resolver already grants) and refine to the fine-grained
+`admissions.*` set (registered in `CapabilityRegistry`, bridged to those flags) in a dedicated step.
+
+> **EDD-014 is now FROZEN.** No Parts 12+. Everything needed to build exists. Further change is code
+> + tests, not design.
 
 ## Part 15 — UX Journey
 

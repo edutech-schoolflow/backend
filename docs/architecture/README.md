@@ -70,6 +70,12 @@ never leak platform concerns back into the foundation.
 - **Platform-maturity test (the real next milestone):** *can a brand-new module be built without
   modifying Identity, Membership, Employment, Organization, or Authentication?* When yes, the platform
   is mature.
+- **Platform Validation Rule:** **Admissions** is the first module built entirely on the finished
+  platform — its **reference implementation** (identity-first, membership creation, event-driven
+  workflow, capability authorization, workspace, notifications, audit, clean aggregates). *Admissions
+  may not modify the Foundation.* Any Foundation change it needs must be justified as a **defect**, not
+  a new concept. If Admissions drops in cleanly, the maturity test is passed and B2c/B2d become
+  mechanical cleanup. Every module starts from [MODULE-TEMPLATE.md](MODULE-TEMPLATE.md).
 - **Modules depend on the platform only through published contracts** — Identity · Membership ·
   Employment · Organization · Capabilities · Events. A module reaching into another module's tables,
   repositories, or aggregates is a design smell. (Cross-cutting concerns are consumed as **platform

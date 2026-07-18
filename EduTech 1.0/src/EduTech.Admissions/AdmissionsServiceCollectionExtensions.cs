@@ -1,0 +1,18 @@
+using EduTech.Admissions.Cycles;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace EduTech.Admissions;
+
+/// <summary>
+/// Registers the Admissions module (EDD-014) — the reference Layer-3 module. It depends only on the
+/// platform (contracts + services) and grows one vertical slice at a time. Slice 1: Admission Cycles.
+/// </summary>
+public static class AdmissionsServiceCollectionExtensions
+{
+    public static IServiceCollection AddAdmissionsModule(this IServiceCollection services)
+    {
+        services.AddScoped<IAdmissionCycleRepository, AdmissionCycleRepository>();
+        services.AddScoped<IAdmissionCycleService, AdmissionCycleService>();
+        return services;
+    }
+}

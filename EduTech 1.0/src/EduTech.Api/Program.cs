@@ -13,6 +13,7 @@ using EduTech.Identity;
 using EduTech.Membership;
 using EduTech.People;
 using EduTech.Organization;
+using EduTech.Admissions;
 using EduTech.Notifications;
 using EduTech.Students;
 using EduTech.School;
@@ -267,6 +268,7 @@ builder.Services.AddIdentityModule();   // EDD-001 Sprint 1 — global identitie
 builder.Services.AddMembershipModule(); // EDD-007 Sprint B1 — canonical belonging edge (adult lifecycle)
 builder.Services.AddPeopleModule();     // EDD-008/009 Sprint C — Position catalog + Employment
 builder.Services.AddOrganizationModule(); // EDD-010 Sprint D — platform root (shadow root)
+builder.Services.AddAdmissionsModule();   // EDD-014 — first Layer-3 module (vertical slices)
 builder.Services.AddNotificationsModule(config);
 builder.Services.AddSchoolModule(config);
 builder.Services.AddComplianceModule(config);

@@ -41,6 +41,7 @@
     <ProjectReference Include="..\..\EduTech 1.0\src\EduTech.Membership\EduTech.Membership.csproj" />
     <ProjectReference Include="..\..\EduTech 1.0\src\EduTech.People\EduTech.People.csproj" />
     <ProjectReference Include="..\..\EduTech 1.0\src\EduTech.Organization\EduTech.Organization.csproj" />
+    <ProjectReference Include="..\..\EduTech 1.0\src\EduTech.Admissions\EduTech.Admissions.csproj" />
   </ItemGroup>
 
   <ItemGroup>

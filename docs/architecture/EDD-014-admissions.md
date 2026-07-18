@@ -246,9 +246,9 @@ across the slices; the Admissions↔Students seam becomes the `StudentEnrolled` 
 Organization / Access Context / Authentication; depends only on published contracts + services;
 build + tests green; migration verified on throwaway Postgres.
 
-**Conventions:** migrations `0048…`; tables use `organization_id → schools(id)` (canonical vocabulary,
-operational FK — re-points with the rest of the platform in the FK-repointing sprint, exactly like
-`access_contexts.organization_id`). Capabilities start on the existing coarse
+**Conventions:** migrations `0048…`; per-org tables are tenant-scoped by `school_id → schools(id)`
+(the `TenantRepository` convention — the operational organization scope; renames/re-points to
+`organizations` with the rest of the platform in the FK-repointing sprint). Capabilities start on the existing coarse
 `Admissions.Manage`/`Student.Read` (which the resolver already grants) and refine to the fine-grained
 `admissions.*` set (registered in `CapabilityRegistry`, bridged to those flags) in a dedicated step.
 

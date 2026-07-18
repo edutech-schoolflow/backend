@@ -51,3 +51,29 @@ public sealed class ApplicationSubmitted : DomainEvent, IAuditableEvent
     public string Summary => $"Application submitted for {ProspectiveName}.";
     public string? Metadata => null;
 }
+
+/// <summary>
+/// DocumentVerified (EDD-011/014) — an application document passed verification. Auditable; consumers:
+/// Admissions review (progress the application), Analytics.
+/// </summary>
+public sealed class DocumentVerified : DomainEvent, IAuditableEvent
+{
+    public DocumentVerified(Guid documentId, Guid applicationId, Guid schoolId, string docType)
+    {
+        DocumentId = documentId;
+        ApplicationId = applicationId;
+        SchoolId = schoolId;
+        DocType = docType;
+    }
+
+    public Guid DocumentId { get; }
+    public Guid ApplicationId { get; }
+    public Guid SchoolId { get; }
+    public string DocType { get; }
+
+    public string Action => "admissions.document.verified";
+    public string EntityType => "application_document";
+    public Guid EntityId => DocumentId;
+    public string Summary => $"Document '{DocType}' verified.";
+    public string? Metadata => null;
+}

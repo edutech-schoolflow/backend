@@ -1,5 +1,6 @@
 using EduTech.Admissions.Applications;
 using EduTech.Admissions.Cycles;
+using EduTech.Admissions.Documents;
 using EduTech.Admissions.Inquiries;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -19,6 +20,8 @@ public static class AdmissionsServiceCollectionExtensions
         services.AddScoped<IInquiryService, InquiryService>();
         services.AddScoped<IApplicationRepository, ApplicationRepository>();
         services.AddScoped<IApplicationService, ApplicationService>();
+        services.AddScoped<IApplicationDocumentRepository, ApplicationDocumentRepository>();
+        services.AddScoped<IDocumentService, DocumentService>();
         return services;
     }
 }

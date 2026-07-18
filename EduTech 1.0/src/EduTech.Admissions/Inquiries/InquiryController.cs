@@ -1,3 +1,4 @@
+using EduTech.Admissions.Applications;
 using EduTech.Shared.Auth;
 using EduTech.Shared.Authorization;
 using EduTech.Shared.Models;
@@ -76,4 +77,18 @@ public sealed class InquiryController : ControllerBase
         InquiryResponse inquiry = await _service.CloseAsync(inquiryId, cancellationToken);
         return Ok(ServiceResponses<InquiryResponse>.Ok(inquiry, "Inquiry closed."));
     }
+
+    [HttpPost("{inquiryId:guid}/convert")]
+    [RequireCapability(Capabilities.Admissions.Manage)]
+    public async Task<ActionResult<ServiceResponses<ApplicationResponse>>> Convert(
+        Guid inquiryId, [FromBody] ConvertInquiryRequest request, CancellationToken cancellationToken)
+    {
+        ApplicationResponse application = await _service.ConvertToApplicationAsync(inquiryId, request.CycleId, cancellationToken);
+        return Ok(ServiceResponses<ApplicationResponse>.Ok(application, "Inquiry converted to an application."));
+    }
+}
+
+public sealed class ConvertInquiryRequest
+{
+    public Guid CycleId { get; init; }
 }

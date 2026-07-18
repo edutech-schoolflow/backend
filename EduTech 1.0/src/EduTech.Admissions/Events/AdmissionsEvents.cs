@@ -25,3 +25,29 @@ public sealed class InquiryCreated : DomainEvent, IAuditableEvent
     public string Summary => $"Inquiry received for {ProspectiveName}.";
     public string? Metadata => null;
 }
+
+/// <summary>
+/// ApplicationSubmitted (EDD-011/014) — a family submitted an application for review. Auditable;
+/// consumers: Notifications (acknowledge), Admissions review queue, Analytics (funnel).
+/// </summary>
+public sealed class ApplicationSubmitted : DomainEvent, IAuditableEvent
+{
+    public ApplicationSubmitted(Guid applicationId, Guid schoolId, Guid cycleId, string prospectiveName)
+    {
+        ApplicationId = applicationId;
+        SchoolId = schoolId;
+        CycleId = cycleId;
+        ProspectiveName = prospectiveName;
+    }
+
+    public Guid ApplicationId { get; }
+    public Guid SchoolId { get; }
+    public Guid CycleId { get; }
+    public string ProspectiveName { get; }
+
+    public string Action => "admissions.application.submitted";
+    public string EntityType => "application";
+    public Guid EntityId => ApplicationId;
+    public string Summary => $"Application submitted for {ProspectiveName}.";
+    public string? Metadata => null;
+}

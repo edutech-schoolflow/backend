@@ -1,3 +1,4 @@
+using EduTech.Admissions.Applications;
 using EduTech.Admissions.Domain;
 using EduTech.Admissions.Events;
 using EduTech.Shared.Constants;
@@ -16,17 +17,23 @@ public interface IInquiryService
     Task<InquiryResponse> CloseAsync(Guid inquiryId, CancellationToken cancellationToken);
     Task<InquiryResponse> GetAsync(Guid inquiryId, CancellationToken cancellationToken);
     Task<IReadOnlyList<InquiryResponse>> ListAsync(string? status, CancellationToken cancellationToken);
+
+    /// <summary>Converts an inquiry into a draft application for a cycle, and marks it converted.</summary>
+    Task<ApplicationResponse> ConvertToApplicationAsync(Guid inquiryId, Guid cycleId, CancellationToken cancellationToken);
 }
 
 internal sealed class InquiryService : IInquiryService
 {
     private readonly IInquiryRepository _inquiries;
+    private readonly IApplicationService _applications;
     private readonly IDomainEventPublisher _events;
     private readonly IEduTechRequestContext _context;
 
-    public InquiryService(IInquiryRepository inquiries, IDomainEventPublisher events, IEduTechRequestContext context)
+    public InquiryService(IInquiryRepository inquiries, IApplicationService applications,
+        IDomainEventPublisher events, IEduTechRequestContext context)
     {
         _inquiries = inquiries;
+        _applications = applications;
         _events = events;
         _context = context;
     }
@@ -59,6 +66,20 @@ internal sealed class InquiryService : IInquiryService
 
     public Task<InquiryResponse> CloseAsync(Guid inquiryId, CancellationToken cancellationToken) =>
         MutateAsync(inquiryId, i => i.Close(), cancellationToken);
+
+    public async Task<ApplicationResponse> ConvertToApplicationAsync(Guid inquiryId, Guid cycleId,
+        CancellationToken cancellationToken)
+    {
+        Inquiry inquiry = await _inquiries.GetByIdAsync(inquiryId, cancellationToken)
+            ?? throw new AppErrorException("Inquiry not found.", 404, ErrorCodes.NotFound);
+
+        ApplicationResponse application = await _applications.CreateFromInquiryAsync(cycleId, inquiry.Id,
+            inquiry.ProspectiveName, inquiry.GuardianName, inquiry.GuardianPhone, cancellationToken);
+
+        inquiry.Convert(application.Id);
+        await _inquiries.SaveAsync(inquiry, cancellationToken);
+        return application;
+    }
 
     public async Task<InquiryResponse> GetAsync(Guid inquiryId, CancellationToken cancellationToken)
     {

@@ -70,6 +70,9 @@ never leak platform concerns back into the foundation.
 - **Platform-maturity test (the real next milestone):** *can a brand-new module be built without
   modifying Identity, Membership, Employment, Organization, or Authentication?* When yes, the platform
   is mature.
+- **Design sequence (every module):** **Product → Domain → Physical Model → Commands/Queries →
+  Implementation Plan → Code.** Never Product → Code. Each stage is written down (in the module's EDD)
+  and reviewed before the next begins.
 - **Platform Validation Rule:** **Admissions** is the first module built entirely on the finished
   platform — its **reference implementation** (identity-first, membership creation, event-driven
   workflow, capability authorization, workspace, notifications, audit, clean aggregates). *Admissions

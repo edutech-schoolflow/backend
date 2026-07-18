@@ -1,7 +1,9 @@
 # EDD-014 — Admissions (the reference module)
 
-**Status:** DESIGN — Part 1 (dig) + Parts 2–7 & UX designed; 5 decisions locked. Next: tables/
-migrations, commands/queries, and the module-extraction implementation plan (define-first, then code).
+**Status:** DESIGN COMPLETE — Parts 1–10 + UX specified (dig · product · domain · workflow · contracts ·
+events · capabilities · physical model · commands/queries · DB mapping). Next: **Part 11 —
+Implementation Plan** (extraction of `EduTech.Admissions`), then code. Design sequence: Product →
+Domain → Physical Model → Commands/Queries → Implementation Plan → Code.
 **Role:** The first module built on the finished platform — the **reference implementation** and the
 **Platform Validation** case: it may not modify the Foundation; any Foundation change it needs is a
 defect, not a new concept.
@@ -154,6 +156,79 @@ Reconcile today's `ApplicationAdmitted/ExamScheduled` into this canon (EDD-011).
 `admissions.cycle.manage · admissions.application.read/review/assign · admissions.document.verify ·
 admissions.assessment.schedule/record · admissions.decision.approve/reject/waitlist ·
 admissions.offer.issue` — registered in `CapabilityRegistry`, gated via `[RequireCapability]`.
+
+## Part 8 — Physical Model (tables, no SQL yet)
+
+All tables are organization-scoped and **org-type-neutral** (schools · universities · training centres ·
+tutors — EDD-010). FKs point only at Admissions' own tables and platform contracts (`organizations`,
+`child_profiles`, `identities`) — never another module's tables.
+
+| Table | Owner aggregate | Key FKs | Lifecycle / status |
+| --- | --- | --- | --- |
+| `admission_cycles` | AdmissionCycle | `organization_id` | `draft → open → closed → archived` |
+| `inquiries` | Inquiry | `organization_id`, `cycle_id?`, `converted_application_id?` | `new → contacted → visit_booked → converted → closed` |
+| `applications` | Application | `cycle_id`, `organization_id`, `child_profile_id`, `guardian_identity_id?` | `draft → submitted → in_review → decided → offered → accepted → enrolled` (+ `withdrawn`) |
+| `application_documents` | Application (owned) | `application_id` | per doc: `pending → uploaded → (rejected \| verified)` |
+| `assessments` | Assessment | `application_id` | `scheduled → (completed \| cancelled)`; `type ∈ exam/interview/observation/portfolio/external_result` |
+| `assessment_results` | Assessment (owned) | `assessment_id` | recorded outcome/score |
+| `decisions` | Decision | `application_id`, `decided_by` | `outcome ∈ approved/conditional/waitlisted/rejected/withdrawn` (append-only) |
+| `offers` | Offer | `application_id`, `decision_id`, `class_id?` | `issued → (accepted \| declined \| lapsed \| withdrawn)` |
+| `enrollments` | Enrollment | `application_id`, `offer_id`, `organization_id`, `child_profile_id` | `active → cancelled`; emits `StudentEnrolled` |
+
+**Invariants (the data-model questions, answered):**
+- **Multiple offers per application: yes, over time; at most one *non-terminal* offer** (partial unique
+  index on `application_id WHERE status = 'issued'`). Decline/lapse/withdraw is terminal for that offer;
+  the school may then **issue a new offer** (so decline-then-later-accept works via a re-offer).
+- **Offer expiry:** `acceptance_deadline` → a sweep lapses `issued` offers past it.
+- **Offer belongs to a cycle** transitively (via `application.cycle_id`), never directly.
+- **One active application per `(child_profile_id, cycle_id)`** (partial unique on non-`withdrawn`). A
+  child applying to two campuses/programs = two applications (different cycles), not two offers on one.
+- **Enrollment ≠ Student:** an `enrollment` row records joining the org; the Student is created by the
+  Students module on `StudentEnrolled`. An accepted offer may never enroll (no payment / no-show).
+- Documents gate progress: an application cannot leave `in_review` toward a positive decision while a
+  *required* document is not `verified`.
+
+Indexes: `admission_cycles(organization_id, status)`, `applications(cycle_id, status)`,
+`applications(child_profile_id)`, `offers(application_id, status)`.
+
+## Part 9 — Commands & Queries (the module's public contract)
+
+**AdmissionCycle** — `OpenCycle · CloseCycle · SetQuota · ArchiveCycle` · `GetCycle · ListCycles ·
+CycleStats`.
+**Inquiry** — `CreateInquiry · BookVisit · ConvertToApplication · CloseInquiry` · `GetInquiry · ListInquiries`.
+**Application** — `StartApplication(draft) · SubmitApplication · WithdrawApplication · AssignReviewer` ·
+`GetApplication · ListApplications · SearchApplications · GetTimeline`.
+**Document** — `RequestDocument · UploadDocument · VerifyDocument · RejectDocument` · `ListDocuments`.
+**Assessment** — `ScheduleAssessment · RescheduleAssessment · RecordResult · CancelAssessment` ·
+`GetAssessment · ListAssessments`.
+**Decision** — `RecordDecision(approved/conditional/waitlisted/rejected/withdrawn)` · `GetDecision`.
+**Offer** — `IssueOffer · AcceptOffer · DeclineOffer · WithdrawOffer · (ExpireOffer, system)` ·
+`GetOffer · ListOffers`.
+**Enrollment** — `EnrollStudent · CancelEnrollment` · `GetEnrollment`.
+
+Each command maps 1:1 to an API endpoint gated by a Part-7 capability; queries are the read models.
+
+## Part 10 — Database Mapping & Migration Strategy
+
+**Aggregate → persistence:**
+- One table per aggregate root; **owned entities** in child tables (`application_documents`,
+  `assessment_results`) — loaded with the root, never addressed cross-module.
+- **JSON** only for genuinely schemaless bags (offer `conditions`, assessment `metadata`); everything
+  queried/filtered is a column (status, dates, FKs).
+- Every state change publishes its Part-6 event; the read models (timeline, cycle stats) are projections.
+
+**Migration strategy (coexist, then converge — the extraction is Part-11 work):**
+- New migrations `0048…` create `admission_cycles / inquiries / assessments / assessment_results /
+  decisions / offers / enrollments` and evolve the existing `applications` (0023) to the fuller
+  lifecycle + `cycle_id` + `child_profile_id`. Additive first; the current 4-state flow keeps working.
+- The existing `applications.admitted_student_id → students` FK is **retired** in favour of the
+  `enrollments` row + `StudentEnrolled` event (the event boundary replaces the direct FK).
+- Backfill: existing `admitted` applications → a default cycle + an `enrollment` row, so history is preserved.
+
+## Part 11 — Implementation Plan *(next artifact, after this design is approved)*
+Stand up `EduTech.Admissions`; migrate the `EduTech.Students/Admissions` code in (keep what the dig
+flagged as worth keeping); reconcile events + capabilities to canon; the Students seam becomes
+`StudentEnrolled`. Staged, plan-first, verified — like every prior sprint.
 
 ## Part 15 — UX Journey
 

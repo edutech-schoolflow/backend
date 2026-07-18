@@ -69,6 +69,16 @@ Every command/query/event/capability above should trace back to a step in this s
 
 ---
 
+### Per-aggregate checklist
+Every aggregate in the module answers the same questions (this is what keeps modules consistent — the
+reference module fills it for each aggregate, and every later module repeats it):
+
+`Purpose · Owner · Lifecycle · Commands · Queries · Events Published · Events Consumed · Capabilities
+Required · Tables · API · UI Screens · Reports · Audit · Notifications`
+
+### Design sequence (do not skip a stage)
+`Product → Domain → Physical Model → Commands/Queries → Implementation Plan → Code.` Never Product → Code.
+
 ### Platform-contract checklist (must all be "yes" before merge)
 - [ ] No change to Identity / Membership / Employment / Organization / Access Context / Auth.
 - [ ] Depends on the platform only through published contracts + services.

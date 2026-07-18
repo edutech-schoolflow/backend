@@ -60,6 +60,13 @@ Where it will grow — reserved but not built now.
 ## 14. Non-goals
 What it explicitly does **not** own (and which module/service does).
 
+## 15. UX Journey
+A **narrative**, not screens — the module grounded in the user's experience. Walk the real path a
+person takes end to end (e.g. for Admissions: parent discovers a school → starts an application →
+pauses and resumes → school reviews → officer requests more info → parent is notified → applicant is
+assessed → offer issued → parent accepts → child becomes a student → parent enters the workspace).
+Every command/query/event/capability above should trace back to a step in this story.
+
 ---
 
 ### Platform-contract checklist (must all be "yes" before merge)

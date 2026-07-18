@@ -77,3 +77,51 @@ public sealed class DocumentVerified : DomainEvent, IAuditableEvent
     public string Summary => $"Document '{DocType}' verified.";
     public string? Metadata => null;
 }
+
+/// <summary>AssessmentScheduled (EDD-011/014) — an applicant assessment was scheduled.</summary>
+public sealed class AssessmentScheduled : DomainEvent, IAuditableEvent
+{
+    public AssessmentScheduled(Guid assessmentId, Guid applicationId, Guid schoolId, string type)
+    {
+        AssessmentId = assessmentId;
+        ApplicationId = applicationId;
+        SchoolId = schoolId;
+        Type = type;
+    }
+
+    public Guid AssessmentId { get; }
+    public Guid ApplicationId { get; }
+    public Guid SchoolId { get; }
+    public string Type { get; }
+
+    public string Action => "admissions.assessment.scheduled";
+    public string EntityType => "assessment";
+    public Guid EntityId => AssessmentId;
+    public string Summary => $"{Type} assessment scheduled.";
+    public string? Metadata => null;
+}
+
+/// <summary>AssessmentCompleted (EDD-011/014) — an applicant assessment was completed with an outcome.</summary>
+public sealed class AssessmentCompleted : DomainEvent, IAuditableEvent
+{
+    public AssessmentCompleted(Guid assessmentId, Guid applicationId, Guid schoolId, string type, string outcome)
+    {
+        AssessmentId = assessmentId;
+        ApplicationId = applicationId;
+        SchoolId = schoolId;
+        Type = type;
+        Outcome = outcome;
+    }
+
+    public Guid AssessmentId { get; }
+    public Guid ApplicationId { get; }
+    public Guid SchoolId { get; }
+    public string Type { get; }
+    public string Outcome { get; }
+
+    public string Action => "admissions.assessment.completed";
+    public string EntityType => "assessment";
+    public Guid EntityId => AssessmentId;
+    public string Summary => $"{Type} assessment completed: {Outcome}.";
+    public string? Metadata => null;
+}

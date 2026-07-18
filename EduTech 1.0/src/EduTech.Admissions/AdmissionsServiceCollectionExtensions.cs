@@ -1,4 +1,5 @@
 using EduTech.Admissions.Applications;
+using EduTech.Admissions.Assessments;
 using EduTech.Admissions.Cycles;
 using EduTech.Admissions.Documents;
 using EduTech.Admissions.Inquiries;
@@ -22,6 +23,8 @@ public static class AdmissionsServiceCollectionExtensions
         services.AddScoped<IApplicationService, ApplicationService>();
         services.AddScoped<IApplicationDocumentRepository, ApplicationDocumentRepository>();
         services.AddScoped<IDocumentService, DocumentService>();
+        services.AddScoped<IAssessmentRepository, AssessmentRepository>();
+        services.AddScoped<IAssessmentService, AssessmentService>();
         return services;
     }
 }

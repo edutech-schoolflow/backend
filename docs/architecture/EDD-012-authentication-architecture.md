@@ -264,3 +264,54 @@ BEFORE (pre-B2c)                          AFTER (B2c.1 additive + B2c.2 removal)
   "leadership" capability needs either a new flag (forbidden — no new JWT flags) or resolver support for
   flag-less role-default capabilities — an authorization change to live endpoints, not token cleanup.
   It belongs with the capability-model work, not this milestone.
+
+---
+
+## Appendix B — JWT claim taxonomy (the living contract)
+
+Every claim in a context token falls into one of three categories. The point is that no one mistakes a
+**compatibility** or **transitional** claim for the permanent contract, or adds a new reader of one.
+
+> **Rule:** new code reads only **Canonical** claims (or resolves authorization from `context_id`). Never
+> add a reader of a Compatibility or Transitional claim. A Compatibility claim retires when its last
+> reader migrates to its replacement; a Transitional claim retires in B2c.3.
+
+### 1. Canonical — permanent platform concepts
+
+The stable long-term contract; the slim token trends toward exactly these.
+
+| Claim | Meaning |
+| --- | --- |
+| `identity_id` | the person (Identity, EDD-001) — *who* |
+| `membership_id` | the context's canonical belonging (Membership, EDD-007) — the token's canonical identity |
+| `context_id` | the entered Access Context; the key `ICapabilityResolver` resolves authorization on |
+| `organization_id` | the organization the context operates in — *where* |
+| `school_id` | the tenant binding today (`TenantRepository`); **converges with `organization_id`** at the `schools→organizations` FK-repoint (same value now) |
+| `role` | the context's role — UX + the `[RequireRole]` gates |
+| `user_type` | portal/UX discriminator (Identity Home / Family Home / Workspace) — **not** authorization |
+
+### 2. Compatibility — retained because live code still reads them
+
+Each has a documented reader set, a retirement sprint, and a replacement mechanism.
+
+| Claim | Remaining readers | Retires | Replacement |
+| --- | --- | --- | --- |
+| `is_owner` | 13 business sites via `IEduTechRequestContext.IsOwner` (Attendance, Grades, Fees, StaffAttendance, StaffProfile, SchoolBranding) | capability-model work (post-B2c) | owner context → capabilities (owner Position grants all) / an explicit ownership policy |
+| `affiliation_id` | `AttendanceService`, `GradeService`, `StaffProfileService` (`CurrentAffiliation()` — scope staff actions to their own arm/records) | when staff scoping re-sources off the legacy actor | `membership_id` / active Employment |
+| `user_id` | `IEduTechRequestContext.UserId` (the legacy actor id — staff_user / owner / parent id — used widely as "the current actor") | **B2d** (legacy actor retirement) | `identity_id` + `membership_id` |
+
+### 3. Transitional — DEPRECATED; retained only because the mint paths aren't yet unified
+
+Proven **0 readers** (no runtime / frontend / middleware / refresh reader — see Appendix A). Kept only
+because removing them re-touches the refresh/legacy mint signatures; **swept in B2c.3**.
+
+| Claim | Note |
+| --- | --- |
+| `active_school_id` | redundant with `school_id` |
+| `employment_type` | 0 readers |
+| `kyc_status` | 0 readers (the "read-only mode without a DB hit" it was meant to back was never wired) |
+| `subdomain` | 0 readers |
+| `school_status` | 0 readers |
+
+*(`phone` also rides the token as an incidental contact claim — not part of the identity/authorization
+contract; it is not slimming-relevant.)*

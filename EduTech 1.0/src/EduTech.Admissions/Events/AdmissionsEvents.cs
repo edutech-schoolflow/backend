@@ -78,6 +78,30 @@ public sealed class DocumentVerified : DomainEvent, IAuditableEvent
     public string? Metadata => null;
 }
 
+/// <summary>
+/// ApplicationReviewed (EDD-011/014) — a decision was recorded on an application (approved /
+/// conditional / waitlisted / rejected / withdrawn). Auditable; consumers: Notifications, Analytics.
+/// </summary>
+public sealed class ApplicationReviewed : DomainEvent, IAuditableEvent
+{
+    public ApplicationReviewed(Guid applicationId, Guid schoolId, string outcome)
+    {
+        ApplicationId = applicationId;
+        SchoolId = schoolId;
+        Outcome = outcome;
+    }
+
+    public Guid ApplicationId { get; }
+    public Guid SchoolId { get; }
+    public string Outcome { get; }
+
+    public string Action => "admissions.application.reviewed";
+    public string EntityType => "application";
+    public Guid EntityId => ApplicationId;
+    public string Summary => $"Application decision: {Outcome}.";
+    public string? Metadata => null;
+}
+
 /// <summary>AssessmentScheduled (EDD-011/014) — an applicant assessment was scheduled.</summary>
 public sealed class AssessmentScheduled : DomainEvent, IAuditableEvent
 {

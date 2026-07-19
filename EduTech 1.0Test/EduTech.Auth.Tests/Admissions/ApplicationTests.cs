@@ -61,4 +61,19 @@ public class ApplicationTests
         Application a = New(status);
         Assert.Throws<AppErrorException>(() => a.Withdraw());
     }
+
+    [Fact]
+    public void MarkDecided_FromSubmitted_SetsDecided()
+    {
+        Application a = New(ApplicationStatus.Submitted);
+        a.MarkDecided();
+        Assert.Equal(ApplicationStatus.Decided, a.Status);
+    }
+
+    [Fact]
+    public void MarkDecided_FromDraft_Throws()
+    {
+        AppErrorException ex = Assert.Throws<AppErrorException>(() => New().MarkDecided());
+        Assert.Equal(409, ex.StatusCode);
+    }
 }

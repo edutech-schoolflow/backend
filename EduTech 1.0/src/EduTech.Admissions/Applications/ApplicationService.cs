@@ -12,6 +12,10 @@ public interface IApplicationService
     Task<ApplicationResponse> CreateAsync(CreateApplicationRequest request, CancellationToken cancellationToken);
     Task<ApplicationResponse> SubmitAsync(Guid applicationId, CancellationToken cancellationToken);
     Task<ApplicationResponse> WithdrawAsync(Guid applicationId, CancellationToken cancellationToken);
+
+    /// <summary>Moves the application to 'decided' (called by the Decision slice within the module).</summary>
+    Task MarkDecidedAsync(Guid applicationId, CancellationToken cancellationToken);
+
     Task<ApplicationResponse> GetAsync(Guid applicationId, CancellationToken cancellationToken);
     Task<IReadOnlyList<ApplicationResponse>> ListAsync(Guid? cycleId, string? status, CancellationToken cancellationToken);
 
@@ -78,6 +82,13 @@ internal sealed class ApplicationService : IApplicationService
         application.Withdraw();
         await _applications.SaveAsync(application, cancellationToken);
         return Map(application);
+    }
+
+    public async Task MarkDecidedAsync(Guid applicationId, CancellationToken cancellationToken)
+    {
+        Application application = await LoadAsync(applicationId, cancellationToken);
+        application.MarkDecided();
+        await _applications.SaveAsync(application, cancellationToken);
     }
 
     public async Task<ApplicationResponse> GetAsync(Guid applicationId, CancellationToken cancellationToken) =>

@@ -81,6 +81,18 @@ internal sealed class Application
         SubmittedAt = nowUtc;
     }
 
+    /// <summary>Records that a decision has been made (from submitted / in-review). Slice 6.</summary>
+    public void MarkDecided()
+    {
+        if (Status is not (ApplicationStatus.Submitted or ApplicationStatus.InReview))
+        {
+            throw new AppErrorException("Only a submitted application can be decided.", 409,
+                ErrorCodes.Conflict, logReason: $"MarkDecided attempted on application in status {Status}.");
+        }
+
+        Status = ApplicationStatus.Decided;
+    }
+
     /// <summary>Withdraws the application (by the family or the school). Terminal.</summary>
     public void Withdraw()
     {

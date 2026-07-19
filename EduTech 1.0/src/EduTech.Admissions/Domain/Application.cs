@@ -93,6 +93,30 @@ internal sealed class Application
         Status = ApplicationStatus.Decided;
     }
 
+    /// <summary>An offer was issued (from a decided application). Slice 7.</summary>
+    public void MarkOffered()
+    {
+        if (Status != ApplicationStatus.Decided)
+        {
+            throw new AppErrorException("Only a decided application can be offered a place.", 409,
+                ErrorCodes.Conflict, logReason: $"MarkOffered attempted on application in status {Status}.");
+        }
+
+        Status = ApplicationStatus.Offered;
+    }
+
+    /// <summary>The family accepted the offer. Slice 7 (enrollment finalizes in Slice 8).</summary>
+    public void MarkAccepted()
+    {
+        if (Status != ApplicationStatus.Offered)
+        {
+            throw new AppErrorException("Only an offered application can be accepted.", 409,
+                ErrorCodes.Conflict, logReason: $"MarkAccepted attempted on application in status {Status}.");
+        }
+
+        Status = ApplicationStatus.Accepted;
+    }
+
     /// <summary>Withdraws the application (by the family or the school). Terminal.</summary>
     public void Withdraw()
     {

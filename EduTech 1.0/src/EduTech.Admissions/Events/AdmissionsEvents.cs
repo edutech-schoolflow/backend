@@ -102,6 +102,72 @@ public sealed class ApplicationReviewed : DomainEvent, IAuditableEvent
     public string? Metadata => null;
 }
 
+/// <summary>OfferIssued (EDD-011/014) — a place was offered to an applicant.</summary>
+public sealed class OfferIssued : DomainEvent, IAuditableEvent
+{
+    public OfferIssued(Guid offerId, Guid applicationId, Guid schoolId)
+    {
+        OfferId = offerId;
+        ApplicationId = applicationId;
+        SchoolId = schoolId;
+    }
+
+    public Guid OfferId { get; }
+    public Guid ApplicationId { get; }
+    public Guid SchoolId { get; }
+
+    public string Action => "admissions.offer.issued";
+    public string EntityType => "offer";
+    public Guid EntityId => OfferId;
+    public string Summary => "Offer issued.";
+    public string? Metadata => null;
+}
+
+/// <summary>
+/// OfferAccepted (EDD-011/014) — the family accepted the offer. THE event the platform reacts to:
+/// Identity / Membership / Fees / Students all follow from here; enrollment is finalized in Slice 8.
+/// </summary>
+public sealed class OfferAccepted : DomainEvent, IAuditableEvent
+{
+    public OfferAccepted(Guid offerId, Guid applicationId, Guid schoolId)
+    {
+        OfferId = offerId;
+        ApplicationId = applicationId;
+        SchoolId = schoolId;
+    }
+
+    public Guid OfferId { get; }
+    public Guid ApplicationId { get; }
+    public Guid SchoolId { get; }
+
+    public string Action => "admissions.offer.accepted";
+    public string EntityType => "offer";
+    public Guid EntityId => OfferId;
+    public string Summary => "Offer accepted.";
+    public string? Metadata => null;
+}
+
+/// <summary>OfferDeclined (EDD-011/014) — the family declined the offer.</summary>
+public sealed class OfferDeclined : DomainEvent, IAuditableEvent
+{
+    public OfferDeclined(Guid offerId, Guid applicationId, Guid schoolId)
+    {
+        OfferId = offerId;
+        ApplicationId = applicationId;
+        SchoolId = schoolId;
+    }
+
+    public Guid OfferId { get; }
+    public Guid ApplicationId { get; }
+    public Guid SchoolId { get; }
+
+    public string Action => "admissions.offer.declined";
+    public string EntityType => "offer";
+    public Guid EntityId => OfferId;
+    public string Summary => "Offer declined.";
+    public string? Metadata => null;
+}
+
 /// <summary>AssessmentScheduled (EDD-011/014) — an applicant assessment was scheduled.</summary>
 public sealed class AssessmentScheduled : DomainEvent, IAuditableEvent
 {

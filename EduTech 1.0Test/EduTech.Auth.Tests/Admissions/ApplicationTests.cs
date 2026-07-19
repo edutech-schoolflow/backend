@@ -76,4 +76,23 @@ public class ApplicationTests
         AppErrorException ex = Assert.Throws<AppErrorException>(() => New().MarkDecided());
         Assert.Equal(409, ex.StatusCode);
     }
+
+    [Fact]
+    public void MarkOffered_ThenAccepted_Progresses()
+    {
+        Application a = New(ApplicationStatus.Decided);
+        a.MarkOffered();
+        Assert.Equal(ApplicationStatus.Offered, a.Status);
+
+        a.MarkAccepted();
+        Assert.Equal(ApplicationStatus.Accepted, a.Status);
+    }
+
+    [Fact]
+    public void MarkOffered_FromSubmitted_Throws() =>
+        Assert.Throws<AppErrorException>(() => New(ApplicationStatus.Submitted).MarkOffered());
+
+    [Fact]
+    public void MarkAccepted_FromDecided_Throws() =>
+        Assert.Throws<AppErrorException>(() => New(ApplicationStatus.Decided).MarkAccepted());
 }

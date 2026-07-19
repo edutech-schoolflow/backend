@@ -186,7 +186,8 @@ public class UnifiedAuthServiceTests
         NoContexts(identity.Id);
         _contexts.Setup(c => c.ListAccessContextsAsync(identity.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new[] { new AccessContextRow { ReferenceId = parentId, Type = "parent" } });
-        _access.Setup(a => a.IssueParent(parentId, Phone, It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>()))
+        _access.Setup(a => a.IssueParent(parentId, Phone, It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(),
+                It.IsAny<Guid?>(), It.IsAny<Guid?>()))
             .Returns(new AccessToken { Token = "access", ExpiresAt = DateTime.UtcNow.AddMinutes(30) });
         _refresh.Setup(r => r.IssueAsync(AuthActorTypes.Parent, parentId, null, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new RefreshTokenIssue { Token = "refresh", FamilyId = Guid.NewGuid(), ExpiresAt = DateTime.UtcNow.AddDays(14) });
@@ -216,7 +217,8 @@ public class UnifiedAuthServiceTests
                 ReferenceId = parentId, Type = "parent", OrganizationId = schoolId,
                 OrganizationName = "Divine Wisdom", OrganizationSlug = "divine-wisdom"
             } });
-        _access.Setup(a => a.IssueParent(parentId, Phone, identity.Id, parentId, schoolId))
+        _access.Setup(a => a.IssueParent(parentId, Phone, identity.Id, parentId, schoolId,
+                It.IsAny<Guid?>(), It.IsAny<Guid?>()))
             .Returns(new AccessToken { Token = "parent-access", ExpiresAt = DateTime.UtcNow.AddMinutes(30) });
         _refresh.Setup(r => r.IssueAsync(AuthActorTypes.Parent, parentId, null, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new RefreshTokenIssue { Token = "r", FamilyId = Guid.NewGuid(), ExpiresAt = DateTime.UtcNow.AddDays(14) });
@@ -227,7 +229,9 @@ public class UnifiedAuthServiceTests
         Assert.Equal(parentId, result.Selected);
         Assert.Equal("parent-access", result.Tokens!.AccessToken);
         // The school rode into the token — proof the parent session is organization-scoped.
-        _access.Verify(a => a.IssueParent(parentId, Phone, identity.Id, parentId, schoolId), Times.Once);
+        // organization_id (7th arg) also carries the school (EDD-012 B2c.1).
+        _access.Verify(a => a.IssueParent(parentId, Phone, identity.Id, parentId, schoolId,
+            It.IsAny<Guid?>(), schoolId), Times.Once);
     }
 
     [Fact]
@@ -291,7 +295,7 @@ public class UnifiedAuthServiceTests
                 Status = "active", KycStatus = "approved", Subdomain = "divine"
             } });
         _access.Setup(a => a.IssueSchoolOwner(ownerId, schoolId, Phone, "active", "approved", "divine",
-                It.IsAny<Guid?>(), It.IsAny<Guid?>()))
+                It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>()))
             .Returns(new AccessToken { Token = "owner-access", ExpiresAt = DateTime.UtcNow.AddMinutes(30) });
         _refresh.Setup(r => r.IssueAsync(AuthActorTypes.SchoolOwner, ownerId, null, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new RefreshTokenIssue { Token = "r", FamilyId = Guid.NewGuid(), ExpiresAt = DateTime.UtcNow.AddHours(12) });
@@ -538,7 +542,8 @@ public class UnifiedAuthServiceTests
             .ReturnsAsync(new ParentTokenRow { Phone = Phone, IsActive = true });
         _contexts.Setup(c => c.GetIdentityIdForActorAsync("parent", parentId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(identityId);
-        _access.Setup(a => a.IssueParent(parentId, Phone, identityId, parentId, null))
+        _access.Setup(a => a.IssueParent(parentId, Phone, identityId, parentId, null,
+                It.IsAny<Guid?>(), It.IsAny<Guid?>()))
             .Returns(new AccessToken { Token = "parent-access", ExpiresAt = DateTime.UtcNow.AddMinutes(30) });
 
         UnifiedTokens tokens = await CreateSut().RefreshSessionAsync("raw", null, null, CancellationToken.None);
@@ -577,7 +582,7 @@ public class UnifiedAuthServiceTests
         _contexts.Setup(c => c.GetIdentityIdForActorAsync("school", ownerId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(identityId);
         _access.Setup(a => a.IssueSchoolOwner(ownerId, schoolId, Phone, "active", "approved", "divine",
-                identityId, ownerId))
+                identityId, ownerId, It.IsAny<Guid?>(), It.IsAny<Guid?>()))
             .Returns(new AccessToken { Token = "owner-access", ExpiresAt = DateTime.UtcNow.AddMinutes(30) });
 
         UnifiedTokens tokens = await CreateSut().RefreshSessionAsync("raw", null, null, CancellationToken.None);

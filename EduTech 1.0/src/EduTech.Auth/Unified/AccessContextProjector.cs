@@ -48,34 +48,38 @@ internal sealed class AccessContextProjector : BaseRepository, IAccessContextPro
     private Task<int> ProjectAsync(Guid? identityId, CancellationToken cancellationToken) =>
         ExecuteAsync(
             """
-            -- OWNER: an owner membership with an active employment. reference_id = owner_id.
-            INSERT INTO access_contexts (identity_id, type, reference_id, organization_id)
-            SELECT m.identity_id, 'owner', o.id, m.school_id
+            -- OWNER: an owner membership with an active employment. reference_id = owner_id (legacy
+            -- compat); membership_id = m.id (canonical identity, B2c.1).
+            INSERT INTO access_contexts (identity_id, type, reference_id, organization_id, membership_id)
+            SELECT m.identity_id, 'owner', o.id, m.school_id, m.id
             FROM memberships m
             JOIN school_owners o ON o.identity_id = m.identity_id AND o.school_id = m.school_id
             WHERE m.kind = 'owner' AND m.status = 'active'
               AND (@IdentityId IS NULL OR m.identity_id = @IdentityId)
               AND EXISTS (SELECT 1 FROM employments e WHERE e.membership_id = m.id AND e.status = 'active')
-            ON CONFLICT (type, reference_id, organization_id) DO UPDATE SET status = 'active', updated_at = NOW();
+            ON CONFLICT (type, reference_id, organization_id)
+                DO UPDATE SET status = 'active', membership_id = EXCLUDED.membership_id, updated_at = NOW();
 
             -- STAFF: a staff membership with an active employment. reference_id = affiliation_id.
-            INSERT INTO access_contexts (identity_id, type, reference_id, organization_id)
-            SELECT m.identity_id, 'staff', a.id, m.school_id
+            INSERT INTO access_contexts (identity_id, type, reference_id, organization_id, membership_id)
+            SELECT m.identity_id, 'staff', a.id, m.school_id, m.id
             FROM memberships m
             JOIN staff_affiliations a ON a.identity_id = m.identity_id AND a.school_id = m.school_id
             WHERE m.kind = 'staff' AND m.status = 'active'
               AND (@IdentityId IS NULL OR m.identity_id = @IdentityId)
               AND EXISTS (SELECT 1 FROM employments e WHERE e.membership_id = m.id AND e.status = 'active')
-            ON CONFLICT (type, reference_id, organization_id) DO UPDATE SET status = 'active', updated_at = NOW();
+            ON CONFLICT (type, reference_id, organization_id)
+                DO UPDATE SET status = 'active', membership_id = EXCLUDED.membership_id, updated_at = NOW();
 
             -- PARENT: a parent membership, one per organization. reference_id = parent_id.
-            INSERT INTO access_contexts (identity_id, type, reference_id, organization_id)
-            SELECT m.identity_id, 'parent', p.id, m.school_id
+            INSERT INTO access_contexts (identity_id, type, reference_id, organization_id, membership_id)
+            SELECT m.identity_id, 'parent', p.id, m.school_id, m.id
             FROM memberships m
             JOIN parents p ON p.identity_id = m.identity_id AND p.is_active = TRUE
             WHERE m.kind = 'parent' AND m.status = 'active'
               AND (@IdentityId IS NULL OR m.identity_id = @IdentityId)
-            ON CONFLICT (type, reference_id, organization_id) DO UPDATE SET status = 'active', updated_at = NOW();
+            ON CONFLICT (type, reference_id, organization_id)
+                DO UPDATE SET status = 'active', membership_id = EXCLUDED.membership_id, updated_at = NOW();
 
             -- END the gone: an active context with no current canonical source.
             UPDATE access_contexts ac SET status = 'ended', updated_at = NOW()

@@ -127,6 +127,8 @@ public sealed class AuthContextItem
     public required Guid Id { get; init; }
     public required string Type { get; init; }        // owner | staff | parent
     public Guid? OrganizationId { get; init; }
+    /// <summary>Canonical identity of the context — the Membership it belongs to (EDD-012 B2c.1).</summary>
+    public Guid? MembershipId { get; init; }
     public string? OrganizationName { get; init; }
     /// <summary>URL identity of the workspace — /o/{slug} (FE-001 Phase 2).</summary>
     public string? OrganizationSlug { get; init; }

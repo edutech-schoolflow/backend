@@ -41,7 +41,8 @@ public static class TokenVendor
         string userId, string phone, string schoolId, string affiliationId, string role,
         string employmentType, string kycStatus, IReadOnlyDictionary<string, bool> features,
         int expiryMinutes = 30,
-        string? identityId = null, string? contextId = null)
+        string? identityId = null, string? contextId = null,
+        string? membershipId = null, string? organizationId = null)
     {
         List<Claim> claims = new List<Claim>
         {
@@ -66,6 +67,10 @@ public static class TokenVendor
 
         if (identityId is not null) claims.Add(new Claim("identity_id", identityId));
         if (contextId is not null) claims.Add(new Claim("context_id", contextId));
+        // Canonical identity + organization of the context (EDD-012 B2c.1). Additive; authorization
+        // resolves from context_id, not these.
+        if (membershipId is not null) claims.Add(new Claim("membership_id", membershipId));
+        if (organizationId is not null) claims.Add(new Claim("organization_id", organizationId));
 
         return VendToken(signingKey, issuer, audience, claims, expiryMinutes);
     }
@@ -101,7 +106,8 @@ public static class TokenVendor
     public static string VendSchoolOwnerToken(string signingKey, string issuer, string audience,
         string userId, string schoolId, string phone, string schoolStatus, string kycStatus,
         string? subdomain, int expiryMinutes = 30,
-        string? identityId = null, string? contextId = null)
+        string? identityId = null, string? contextId = null,
+        string? membershipId = null, string? organizationId = null)
     {
         List<Claim> claims = new List<Claim>
         {
@@ -122,6 +128,9 @@ public static class TokenVendor
 
         if (identityId is not null) claims.Add(new Claim("identity_id", identityId));
         if (contextId is not null) claims.Add(new Claim("context_id", contextId));
+        // Canonical identity + organization of the context (EDD-012 B2c.1). Additive.
+        if (membershipId is not null) claims.Add(new Claim("membership_id", membershipId));
+        if (organizationId is not null) claims.Add(new Claim("organization_id", organizationId));
 
         return VendToken(signingKey, issuer, audience, claims, expiryMinutes);
     }
@@ -153,7 +162,8 @@ public static class TokenVendor
 
     public static string VendParentToken(string signingKey, string issuer, string audience,
         string userId, string phone, int expiryMinutes = 30,
-        string? identityId = null, string? contextId = null, string? schoolId = null)
+        string? identityId = null, string? contextId = null, string? schoolId = null,
+        string? membershipId = null, string? organizationId = null)
     {
         List<Claim> claims = new List<Claim>
         {
@@ -170,6 +180,9 @@ public static class TokenVendor
         // A parent membership is organization-scoped (EDD-002 revision): the school it belongs to lets
         // parent queries bind @SchoolId + @ParentId, the same structural guard tenant data gets.
         if (schoolId is not null) claims.Add(new Claim("school_id", schoolId));
+        // Canonical identity + organization of the context (EDD-012 B2c.1). Additive.
+        if (membershipId is not null) claims.Add(new Claim("membership_id", membershipId));
+        if (organizationId is not null) claims.Add(new Claim("organization_id", organizationId));
 
         return VendToken(signingKey, issuer, audience, claims, expiryMinutes);
     }

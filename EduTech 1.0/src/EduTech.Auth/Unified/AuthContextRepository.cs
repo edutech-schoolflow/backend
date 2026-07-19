@@ -91,6 +91,7 @@ internal sealed class AccessContextRow
     public Guid ReferenceId { get; init; }
     public string Type { get; init; } = string.Empty;   // owner | staff | parent
     public Guid? OrganizationId { get; init; }
+    public Guid? MembershipId { get; init; }             // canonical identity of the context (EDD-012 B2c.1)
     public string? OrganizationName { get; init; }
     public string? OrganizationSlug { get; init; }
     public string? Role { get; init; }                  // staff only
@@ -191,6 +192,7 @@ internal sealed class AuthContextRepository : BaseRepository, IAuthContextReposi
         return QueryAsync<AccessContextRow>(
             """
             SELECT ac.reference_id AS ReferenceId, ac.type AS Type, ac.organization_id AS OrganizationId,
+                   ac.membership_id AS MembershipId,
                    s.name AS OrganizationName, s.slug AS OrganizationSlug, a.role AS Role
             FROM access_contexts ac
             LEFT JOIN schools s ON s.id = ac.organization_id

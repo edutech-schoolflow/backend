@@ -37,6 +37,15 @@ public interface IEduTechRequestContext
     string? ContextId { get; }
 
     /// <summary>
+    /// The canonical Membership (EDD-007) this context belongs to — the token's canonical identity
+    /// (EDD-012 B2c.1). Present on Unified login-enter context tokens; supersedes the legacy actor id.
+    /// </summary>
+    string? MembershipId { get; }
+
+    /// <summary>The organization (organizations.id, today == school_id) this context operates in.</summary>
+    string? OrganizationId { get; }
+
+    /// <summary>
     /// True only for the school account owner (registered the school).
     /// Bypasses all feature flag and role checks.
     /// </summary>

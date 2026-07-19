@@ -69,7 +69,7 @@ public class SchoolOwnerAuthServiceTests
             .ReturnsAsync(new SchoolStatusRow { Status = "pending_kyc", KycStatus = "not_submitted" });
         _access.Setup(a => a.IssueSchoolOwner(owner.Id, owner.SchoolId, It.IsAny<string>(),
                 It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(),
-                It.IsAny<Guid?>(), It.IsAny<Guid?>()))
+                It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>()))
             .Returns(new AccessToken { Token = "access-jwt", ExpiresAt = DateTime.UtcNow.AddMinutes(30) });
         _refresh.Setup(r => r.IssueAsync(AuthActorTypes.SchoolOwner, owner.Id, null, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new RefreshTokenIssue

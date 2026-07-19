@@ -40,12 +40,14 @@ internal sealed class AccessTokenIssuer : IAccessTokenIssuer
 
     public AccessToken IssueSchoolOwner(Guid ownerId, Guid schoolId, string phone,
         string schoolStatus, string kycStatus, string? subdomain,
-        Guid? identityId = null, Guid? contextId = null)
+        Guid? identityId = null, Guid? contextId = null,
+        Guid? membershipId = null, Guid? organizationId = null)
     {
         string token = TokenVendor.VendSchoolOwnerToken(
             _schoolSigningKey, _issuer, _audience,
             ownerId.ToString(), schoolId.ToString(), phone, schoolStatus, kycStatus, subdomain,
-            SchoolOwnerAccessMinutes, identityId?.ToString(), contextId?.ToString());
+            SchoolOwnerAccessMinutes, identityId?.ToString(), contextId?.ToString(),
+            membershipId?.ToString(), organizationId?.ToString());
 
         return new AccessToken
         {
@@ -69,13 +71,15 @@ internal sealed class AccessTokenIssuer : IAccessTokenIssuer
 
     public AccessToken IssueStaffScoped(Guid staffUserId, Guid schoolId, Guid affiliationId, string phone,
         string role, string employmentType, string kycStatus, IReadOnlyDictionary<string, bool> features,
-        Guid? identityId = null, Guid? contextId = null)
+        Guid? identityId = null, Guid? contextId = null,
+        Guid? membershipId = null, Guid? organizationId = null)
     {
         string token = TokenVendor.VendStaffScopedToken(
             _staffSigningKey, _issuer, _audience,
             staffUserId.ToString(), phone, schoolId.ToString(), affiliationId.ToString(),
             role, employmentType, kycStatus, features, StaffAccessMinutes,
-            identityId?.ToString(), contextId?.ToString());
+            identityId?.ToString(), contextId?.ToString(),
+            membershipId?.ToString(), organizationId?.ToString());
 
         return new AccessToken
         {
@@ -99,11 +103,12 @@ internal sealed class AccessTokenIssuer : IAccessTokenIssuer
     }
 
     public AccessToken IssueParent(Guid parentId, string phone, Guid? identityId = null, Guid? contextId = null,
-        Guid? schoolId = null)
+        Guid? schoolId = null, Guid? membershipId = null, Guid? organizationId = null)
     {
         string token = TokenVendor.VendParentToken(
             _parentSigningKey, _issuer, _audience, parentId.ToString(), phone, ParentAccessMinutes,
-            identityId?.ToString(), contextId?.ToString(), schoolId?.ToString());
+            identityId?.ToString(), contextId?.ToString(), schoolId?.ToString(),
+            membershipId?.ToString(), organizationId?.ToString());
 
         return new AccessToken
         {

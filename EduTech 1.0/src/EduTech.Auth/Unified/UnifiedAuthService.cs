@@ -732,6 +732,7 @@ internal sealed class UnifiedAuthService : IUnifiedAuthService
             Id = r.ReferenceId,
             Type = r.Type,
             OrganizationId = r.OrganizationId,
+            MembershipId = r.MembershipId,
             OrganizationName = r.OrganizationName,
             OrganizationSlug = r.OrganizationSlug,
             Role = r.Type == "owner" ? "owner" : r.Role
@@ -854,7 +855,8 @@ internal sealed class UnifiedAuthService : IUnifiedAuthService
                 OwnerContextRow owner = owners.First(o => o.OwnerId == actorId);
                 AccessToken access = _accessTokenIssuer.IssueSchoolOwner(owner.OwnerId, owner.SchoolId,
                     identity.Phone, owner.Status, owner.KycStatus, owner.Subdomain,
-                    identityId: identity.Id, contextId: owner.OwnerId);
+                    identityId: identity.Id, contextId: owner.OwnerId,
+                    membershipId: context.MembershipId, organizationId: context.OrganizationId);
                 RefreshTokenIssue refresh = await _refreshTokens.IssueAsync(AuthActorTypes.SchoolOwner,
                     owner.OwnerId, ipAddress, userAgent, cancellationToken);
                 return Tokens(access, refresh);
@@ -887,7 +889,8 @@ internal sealed class UnifiedAuthService : IUnifiedAuthService
                 AccessToken access = _accessTokenIssuer.IssueStaffScoped(staffContext.StaffUserId,
                     staffContext.SchoolId, affiliation.AffiliationId, identity.Phone,
                     affiliation.Role, affiliation.EmploymentType, staff.KycStatus, features,
-                    identityId: identity.Id, contextId: affiliation.AffiliationId);
+                    identityId: identity.Id, contextId: affiliation.AffiliationId,
+                    membershipId: context.MembershipId, organizationId: context.OrganizationId);
                 RefreshTokenIssue refresh = await _refreshTokens.IssueAsync(AuthActorTypes.Staff,
                     staffContext.StaffUserId, ipAddress, userAgent, cancellationToken);
                 return Tokens(access, refresh);
@@ -898,7 +901,8 @@ internal sealed class UnifiedAuthService : IUnifiedAuthService
                 // Org-scoped parent context (EDD-002 revision): the token carries the school so parent
                 // data binds @SchoolId + @ParentId. A legacy NULL-org context stays school-agnostic.
                 AccessToken access = _accessTokenIssuer.IssueParent(actorId, identity.Phone,
-                    identityId: identity.Id, contextId: actorId, schoolId: context.OrganizationId);
+                    identityId: identity.Id, contextId: actorId, schoolId: context.OrganizationId,
+                    membershipId: context.MembershipId, organizationId: context.OrganizationId);
                 RefreshTokenIssue refresh = await _refreshTokens.IssueAsync(AuthActorTypes.Parent,
                     actorId, ipAddress, userAgent, cancellationToken);
                 return Tokens(access, refresh);

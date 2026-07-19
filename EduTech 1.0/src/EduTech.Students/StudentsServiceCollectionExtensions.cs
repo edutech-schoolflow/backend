@@ -35,6 +35,9 @@ public static class StudentsServiceCollectionExtensions
         // Observer: provision the standard 6-3-3 classes when a school is activated (alongside the calendar).
         services.AddScoped<IDomainEventHandler<SchoolActivatedEvent>, ProvisionClassesOnSchoolActivated>();
         services.AddScoped<IStudentRepository, StudentRepository>();
+        // EDD-014 Slice 9: the Admissions → Students handoff. Students reacts to the platform's
+        // StudentEnrolled event and creates the Student — the only bridge between the two contexts.
+        services.AddScoped<IDomainEventHandler<StudentEnrolled>, EnrollStudentOnStudentEnrolled>();
         services.AddScoped<StudentCommandInvoker>();   // Command: runs lifecycle actions + audits them
         services.AddScoped<IStudentService, StudentService>();
         services.AddScoped<IParentChildrenRepository, ParentChildrenRepository>();

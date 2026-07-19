@@ -1,7 +1,8 @@
 # EDD-014 — Admissions (the reference module)
 
-**Status:** 🔒 FROZEN — Parts 1–11 + UX complete. Design is done; remaining work is code + tests, built
-as 9 independent vertical slices (Part 11). Slice 1 (AdmissionCycle) in progress.
+**Status:** 🔒 FROZEN — Parts 1–11 + UX complete. Design is done; **all 9 vertical slices (Part 11) have
+shipped — the module is complete.** See **Build status** at the end for what shipped and the two honest
+deferrals the maturity test surfaced.
 **Role:** The first module built on the finished platform — the **reference implementation** and the
 **Platform Validation** case: it may not modify the Foundation; any Foundation change it needs is a
 defect, not a new concept.
@@ -219,8 +220,10 @@ Each command maps 1:1 to an API endpoint gated by a Part-7 capability; queries a
 - New migrations `0048…` create `admission_cycles / inquiries / assessments / assessment_results /
   decisions / offers / enrollments` and evolve the existing `applications` (0023) to the fuller
   lifecycle + `cycle_id` + `child_profile_id`. Additive first; the current 4-state flow keeps working.
-- The existing `applications.admitted_student_id → students` FK is **retired** in favour of the
-  `enrollments` row + `StudentEnrolled` event (the event boundary replaces the direct FK).
+- The existing `applications.admitted_student_id → students` FK is **superseded** by the `enrollments`
+  row + `StudentEnrolled` event (the event boundary replaces the direct FK). The column itself is
+  **retired at legacy decommission**, not in Slice 9 — the legacy `EduTech.Students/Admissions` flow is
+  still the live path and still writes it (see Build status).
 - Backfill: existing `admitted` applications → a default cycle + an `enrollment` row, so history is preserved.
 
 ## Part 11 — Implementation Plan (the last design artifact — then code)
@@ -240,7 +243,8 @@ across the slices; the Admissions↔Students seam becomes the `StudentEnrolled` 
 6. **Decision** — approved/conditional/waitlisted/rejected/withdrawn.
 7. **Offer** — issue/accept/decline/withdraw/expire.
 8. **Enrollment** — enroll/cancel (the platform-transition point).
-9. **StudentEnrolled event** — the handoff; Students consumes it; retire the direct FK.
+9. **StudentEnrolled event** — the handoff; Students consumes it and creates the Student; supersede the
+   direct FK (the column retires at legacy decommission, not here).
 
 **Per-slice gate (the maturity test, enforced):** zero changes to Identity / Membership / Employment /
 Organization / Access Context / Authentication; depends only on published contracts + services;
@@ -254,6 +258,38 @@ build + tests green; migration verified on throwaway Postgres.
 
 > **EDD-014 is now FROZEN.** No Parts 12+. Everything needed to build exists. Further change is code
 > + tests, not design.
+
+## Build status — the module is complete (the maturity test passed)
+
+All 9 slices shipped as `EduTech.Admissions` (Layer 3), one migration + one vertical slice each
+(`0048…0055`). **The reference-module thesis is proven:** across the whole build — including the finale,
+the cross-module Admissions → Students handoff — **not one Foundation source file changed.**
+`EduTech.Admissions` references **only** `EduTech.Shared`; every capability came from published contracts
+and services. The single cross-module coupling is one event.
+
+**Slice 9 (the finale) — the handoff, as built:** `EnrollmentService` raises `StudentEnrolled` (a Shared
+Event-Catalog contract, added additively in Slice 8) carrying everything Students needs. The **Students**
+module consumes it via `EnrollStudentOnStudentEnrolled : IDomainEventHandler<StudentEnrolled>`, which
+creates the Student by reusing the same `StudentRepository.CreateAsync` machinery as manual enrolment
+(parent + child profile + admission number, one transaction). Admissions never writes a Student; Students
+never reads Admissions tables. *Admissions owns prospective learners; Students owns enrolled learners; the
+event is the only bridge.*
+
+**Two honest deferrals the maturity test surfaced** (findings, not blockers):
+1. **`admitted_student_id` is superseded, not yet dropped.** The legacy `EduTech.Students/Admissions`
+   flow is still the live path and still writes the FK, so both coexist. The column retires when the
+   legacy flow is decommissioned (a later convergence step), not in Slice 9 — ripping it out now would
+   break the live path for no gain.
+2. **`StudentEnrolled` should *guarantee* class + DOB + gender for fully-automatic creation.** A Student
+   needs all three; the current Admissions model leaves them optional on the offer/application, so when
+   any is missing the handler logs and defers to data completion rather than forging a half-formed
+   record. Tightening the accepted-offer/application to require them is a small follow-up to the
+   Admissions model. Relatedly, the applicant *is* a Child Profile (EDD-007) but the platform does not
+   yet publish a Child-Profile-creation contract, so applicant details are carried inline on the event
+   with a nullable `child_profile_id` — the seam to close when that contract exists.
+
+Verification each slice: clean `dotnet build` 0/0, full suite green (**501 tests**), migration applied on
+throwaway Postgres, and the zero-Foundation-change gate (diff grep) enforced.
 
 ## Part 15 — UX Journey
 

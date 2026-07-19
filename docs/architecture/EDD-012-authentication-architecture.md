@@ -10,6 +10,14 @@
 > Employment, Organization). It may be **deleted and rebuilt at any time without loss of business
 > data.** If that is ever untrue, the projection is wrong — not the aggregates.
 
+> **The token invariant (the defining rule of the redesign): the JWT never identifies a business
+> actor.** It identifies only the authenticated **Identity**, the entered **Context**, the current
+> **Organization**, and the current **Membership**. Business actors — Owner, Staff, Parent, Student —
+> are **derived** from canonical aggregates, never encoded as token identity. There is exactly one
+> authenticated thing: an **Identity**. Everything else is a context. The pipeline is therefore
+> `Authentication → Identity Token → Access Context → Authorization` — there is no "owner
+> authentication", "staff authentication", or "parent authentication"; those concepts do not exist.
+
 This is the definitive spec for the login pipeline. It documents the pipeline as it **is** today and
 the **target** it converges to across B2a–B2d, so that afterwards Authentication is as stable as
 Identity itself.
@@ -182,9 +190,24 @@ projections derived from them, but **never** legacy actor tables. When no login 
   - **B2c.2 (done) — Token Cleanup.** The 13 permission flags leave the token (authorization is fully
     server-side); dead `[RequireFeature]` deleted. Retirement proof kept `is_owner` (13 business
     consumers), `affiliation_id` (staff scoping), `user_type` (portal/UX), `school_id` (tenant), `role`.
-  - **B2c.3 — Authentication Simplification.** One signing key / one bearer scheme / policy cleanup;
-    refresh re-keyed on `(identity_id, context_id)`; drop `reference_id`; sweep the residual inert
-    claims + the vestigial mint-time feature resolution. `user_type` stays (UX, not authorization).
+  - **B2c.3 — Authentication Simplification.** The "owner / staff / parent authentication" split
+    collapses to a single authenticated Identity (the token invariant above). Sequenced as **four
+    independent commits**, each with its own rollback point — this is the lockout surface, so nothing
+    bundles:
+    - **B2c.3a — Signing-key unification.** The 5 per-portal signing keys → **one**. Purely
+      cryptographic; bearer schemes + claims + refresh unchanged. (In-flight access tokens signed with
+      the old keys fail validation and silently refresh — refresh tokens are opaque DB rows, unaffected;
+      no hard logout.) *Accept:* every path's token validates, refresh still works, schemes unchanged.
+    - **B2c.3b — Bearer-scheme unification.** The per-portal bearer schemes (`StaffAuth`/`SchoolAuth`/
+      `ParentAuth`/`IdentityAuth`/`PlatformAdminAuth`) → **one `Bearer`**; portal policies re-expressed to
+      behave identically (gate on `user_type` within the single scheme). No claim/refresh change.
+    - **B2c.3c — Refresh identity re-key.** `refresh_tokens` keyed on `(identity_id, context_id)` instead
+      of `(actor_type, actor_id)`; `GetIdentityIdForActorAsync` retired. The biggest behavioral change —
+      own rollback point. *Accept:* refresh · logout · context-switch · revoked-family theft detection ·
+      concurrent refresh all behave identically.
+    - **B2c.3d — Compatibility retirement.** Only after 3a–3c: drop `access_contexts.reference_id`, the
+      legacy refresh columns + lookup code, and the Transitional claims (Appendix B). Final cleanup.
+    `user_type` stays throughout (UX/portal semantics, not authorization).
   The pure-minimal `id · membership · context · org · role` target is the *asymptote*; the retained
   claims above are re-sourced (owner-ness, staff scoping, tenant) as their consumers migrate.
 - **B2d — Legacy Retirement.** Remove `school_owners` / `staff_affiliations` / `parents` from the

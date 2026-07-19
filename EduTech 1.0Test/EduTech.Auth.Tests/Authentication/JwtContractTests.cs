@@ -49,13 +49,15 @@ public class JwtContractTests
         Assert.Equal(StaffRoles.Principal, claims["role"]);
         Assert.Equal(Organization.ToString(), claims["school_id"]);   // tenant binding (kept until FK-repoint)
 
-        // The baggage B2c.2 removes — still present at B2c.1 (this is the "before" side of the diff).
-        Assert.True(claims.ContainsKey("affiliation_id"));
-        Assert.True(claims.ContainsKey("employment_type"));
-        Assert.True(claims.ContainsKey("kyc_status"));
+        // B2c.2: authorization has LEFT the token — no permission flags, even when resolved features
+        // are passed to the vendor. Enforcement is server-side (context_id → CapabilityResolver).
+        Assert.False(claims.ContainsKey("can_manage_students"));
+        Assert.False(claims.ContainsKey("can_view_fees"));
+
+        // Load-bearing claims the retirement proof shows are still consumed — deliberately KEPT:
+        // is_owner (13 business consumers) and affiliation_id (staff-action scoping).
         Assert.True(claims.ContainsKey("is_owner"));
-        Assert.True(claims.ContainsKey("can_manage_students"));       // a resolved feature flag
-        Assert.True(claims.ContainsKey("can_view_fees"));
+        Assert.True(claims.ContainsKey("affiliation_id"));
     }
 
     [Fact]

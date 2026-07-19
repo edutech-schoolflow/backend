@@ -34,7 +34,8 @@ public static class TokenVendor
 
     /// <summary>
     /// Issues a SCHOOL-SCOPED staff token for the active affiliation. Carries the active school,
-    /// affiliation id, role, employment type, platform kyc_status, and the 13 RESOLVED feature claims.
+    /// affiliation id, role, employment type, and platform kyc_status. Authorization is NOT in the
+    /// token (EDD-012 B2c.2) — capabilities resolve server-side from context_id (B2b).
     /// 30-minute access token. Portal: staff.schoolflow.com. Signing key: Jwt:StaffSigningKey.
     /// </summary>
     public static string VendStaffScopedToken(string signingKey, string issuer, string audience,
@@ -59,11 +60,11 @@ public static class TokenVendor
             new Claim("phone", phone)
         };
 
-        // The 13 RESOLVED feature flags (role defaults → template → overrides).
-        foreach ((string flag, bool value) in features)
-        {
-            claims.Add(new Claim(flag, value ? "true" : "false"));
-        }
+        // EDD-012 B2c.2: the 13 permission flags NO LONGER ride in the token — authorization is
+        // resolved server-side per request from context_id (ICapabilityResolver, B2b). Nothing reads
+        // the flag claims (retirement-proven). The `features` parameter is now vestigial; the mint-time
+        // resolution that fills it is removed when the mint paths are unified in B2c.3.
+        _ = features;
 
         if (identityId is not null) claims.Add(new Claim("identity_id", identityId));
         if (contextId is not null) claims.Add(new Claim("context_id", contextId));

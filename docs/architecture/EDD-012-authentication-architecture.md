@@ -175,9 +175,18 @@ projections derived from them, but **never** legacy actor tables. When no login 
   (`context → membership → employment → position → template → capabilities`); `[RequireCapability]`
   consults it. Authentication is untouched (auth never resolves permissions — see §4). Flags still in
   the token for now (removed in B2c).
-- **B2c — JWT Slimming.** Token becomes `identity_id · membership_id · context_id · organization_id ·
-  role`; one signing key / `user_type`; refresh re-keyed on identity + context. Capabilities and
-  legacy actor ids leave the token.
+- **B2c — JWT Slimming.** Split into three single-invariant milestones (see Appendix A for the full
+  contract diff + retirement proof):
+  - **B2c.1 (done) — Canonical Identity Token.** Additive: `membership_id` + `organization_id` join the
+    projection (`access_contexts.membership_id`) and the context token, superseding the legacy actor id.
+  - **B2c.2 (done) — Token Cleanup.** The 13 permission flags leave the token (authorization is fully
+    server-side); dead `[RequireFeature]` deleted. Retirement proof kept `is_owner` (13 business
+    consumers), `affiliation_id` (staff scoping), `user_type` (portal/UX), `school_id` (tenant), `role`.
+  - **B2c.3 — Authentication Simplification.** One signing key / one bearer scheme / policy cleanup;
+    refresh re-keyed on `(identity_id, context_id)`; drop `reference_id`; sweep the residual inert
+    claims + the vestigial mint-time feature resolution. `user_type` stays (UX, not authorization).
+  The pure-minimal `id · membership · context · org · role` target is the *asymptote*; the retained
+  claims above are re-sourced (owner-ness, staff scoping, tenant) as their consumers migrate.
 - **B2d — Legacy Retirement.** Remove `school_owners` / `staff_affiliations` / `parents` from the
   login pipeline. Auth now consumes only canonical aggregates + projections.
 
@@ -185,3 +194,73 @@ After B2, Authentication is "finished" — future work is product capability, no
 ```
 FOUNDATION ✅ → PLATFORM INTEGRATION (B2a→B2d) → PLATFORM STABILIZATION → BUSINESS MODULES
 ```
+
+---
+
+## Appendix A — JWT contract diff (B2c.1 + B2c.2)
+
+The permanent record of what changed in the token and **why**. Every removed claim carries a
+retirement proof: **no runtime reader, no frontend dependency, no middleware dependency, no refresh
+dependency.** This exists so a future maintainer never silently reintroduces a removed claim.
+
+### Staff scoped context token
+
+```
+BEFORE (pre-B2c)                          AFTER (B2c.1 additive + B2c.2 removal)
+  user_id                                   user_id
+  user_type                                 user_type
+  is_owner                                  is_owner                 ← KEPT (load-bearing)
+  school_id                                 school_id
+  active_school_id                          active_school_id         (inert; swept in B2c.3)
+  affiliation_id                            affiliation_id           ← KEPT (load-bearing)
+  role                                      role
+  employment_type                           employment_type          (inert; swept in B2c.3)
+  kyc_status                                kyc_status               (inert; swept in B2c.3)
+  phone                                     phone
+  identity_id                               identity_id
+  context_id                                context_id
+  + 13 permission flags (can_*)             + membership_id          ← NEW (B2c.1, canonical identity)
+                                            + organization_id        ← NEW (B2c.1)
+                                            − 13 permission flags    ← REMOVED (B2c.2)
+```
+
+### Added (B2c.1, additive)
+- **`membership_id`** — the canonical identity of the context (Membership, EDD-007), from
+  `access_contexts.membership_id` (written by the projector). Supersedes reliance on the legacy actor id.
+- **`organization_id`** — the organization the context operates in (today `== school_id`; the
+  forward-canonical claim as `schools → organizations` FK-repoint lands later).
+
+### Removed (B2c.2) — retirement proof
+- **The 13 permission flags (`can_*`)** — *runtime readers:* NONE. Enforcement is
+  `[RequireCapability] → ICapabilityResolver(context_id)` (B2b); the only flag-claim reader was the
+  `[RequireFeature]` attribute, which had **0 live call sites** and is deleted. *Frontend:* never
+  decodes the JWT (opaque bearer; reads `/me` responses) — no dependency. *Middleware:*
+  `RequestResponseLoggingMiddleware` reads only `user_type` — no dependency. *Refresh:* reads the
+  `refresh_tokens` table (`actor_type`/`actor_id`), never JWT claims — no dependency.
+
+### Kept — retirement proof **FAILED** (still consumed; deliberately NOT removed)
+- **`is_owner`** — consumed by 13 business services via `IEduTechRequestContext.IsOwner` as an
+  owner-discriminator (Attendance, Grades, Fees, StaffAttendance, StaffProfile, SchoolBranding).
+  Re-sourcing owner-ness onto capability/context is a cross-module change — a later refinement.
+- **`affiliation_id`** — scopes staff actions (`CurrentAffiliation()` in Attendance / Grades /
+  StaffProfile). Re-sources onto Membership/Employment later.
+- **`user_type`** — portal/UX semantics (Identity Home / Family Home / Workspace routing + the portal
+  authorization policies), **not** authorization. Deliberately retained: capabilities decide access,
+  `user_type` decides UX.
+- **`school_id`** — the tenant binding (`TenantRepository`). Retained until the `schools→organizations`
+  FK-repoint.
+- **`role`** — `[RequireRole]` gates + business role checks.
+
+### Deferred to B2c.3 (Authentication Simplification)
+- Sweep the residual **inert** claims (proven 0 readers, left until the mint paths are unified):
+  `active_school_id` (redundant with `school_id`), `employment_type`, `kyc_status`, `subdomain`,
+  `school_status`.
+- Remove the **vestigial `features` parameter** + the mint-time `StaffFeatureResolver` resolution
+  (`StaffFeatureResolver` itself stays — `StaffProfileService` still uses it for the permissions UI).
+- One signing key / one bearer scheme / portal-policy cleanup; refresh re-keyed on
+  `(identity_id, context_id)`; drop `access_contexts.reference_id`.
+- **`[RequireRole]` → `[RequireCapability]`**: blocked in B2c.2 because capability resolution is
+  flag-derived (`CapabilityResolution` grants staff capabilities only through a `LegacyFlag`). A
+  "leadership" capability needs either a new flag (forbidden — no new JWT flags) or resolver support for
+  flag-less role-default capabilities — an authorization change to live endpoints, not token cleanup.
+  It belongs with the capability-model work, not this milestone.

@@ -61,10 +61,12 @@ public sealed class StaffInviteController : ControllerBase
 
     // ── helpers ─────────────────────────────────────────────────────────────────
 
-    /// <summary>Reads an existing StaffAuth session if present (cookie or header); null otherwise.</summary>
+    /// <summary>Reads an existing authenticated session if present (cookie or header); null otherwise.
+    /// A staff invite is only ever claimed from a staff session, but authentication is one Bearer scheme
+    /// now (EDD-012 B2c.3b) — the caller checks the persona, not the scheme.</summary>
     private async Task<Guid?> TryGetAuthenticatedStaffIdAsync()
     {
-        AuthenticateResult auth = await HttpContext.AuthenticateAsync("StaffAuth");
+        AuthenticateResult auth = await HttpContext.AuthenticateAsync("Bearer");
         if (auth.Succeeded && Guid.TryParse(auth.Principal?.FindFirst("user_id")?.Value, out Guid id))
         {
             return id;

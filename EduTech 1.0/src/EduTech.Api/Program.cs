@@ -86,26 +86,12 @@ builder.Services.AddEduTechPersistence(config);
 IConnectionMultiplexer? redis = TryConnectRedis(config);
 builder.Services.AddEduTechCaching(redis);
 
-// ─── Authentication: the portal schemes now validate with the SAME signing key (B2c.3a). The scheme
-// names are retained until B2c.3b unifies them; only the key is shared here. Platform-admin stays on
-// its own key. ──────────────────────────────────────────────────────────────
-builder.Services.AddAuthentication()
-    .AddJwtBearer("StaffAuth", options =>
-    {
-        options.TokenValidationParameters = BuildTokenParams(signingKey, jwtIssuer, jwtAudience);
-        ReadTokenFromCookie(options);
-    })
-    .AddJwtBearer("SchoolAuth", options =>
-    {
-        options.TokenValidationParameters = BuildTokenParams(signingKey, jwtIssuer, jwtAudience);
-        ReadTokenFromCookie(options);
-    })
-    .AddJwtBearer("ParentAuth", options =>
-    {
-        options.TokenValidationParameters = BuildTokenParams(signingKey, jwtIssuer, jwtAudience);
-        ReadTokenFromCookie(options);
-    })
-    .AddJwtBearer("IdentityAuth", options =>
+// ─── Authentication: ONE Bearer scheme for every identity/portal token (EDD-012 B2c.3b). The per-portal
+// schemes (StaffAuth/SchoolAuth/ParentAuth/IdentityAuth) are gone — a scheme proves authenticity, never
+// persona; portal eligibility is authorization (see PortalGates). Platform-admin keeps its own scheme +
+// key: a distinct internal trust boundary. ─────────────────────────────────────
+builder.Services.AddAuthentication("Bearer")
+    .AddJwtBearer("Bearer", options =>
     {
         options.TokenValidationParameters = BuildTokenParams(signingKey, jwtIssuer, jwtAudience);
         ReadTokenFromCookie(options);
@@ -116,41 +102,40 @@ builder.Services.AddAuthentication()
         ReadTokenFromCookie(options);
     });
 
-// ─── Authorization: named policies map portals to schemes ────────────────────
+// ─── Authorization: one Bearer scheme; each policy states its persona restriction EXPLICITLY on
+// user_type (never inferred from a scheme). Platform-admin authenticates on its own scheme. ──────────
 builder.Services.AddAuthorizationBuilder()
     .AddPolicy("StaffOnly", policy => policy
-        .AddAuthenticationSchemes("StaffAuth")
+        .AddAuthenticationSchemes("Bearer")
         .RequireAuthenticatedUser()
         .RequireClaim("user_type", UserTypes.Staff))
     .AddPolicy("SchoolOnly", policy => policy
-        .AddAuthenticationSchemes("SchoolAuth")
+        .AddAuthenticationSchemes("Bearer")
         .RequireAuthenticatedUser()
         .RequireClaim("user_type", UserTypes.School))
     .AddPolicy("ParentOnly", policy => policy
-        .AddAuthenticationSchemes("ParentAuth")
+        .AddAuthenticationSchemes("Bearer")
         .RequireAuthenticatedUser()
         .RequireClaim("user_type", UserTypes.Parent))
     .AddPolicy("PlatformAdminOnly", policy => policy
         .AddAuthenticationSchemes("PlatformAdminAuth")
         .RequireAuthenticatedUser()
         .RequireClaim("user_type", UserTypes.PlatformAdmin))
-    // Staff OR parent. The user_type gate is EXPLICIT (EDD-012 B2c.3a): with one signing key the scheme
-    // list no longer excludes other personas, so authorization states the restriction itself.
+    // Staff OR parent — the user_type gate is explicit (EDD-012 B2c.3a); one Bearer scheme authenticates.
     .AddPolicy("ComplianceActor", policy => policy
-        .AddAuthenticationSchemes("StaffAuth", "ParentAuth")
+        .AddAuthenticationSchemes("Bearer")
         .RequireAuthenticatedUser()
         .RequireAssertion(ctx => PortalGates.IsStaffOrParent(ctx.User)))
-    // School-management endpoints (students, classes, calendar): the owner OR a staff member with an
-    // active school. Both tokens carry school_id; the explicit user_type gate keeps parents/identities
-    // out now that one signing key validates every token (per-action capabilities gate staff further).
+    // School-management endpoints (students, classes, calendar): the owner OR a staff member. The explicit
+    // user_type gate keeps parents/identities out (per-action capabilities gate staff further).
     .AddPolicy("SchoolPortal", policy => policy
-        .AddAuthenticationSchemes("SchoolAuth", "StaffAuth")
+        .AddAuthenticationSchemes("Bearer")
         .RequireAuthenticatedUser()
         .RequireAssertion(ctx => PortalGates.IsSchoolOrStaff(ctx.User)))
-    // "Are you an authenticated person?" — any session (identity-scope or portal) qualifies; the
-    // persona is irrelevant. Identity-surface endpoints (/auth/me, select-context, onboarding) use this.
+    // "Are you an authenticated person?" — any user session (identity-scope or in a workspace) qualifies;
+    // the persona is irrelevant. Admin is excluded (separate scheme). Used by /auth/me, select-context, …
     .AddPolicy("AuthenticatedIdentity", policy => policy
-        .AddAuthenticationSchemes("SchoolAuth", "StaffAuth", "ParentAuth", "IdentityAuth")
+        .AddAuthenticationSchemes("Bearer")
         .RequireAuthenticatedUser());
 
 // ─── Rate limiting ────────────────────────────────────────────────────────────

@@ -210,9 +210,10 @@ projections derived from them, but **never** legacy actor tables. When no login 
       validation and silently refresh (refresh tokens are opaque DB rows; no hard logout). *Accept:*
       every user token validates under the one key · admin isolated · SchoolPortal/ComplianceActor admit
       exactly the personas they did before (policy-evaluation test) · refresh/schemes unchanged.
-    - **B2c.3b — Bearer-scheme unification.** The per-portal bearer schemes (`StaffAuth`/`SchoolAuth`/
-      `ParentAuth`/`IdentityAuth`/`PlatformAdminAuth`) → **one `Bearer`**; portal policies re-expressed to
-      behave identically (gate on `user_type` within the single scheme). No claim/refresh change.
+    - **B2c.3b — Bearer-scheme unification (done).** The four per-portal user schemes (`StaffAuth`/
+      `SchoolAuth`/`ParentAuth`/`IdentityAuth`) → **one `Bearer`** (the default scheme); platform-admin
+      keeps its own. Purely mechanical — the persona gates were already explicit (3a), so no authorization,
+      claim, or refresh change. Policies authenticate on `Bearer` and gate on `user_type`.
     - **B2c.3c — Refresh identity re-key.** `refresh_tokens` keyed on `(identity_id, context_id)` instead
       of `(actor_type, actor_id)`; `GetIdentityIdForActorAsync` retired. The biggest behavioral change —
       own rollback point. *Accept:* refresh · logout · context-switch · revoked-family theft detection ·

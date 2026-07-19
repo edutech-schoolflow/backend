@@ -62,11 +62,14 @@ builder.Host.UseSerilog();
 // ─── Configuration helpers ────────────────────────────────────────────────────
 ConfigurationManager config = builder.Configuration;
 
-string staffKey    = config["Jwt:StaffSigningKey"]         ?? throw new InvalidOperationException("Jwt:StaffSigningKey is missing");
-string schoolKey   = config["Jwt:SchoolSigningKey"]        ?? throw new InvalidOperationException("Jwt:SchoolSigningKey is missing");
-string parentKey   = config["Jwt:ParentSigningKey"]        ?? throw new InvalidOperationException("Jwt:ParentSigningKey is missing");
+// EDD-012 B2c.3a — ONE signing key for every identity/portal token (owner · staff · parent · identity):
+// the per-portal keys are retired. Platform-admin keeps its own key — a distinct internal trust boundary
+// (admin.schoolflow.com), so a leak of the user key can never forge an admin token. Falls back to the
+// legacy staff key so a pre-config deploy keeps validating; in-flight tokens signed with an old key fail
+// and silently refresh (refresh tokens are opaque DB rows, unaffected) — no hard logout.
+string signingKey  = config["Jwt:SigningKey"] ?? config["Jwt:StaffSigningKey"]
+    ?? throw new InvalidOperationException("Jwt:SigningKey is missing");
 string adminKey    = config["Jwt:PlatformAdminSigningKey"] ?? throw new InvalidOperationException("Jwt:PlatformAdminSigningKey is missing");
-string identityKey = config["Jwt:IdentitySigningKey"] ?? parentKey;   // identity-scope tokens (EDD-001)
 string jwtIssuer   = config["Jwt:Issuer"]                  ?? "EduTech";
 string jwtAudience = config["Jwt:Audience"]                ?? "EduTechApp";
 
@@ -83,26 +86,28 @@ builder.Services.AddEduTechPersistence(config);
 IConnectionMultiplexer? redis = TryConnectRedis(config);
 builder.Services.AddEduTechCaching(redis);
 
-// ─── Authentication: one JWT scheme per portal ────────────────────────────────
+// ─── Authentication: the portal schemes now validate with the SAME signing key (B2c.3a). The scheme
+// names are retained until B2c.3b unifies them; only the key is shared here. Platform-admin stays on
+// its own key. ──────────────────────────────────────────────────────────────
 builder.Services.AddAuthentication()
     .AddJwtBearer("StaffAuth", options =>
     {
-        options.TokenValidationParameters = BuildTokenParams(staffKey, jwtIssuer, jwtAudience);
+        options.TokenValidationParameters = BuildTokenParams(signingKey, jwtIssuer, jwtAudience);
         ReadTokenFromCookie(options);
     })
     .AddJwtBearer("SchoolAuth", options =>
     {
-        options.TokenValidationParameters = BuildTokenParams(schoolKey, jwtIssuer, jwtAudience);
+        options.TokenValidationParameters = BuildTokenParams(signingKey, jwtIssuer, jwtAudience);
         ReadTokenFromCookie(options);
     })
     .AddJwtBearer("ParentAuth", options =>
     {
-        options.TokenValidationParameters = BuildTokenParams(parentKey, jwtIssuer, jwtAudience);
+        options.TokenValidationParameters = BuildTokenParams(signingKey, jwtIssuer, jwtAudience);
         ReadTokenFromCookie(options);
     })
     .AddJwtBearer("IdentityAuth", options =>
     {
-        options.TokenValidationParameters = BuildTokenParams(identityKey, jwtIssuer, jwtAudience);
+        options.TokenValidationParameters = BuildTokenParams(signingKey, jwtIssuer, jwtAudience);
         ReadTokenFromCookie(options);
     })
     .AddJwtBearer("PlatformAdminAuth", options =>
@@ -129,14 +134,19 @@ builder.Services.AddAuthorizationBuilder()
         .AddAuthenticationSchemes("PlatformAdminAuth")
         .RequireAuthenticatedUser()
         .RequireClaim("user_type", UserTypes.PlatformAdmin))
+    // Staff OR parent. The user_type gate is EXPLICIT (EDD-012 B2c.3a): with one signing key the scheme
+    // list no longer excludes other personas, so authorization states the restriction itself.
     .AddPolicy("ComplianceActor", policy => policy
         .AddAuthenticationSchemes("StaffAuth", "ParentAuth")
-        .RequireAuthenticatedUser())
+        .RequireAuthenticatedUser()
+        .RequireAssertion(ctx => PortalGates.IsStaffOrParent(ctx.User)))
     // School-management endpoints (students, classes, calendar): the owner OR a staff member with an
-    // active school. Both tokens carry school_id; per-action [RequireFeature] gates staff (owner bypasses).
+    // active school. Both tokens carry school_id; the explicit user_type gate keeps parents/identities
+    // out now that one signing key validates every token (per-action capabilities gate staff further).
     .AddPolicy("SchoolPortal", policy => policy
         .AddAuthenticationSchemes("SchoolAuth", "StaffAuth")
-        .RequireAuthenticatedUser())
+        .RequireAuthenticatedUser()
+        .RequireAssertion(ctx => PortalGates.IsSchoolOrStaff(ctx.User)))
     // "Are you an authenticated person?" — any session (identity-scope or portal) qualifies; the
     // persona is irrelevant. Identity-surface endpoints (/auth/me, select-context, onboarding) use this.
     .AddPolicy("AuthenticatedIdentity", policy => policy

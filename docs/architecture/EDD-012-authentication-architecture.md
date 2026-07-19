@@ -18,6 +18,14 @@
 > `Authentication → Identity Token → Access Context → Authorization` — there is no "owner
 > authentication", "staff authentication", or "parent authentication"; those concepts do not exist.
 
+> **Authorization behavior must never rely on cryptographic separation.** Signing keys and
+> authentication schemes establish token **authenticity only** — never eligibility. Any business
+> restriction (which portal, which workspace, which actor may act) must be expressed **explicitly** as
+> an authorization policy or capability evaluation, on claims like `user_type` — never inferred from
+> which key or scheme validated the token. *(This rule was earned: unifying the signing key (B2c.3a)
+> silently relaxed two policies — `SchoolPortal`, `ComplianceActor` — that had leaned on per-portal keys
+> to keep the wrong persona out. The fix made that gating explicit, where it belonged all along.)*
+
 This is the definitive spec for the login pipeline. It documents the pipeline as it **is** today and
 the **target** it converges to across B2a–B2d, so that afterwards Authentication is as stable as
 Identity itself.
@@ -194,10 +202,14 @@ projections derived from them, but **never** legacy actor tables. When no login 
     collapses to a single authenticated Identity (the token invariant above). Sequenced as **four
     independent commits**, each with its own rollback point — this is the lockout surface, so nothing
     bundles:
-    - **B2c.3a — Signing-key unification.** The 5 per-portal signing keys → **one**. Purely
-      cryptographic; bearer schemes + claims + refresh unchanged. (In-flight access tokens signed with
-      the old keys fail validation and silently refresh — refresh tokens are opaque DB rows, unaffected;
-      no hard logout.) *Accept:* every path's token validates, refresh still works, schemes unchanged.
+    - **B2c.3a — Signing-key unification + explicit portal authorization.** The 4 per-portal user
+      signing keys → **one** (platform-admin stays isolated). Because that removes the implicit
+      per-portal-key gating, the two policies that leaned on it — `SchoolPortal` (owner∨staff),
+      `ComplianceActor` (staff∨parent) — get **explicit `user_type` gates** (shared `PortalGates`
+      predicates), restoring exact pre-3a behavior. In-flight tokens signed with a retired key fail
+      validation and silently refresh (refresh tokens are opaque DB rows; no hard logout). *Accept:*
+      every user token validates under the one key · admin isolated · SchoolPortal/ComplianceActor admit
+      exactly the personas they did before (policy-evaluation test) · refresh/schemes unchanged.
     - **B2c.3b — Bearer-scheme unification.** The per-portal bearer schemes (`StaffAuth`/`SchoolAuth`/
       `ParentAuth`/`IdentityAuth`/`PlatformAdminAuth`) → **one `Bearer`**; portal policies re-expressed to
       behave identically (gate on `user_type` within the single scheme). No claim/refresh change.

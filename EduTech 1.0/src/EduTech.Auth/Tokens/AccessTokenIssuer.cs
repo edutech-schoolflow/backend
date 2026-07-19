@@ -15,23 +15,17 @@ internal sealed class AccessTokenIssuer : IAccessTokenIssuer
     private const int ParentAccessMinutes = 30;
     private const int PlatformAdminAccessMinutes = 15;
 
-    private readonly string _schoolSigningKey;
-    private readonly string _staffSigningKey;
-    private readonly string _parentSigningKey;
-    private readonly string _identitySigningKey;
+    // EDD-012 B2c.3a: one signing key for every identity/portal token; platform-admin keeps its own
+    // (a distinct internal trust boundary). Falls back to the legacy staff key pre-config.
+    private readonly string _signingKey;
     private readonly string _platformAdminSigningKey;
     private readonly string _issuer;
     private readonly string _audience;
 
     public AccessTokenIssuer(IConfiguration configuration)
     {
-        _schoolSigningKey = configuration["Jwt:SchoolSigningKey"]
-            ?? throw new InvalidOperationException("Jwt:SchoolSigningKey is missing");
-        _staffSigningKey = configuration["Jwt:StaffSigningKey"]
-            ?? throw new InvalidOperationException("Jwt:StaffSigningKey is missing");
-        _parentSigningKey = configuration["Jwt:ParentSigningKey"]
-            ?? throw new InvalidOperationException("Jwt:ParentSigningKey is missing");
-        _identitySigningKey = configuration["Jwt:IdentitySigningKey"] ?? _parentSigningKey;
+        _signingKey = configuration["Jwt:SigningKey"] ?? configuration["Jwt:StaffSigningKey"]
+            ?? throw new InvalidOperationException("Jwt:SigningKey is missing");
         _platformAdminSigningKey = configuration["Jwt:PlatformAdminSigningKey"]
             ?? throw new InvalidOperationException("Jwt:PlatformAdminSigningKey is missing");
         _issuer = configuration["Jwt:Issuer"] ?? "EduTech";
@@ -44,7 +38,7 @@ internal sealed class AccessTokenIssuer : IAccessTokenIssuer
         Guid? membershipId = null, Guid? organizationId = null)
     {
         string token = TokenVendor.VendSchoolOwnerToken(
-            _schoolSigningKey, _issuer, _audience,
+            _signingKey, _issuer, _audience,
             ownerId.ToString(), schoolId.ToString(), phone, schoolStatus, kycStatus, subdomain,
             SchoolOwnerAccessMinutes, identityId?.ToString(), contextId?.ToString(),
             membershipId?.ToString(), organizationId?.ToString());
@@ -59,7 +53,7 @@ internal sealed class AccessTokenIssuer : IAccessTokenIssuer
     public AccessToken IssueStaffIdentity(Guid staffUserId, string phone, string kycStatus)
     {
         string token = TokenVendor.VendStaffIdentityToken(
-            _staffSigningKey, _issuer, _audience,
+            _signingKey, _issuer, _audience,
             staffUserId.ToString(), phone, kycStatus, StaffAccessMinutes);
 
         return new AccessToken
@@ -75,7 +69,7 @@ internal sealed class AccessTokenIssuer : IAccessTokenIssuer
         Guid? membershipId = null, Guid? organizationId = null)
     {
         string token = TokenVendor.VendStaffScopedToken(
-            _staffSigningKey, _issuer, _audience,
+            _signingKey, _issuer, _audience,
             staffUserId.ToString(), phone, schoolId.ToString(), affiliationId.ToString(),
             role, employmentType, kycStatus, features, StaffAccessMinutes,
             identityId?.ToString(), contextId?.ToString(),
@@ -90,10 +84,10 @@ internal sealed class AccessTokenIssuer : IAccessTokenIssuer
 
     public AccessToken IssueIdentity(Guid identityId, string phone)
     {
-        // Signed with the identity key (falls back to the parent key if unconfigured); the
-        // "identity" user_type keeps it out of every portal regardless of key.
+        // Signed with the one identity/portal key (B2c.3a); the "identity" user_type keeps it out of
+        // every portal regardless of key.
         string token = TokenVendor.VendIdentityToken(
-            _identitySigningKey, _issuer, _audience, identityId.ToString(), phone, ParentAccessMinutes);
+            _signingKey, _issuer, _audience, identityId.ToString(), phone, ParentAccessMinutes);
 
         return new AccessToken
         {
@@ -106,7 +100,7 @@ internal sealed class AccessTokenIssuer : IAccessTokenIssuer
         Guid? schoolId = null, Guid? membershipId = null, Guid? organizationId = null)
     {
         string token = TokenVendor.VendParentToken(
-            _parentSigningKey, _issuer, _audience, parentId.ToString(), phone, ParentAccessMinutes,
+            _signingKey, _issuer, _audience, parentId.ToString(), phone, ParentAccessMinutes,
             identityId?.ToString(), contextId?.ToString(), schoolId?.ToString(),
             membershipId?.ToString(), organizationId?.ToString());
 

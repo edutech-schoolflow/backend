@@ -1,6 +1,11 @@
 using System.IdentityModel.Tokens.Jwt;
+using System.Text;
+using EduTech.Auth.Tokens;
 using EduTech.Shared.Auth;
 using EduTech.Shared.Constants;
+using Microsoft.Extensions.Configuration;
+using Microsoft.IdentityModel.Tokens;
+using Moq;
 
 namespace EduTech.Auth.Tests.Authentication;
 
@@ -108,5 +113,61 @@ public class JwtContractTests
         Assert.False(claims.ContainsKey("membership_id"));
         Assert.False(claims.ContainsKey("organization_id"));
         Assert.Equal(UserTypes.Parent, claims["user_type"]);   // the token is still valid + usable
+    }
+
+    // HmacSha512 key #2 (>= 64 bytes) — the isolated platform-admin trust boundary.
+    private const string AdminKey = "test-admin-signing-key-that-is-also-at-least-sixty-four-bytes-long!!!!";
+
+    /// <summary>
+    /// EDD-012 B2c.3a: the real <see cref="AccessTokenIssuer"/>, configured with ONLY the unified
+    /// <c>Jwt:SigningKey</c> (no per-portal keys), mints every identity/portal token under that one key —
+    /// so a single validation key accepts them all. Platform-admin stays on its own key (a leak of the
+    /// user key can never forge an admin token).
+    /// </summary>
+    [Fact]
+    public void OneSigningKey_ValidatesEveryUserToken_AdminStaysIsolated()
+    {
+        Mock<IConfiguration> config = new();
+        config.Setup(c => c["Jwt:SigningKey"]).Returns(Key);
+        config.Setup(c => c["Jwt:PlatformAdminSigningKey"]).Returns(AdminKey);
+        config.Setup(c => c["Jwt:Issuer"]).Returns(Iss);
+        config.Setup(c => c["Jwt:Audience"]).Returns(Aud);
+        // Deliberately no Jwt:StaffSigningKey/SchoolSigningKey/... — proves the issuer needs only the one key.
+        AccessTokenIssuer issuer = new(config.Object);
+
+        string owner = issuer.IssueSchoolOwner(Guid.NewGuid(), Organization, "+2348010000001",
+            "active", "approved", "divine", Identity, Context, Membership, Organization).Token;
+        string staff = issuer.IssueStaffScoped(Guid.NewGuid(), Organization, Guid.NewGuid(), "+2348010000002",
+            StaffRoles.Teacher, "full_time", "approved",
+            new Dictionary<string, bool>(), Identity, Context, Membership, Organization).Token;
+        string parent = issuer.IssueParent(Guid.NewGuid(), "+2348010000003", Identity, Context,
+            Organization, Membership, Organization).Token;
+        string identity = issuer.IssueIdentity(Identity, "+2348010000004").Token;
+        string admin = issuer.IssuePlatformAdmin(Guid.NewGuid(), "super_admin", "a@b.com").Token;
+
+        // Every user token validates under the ONE signing key.
+        foreach (string token in new[] { owner, staff, parent, identity })
+        {
+            Assert.True(Validates(token, Key), "user token should validate with the unified key");
+        }
+
+        // Admin is isolated: it does NOT validate with the user key, only with its own.
+        Assert.False(Validates(admin, Key));
+        Assert.True(Validates(admin, AdminKey));
+    }
+
+    private static bool Validates(string token, string key)
+    {
+        JwtSecurityTokenHandler handler = new() { MapInboundClaims = false };
+        TokenValidationParameters pars = new()
+        {
+            ValidateIssuer = true, ValidIssuer = Iss,
+            ValidateAudience = true, ValidAudience = Aud,
+            ValidateLifetime = true, ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key)),
+            ClockSkew = TimeSpan.Zero
+        };
+        try { handler.ValidateToken(token, pars, out _); return true; }
+        catch { return false; }
     }
 }

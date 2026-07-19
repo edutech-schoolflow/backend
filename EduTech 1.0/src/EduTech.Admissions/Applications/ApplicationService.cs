@@ -17,6 +17,7 @@ public interface IApplicationService
     Task MarkDecidedAsync(Guid applicationId, CancellationToken cancellationToken);
     Task MarkOfferedAsync(Guid applicationId, CancellationToken cancellationToken);
     Task MarkAcceptedAsync(Guid applicationId, CancellationToken cancellationToken);
+    Task MarkEnrolledAsync(Guid applicationId, CancellationToken cancellationToken);
 
     Task<ApplicationResponse> GetAsync(Guid applicationId, CancellationToken cancellationToken);
     Task<IReadOnlyList<ApplicationResponse>> ListAsync(Guid? cycleId, string? status, CancellationToken cancellationToken);
@@ -104,6 +105,13 @@ internal sealed class ApplicationService : IApplicationService
     {
         Application application = await LoadAsync(applicationId, cancellationToken);
         application.MarkAccepted();
+        await _applications.SaveAsync(application, cancellationToken);
+    }
+
+    public async Task MarkEnrolledAsync(Guid applicationId, CancellationToken cancellationToken)
+    {
+        Application application = await LoadAsync(applicationId, cancellationToken);
+        application.MarkEnrolled();
         await _applications.SaveAsync(application, cancellationToken);
     }
 

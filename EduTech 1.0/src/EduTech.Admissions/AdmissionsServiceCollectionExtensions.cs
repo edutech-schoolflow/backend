@@ -3,6 +3,7 @@ using EduTech.Admissions.Assessments;
 using EduTech.Admissions.Cycles;
 using EduTech.Admissions.Decisions;
 using EduTech.Admissions.Documents;
+using EduTech.Admissions.Enrollments;
 using EduTech.Admissions.Inquiries;
 using EduTech.Admissions.Offers;
 using Microsoft.Extensions.DependencyInjection;
@@ -31,6 +32,8 @@ public static class AdmissionsServiceCollectionExtensions
         services.AddScoped<IDecisionService, DecisionService>();
         services.AddScoped<IOfferRepository, OfferRepository>();
         services.AddScoped<IOfferService, OfferService>();
+        services.AddScoped<IEnrollmentRepository, EnrollmentRepository>();
+        services.AddScoped<IEnrollmentService, EnrollmentService>();
         return services;
     }
 }

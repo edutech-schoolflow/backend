@@ -117,6 +117,18 @@ internal sealed class Application
         Status = ApplicationStatus.Accepted;
     }
 
+    /// <summary>The place was taken up — enrollment finalized. Terminal (positive). Slice 8.</summary>
+    public void MarkEnrolled()
+    {
+        if (Status != ApplicationStatus.Accepted)
+        {
+            throw new AppErrorException("Only an accepted application can be enrolled.", 409,
+                ErrorCodes.Conflict, logReason: $"MarkEnrolled attempted on application in status {Status}.");
+        }
+
+        Status = ApplicationStatus.Enrolled;
+    }
+
     /// <summary>Withdraws the application (by the family or the school). Terminal.</summary>
     public void Withdraw()
     {

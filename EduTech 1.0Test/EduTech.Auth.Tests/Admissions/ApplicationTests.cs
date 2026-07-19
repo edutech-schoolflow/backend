@@ -95,4 +95,16 @@ public class ApplicationTests
     [Fact]
     public void MarkAccepted_FromDecided_Throws() =>
         Assert.Throws<AppErrorException>(() => New(ApplicationStatus.Decided).MarkAccepted());
+
+    [Fact]
+    public void MarkEnrolled_FromAccepted_SetsEnrolled()
+    {
+        Application a = New(ApplicationStatus.Accepted);
+        a.MarkEnrolled();
+        Assert.Equal(ApplicationStatus.Enrolled, a.Status);
+    }
+
+    [Fact]
+    public void MarkEnrolled_FromOffered_Throws() =>
+        Assert.Throws<AppErrorException>(() => New(ApplicationStatus.Offered).MarkEnrolled());
 }

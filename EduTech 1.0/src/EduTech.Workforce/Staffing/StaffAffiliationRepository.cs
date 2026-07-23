@@ -257,10 +257,36 @@ internal sealed class StaffAffiliationRepository : BaseRepository, IStaffAffilia
     public Task<int> UpdateRoleAsync(Guid affiliationId, Guid schoolId, string role, string? position,
         CancellationToken cancellationToken)
     {
-        return ExecuteAsync(
+        // EDD-015 / B2d.1 Stage 2: role change is the only permission-relevant mutation that isn't already
+        // canonical (status sync is; template/overrides are never written). Keep the canonical Employment's
+        // Position in step ATOMICALLY — one statement, two data-modifying CTEs (both always execute; `emp`
+        // reads `aff`'s RETURNING). Resolves the new role's Position (school-specific, else global) for the
+        // affiliation and repoints the active staff employment to it. Legacy stays authoritative until
+        // Stage 3; this temporary coexistence bridge is removed at B2d.3. Returns the affiliation count (404).
+        return ExecuteScalarAsync<int>(
             """
-            UPDATE staff_affiliations SET role = @Role, position = @Position, updated_at = NOW()
-            WHERE id = @Id AND school_id = @SchoolId
+            WITH aff AS (
+                UPDATE staff_affiliations SET
+                    role = @Role,
+                    position = @Position,
+                    position_id = COALESCE(
+                        (SELECT id FROM positions WHERE slug = @Role AND school_id = @SchoolId),
+                        (SELECT id FROM positions WHERE slug = @Role AND school_id IS NULL),
+                        position_id),
+                    updated_at = NOW()
+                WHERE id = @Id AND school_id = @SchoolId
+                RETURNING identity_id, school_id, position_id
+            ),
+            emp AS (
+                UPDATE employments e SET position_id = aff.position_id, updated_at = NOW()
+                FROM aff
+                JOIN memberships m ON m.identity_id = aff.identity_id AND m.school_id = aff.school_id
+                                  AND m.kind = 'staff'
+                WHERE e.membership_id = m.id AND e.status = 'active'
+                  AND e.position_id IS DISTINCT FROM aff.position_id
+                RETURNING e.id
+            )
+            SELECT COUNT(*)::int FROM aff
             """,
             new { Id = affiliationId, SchoolId = schoolId, Role = role, Position = position }, cancellationToken);
     }

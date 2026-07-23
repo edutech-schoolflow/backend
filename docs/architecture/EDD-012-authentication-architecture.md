@@ -269,6 +269,24 @@ projections derived from them, but **never** legacy actor tables. When no login 
   `Authentication → Identity → Membership → Access Context → Authorization → Modules` has no legacy actor
   table anywhere in it.
 
+  **Legacy Actor Retirement Checklist** (Phase 3 is done only when every box is checked — makes skipping
+  a step impossible):
+  ```
+  □ CapabilityResolver contains no reference_id lookup
+  □ Token mint contains no actor lookup (no OwnerId/AffiliationId == context.Id)
+  □ Refresh uses only identity_id + context_id
+  □ No auth service references school_owners
+  □ No auth service references staff_affiliations
+  □ No auth service references parents
+  □ access_contexts.reference_id removed
+  □ refresh_tokens.actor_type removed
+  □ refresh_tokens.actor_id removed
+  □ GetIdentityIdForActorAsync deleted
+  □ No Compatibility claim (is_owner / affiliation_id / user_id) has a runtime reader
+  □ grep "reference_id" in Auth/Authz → 0
+  □ grep "actor_type" → 0     □ grep "actor_id" → 0
+  ```
+
 After B2, Authentication is "finished" — future work is product capability, not architectural rewrite.
 ```
 FOUNDATION ✅ → PLATFORM INTEGRATION (B2a→B2d) → PLATFORM STABILIZATION → BUSINESS MODULES

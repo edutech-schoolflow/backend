@@ -20,9 +20,16 @@ Identity → Membership → Employment → Position → PermissionTemplate → E
 - **Position** defines what a role *normally* grants — organizational policy.
   `positions.permission_template_id` (the role default; nullable — a position may grant nothing by default).
 - **Employment** is *this person's assignment* and may override the default.
-  `employments.permission_template_id` (nullable). Resolution: `Employment.template ?? Position.template`
-  — exactly one fallback. (e.g. a Teacher acting as Principal gets an Employment-level override, no
-  Position change.)
+  `employments.permission_template_id` (nullable). (e.g. a Teacher acting as Principal gets an
+  Employment-level override, no Position change.)
+
+> **Effective permission template (the precedence rule — never leave it implicit):**
+> ```
+> effective_template = Employment.permission_template_id ?? Position.permission_template_id
+> ```
+> Employment is authoritative; Position supplies the default. Exactly one fallback, no deeper chain.
+> Employment feature overrides then apply on top of the effective template (as `staff_feature_overrides`
+> do today).
 - **Employment overrides** — per-assignment feature tweaks, an **explicit table** (not columns / not a
   blob), so later `EmploymentPermissionGranted` / `Revoked` events map cleanly to rows:
   `employment_feature_overrides(employment_id, feature_key, enabled)`.
@@ -60,14 +67,21 @@ owner → all; parent/none → ∅ (unchanged). No `reference_id`, no `staff_aff
 - **Stage 2 — Dual-write.** Every permission mutation (template assignment, overrides, role change) writes
   **both** the canonical tables and the legacy `staff_affiliations` / `staff_feature_overrides`. Behavior
   identical; the two stores stay in lockstep.
-- **Stage 3 — Re-source reads.** `CapabilityResolver` and the mint's actor lookup switch to
-  `AccessContext → Membership → Employment → Position`. This also flips the JWT `context_id` claim to
-  `access_contexts.id` (so the resolver keys on it, not `reference_id`). Legacy reads become **fallback
-  only**.
+- **Stage 3 — Re-source reads (the legacy actor TABLES only).** `CapabilityResolver` and the mint stop
+  reading `staff_affiliations` / `school_owners` / `parents`; they read the permission model + actor
+  details through `AccessContext → Membership → Employment → Position` (owner/staff details via `schools`
+  by `organization_id`). Legacy reads become **fallback only**. **The `reference_id` / `context_id`-claim
+  flip is explicitly NOT bundled here** — `reference_id` is a column on the canonical projection, so the
+  resolver/mint may keep using it transitionally as the context key; behavior changes follow a *proven*
+  read-model change, not accompany it (see below).
 - **Stage 4 — Verification.** Prove **identical** capability sets, authorization decisions, and mint output
   (canonical vs legacy path, across role-only / template / override cases; owner=all; parent=∅). Grep proves
-  no auth/authz reader depends on `staff_affiliations`. Only then do B2d.2 (coexistence) and B2d.3 (deletion)
-  proceed.
+  no auth/authz reader touches `staff_affiliations` / `school_owners` / `parents`.
+
+**Deferred to a separate step (after Stage 3 is production-proven):** flip the JWT `context_id` claim to
+`access_contexts.id` and repoint the resolver/mint context key onto it, so `reference_id` can be dropped.
+Ordering is deliberate — resolver reads canonical → mint reads canonical → both proven in production →
+*then* repoint the claim. Only after that do B2d.2 (coexistence) and B2d.3 (deletion) proceed.
 
 ## Non-goals
 

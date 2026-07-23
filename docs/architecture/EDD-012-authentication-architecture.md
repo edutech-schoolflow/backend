@@ -242,14 +242,32 @@ projections derived from them, but **never** legacy actor tables. When no login 
       documented compatibility claims — no dead claims remain.** Scalar plumbing (`employmentType`,
       `kycStatus`, `subdomain`, `schoolStatus` params) is intentionally retained (Appendix B) and retires
       with the mint signatures in B2d. `user_type` stays throughout (UX/portal semantics, not authorization).
-- **B2d — Legacy-actor retirement.** The remaining pieces all share one goal — eliminating **legacy
-  actor identity**: drop `access_contexts.reference_id`, the `refresh_tokens` actor columns +
-  `GetIdentityIdForActorAsync`, re-source the mint's actor lookup and `CapabilityResolver`'s
-  `staff_affiliations` join onto Membership/Employment, remove the retained scalar mint params, and drop
-  `school_owners` / `staff_affiliations` / `parents` from login. **Invariant: no authentication or
-  authorization component depends on legacy actor identity — Identity and Membership are the only
-  canonical identity concepts.** The pure-minimal `id · membership · context · org · role` token is the
-  asymptote reached here.
+- **B2d — Legacy Identity Retirement.** Not another authentication sprint — authentication, authorization,
+  and the JWT are already canonical. B2d only **deletes the compatibility bridge**. One invariant governs
+  the whole sprint:
+  > **No authentication or authorization code may reference a legacy actor concept** (`school_owners`,
+  > `staff_affiliations`, `parents`, `reference_id`, actor ids). Identity knows identities, Membership
+  > knows belonging, Employment knows work; authentication knows none of them.
+
+  Three phases, in order:
+  - **Phase 1 — Re-source the reads.** Repoint every remaining consumer off `reference_id` /
+    `staff_affiliations` / `school_owners` / actor lookups onto `Access Context → Membership → Employment`.
+    The two load-bearing ones: the mint's actor lookup (`owners.First(o => o.OwnerId == context.Id)`, …)
+    and `CapabilityResolver` (`WHERE reference_id = @ContextId` + the `staff_affiliations` join). Nothing
+    deleted yet. *Accept:* identical behavior; compatibility columns still populated; grep shows no
+    business logic reading actor ids.
+  - **Phase 2 — Coexistence window.** Leave `refresh_tokens.actor_type/actor_id` alive as fallback-only
+    until in-flight actor-only refresh tokens expire (≤14d). No code prefers them.
+  - **Phase 3 — Physical deletion.** Only after 1–2: drop `access_contexts.reference_id`, the refresh
+    actor columns, `GetIdentityIdForActorAsync`, the legacy actor mint paths, the retained scalar mint
+    params, and the compatibility DTO fields. The closing grep is ceremonial: `school_owner` → none;
+    `staff_affiliation` (outside Workforce) → none; `reference_id` → none; `GetIdentityIdForActor` → none.
+
+  **Success criterion** (not "tests pass"): *there is no remaining authentication or authorization path
+  that knows what an Owner, Staff, or Parent record is.* The pure-minimal `id · membership · context ·
+  org · role` token is the asymptote reached here, and the canonical vertical
+  `Authentication → Identity → Membership → Access Context → Authorization → Modules` has no legacy actor
+  table anywhere in it.
 
 After B2, Authentication is "finished" — future work is product capability, not architectural rewrite.
 ```

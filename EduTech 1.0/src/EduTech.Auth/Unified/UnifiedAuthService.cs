@@ -120,8 +120,6 @@ internal sealed class UnifiedAuthService : IUnifiedAuthService
     private readonly IRefreshTokenService _refreshTokens;
     private readonly IStaffUserRepository _staffUsers;
     private readonly IStaffAffiliationRepository _affiliations;
-    private readonly IPermissionTemplateRepository _permissionTemplates;
-    private readonly IStaffFeatureOverrideRepository _overrides;
     private readonly ISchoolRepository _schools;
     private readonly ISchoolOwnerRepository _owners;
     private readonly IMembershipRepository _memberships;
@@ -140,8 +138,6 @@ internal sealed class UnifiedAuthService : IUnifiedAuthService
         IRefreshTokenService refreshTokens,
         IStaffUserRepository staffUsers,
         IStaffAffiliationRepository affiliations,
-        IPermissionTemplateRepository permissionTemplates,
-        IStaffFeatureOverrideRepository overrides,
         ISchoolRepository schools,
         ISchoolOwnerRepository owners,
         IMembershipRepository memberships,
@@ -165,8 +161,6 @@ internal sealed class UnifiedAuthService : IUnifiedAuthService
         _refreshTokens = refreshTokens;
         _staffUsers = staffUsers;
         _affiliations = affiliations;
-        _permissionTemplates = permissionTemplates;
-        _overrides = overrides;
     }
 
     // ── Register: creates an Identity (claim-aware) — never a role ────────────────────────────
@@ -905,20 +899,11 @@ internal sealed class UnifiedAuthService : IUnifiedAuthService
                 StaffUserTokenRow staff = await _staffUsers.GetTokenClaimsAsync(staffContext.StaffUserId, cancellationToken)
                     ?? throw new AppErrorException("Account not found.", 404, ErrorCodes.NotFound);
 
-                // Features no longer ride the token (B2c.2); the resolution is vestigial and retires with
-                // the IssueStaffScoped `features` parameter in a later cleanup.
-                IReadOnlyDictionary<string, bool>? templateFeatures =
-                    affiliation.PermissionTemplateId is Guid templateId
-                        ? await _permissionTemplates.GetFeaturesAsync(templateId, cancellationToken)
-                        : null;
-                IReadOnlyDictionary<string, bool> overrides =
-                    await _overrides.GetForAffiliationAsync(affiliation.AffiliationId, cancellationToken);
-                IReadOnlyDictionary<string, bool> features =
-                    StaffFeatureResolver.Resolve(affiliation.Role, templateFeatures, overrides);
-
+                // No mint-time feature resolution (B2c.3d): authorization is resolved per request from
+                // context_id (ICapabilityResolver, B2b) — the token carries none.
                 AccessToken access = _accessTokenIssuer.IssueStaffScoped(staffContext.StaffUserId,
                     staffContext.SchoolId, affiliation.AffiliationId, identity.Phone,
-                    affiliation.Role, affiliation.EmploymentType, staff.KycStatus, features,
+                    affiliation.Role, affiliation.EmploymentType, staff.KycStatus,
                     identityId: identity.Id, contextId: affiliation.AffiliationId,
                     membershipId: context.MembershipId, organizationId: context.OrganizationId);
                 return new ContextMint(access, AuthActorTypes.Staff, staffContext.StaffUserId);

@@ -26,11 +26,14 @@
 > silently relaxed two policies — `SchoolPortal`, `ComplianceActor` — that had leaned on per-portal keys
 > to keep the wrong persona out. The fix made that gating explicit, where it belonged all along.)*
 
-> **There is exactly one way to create a context-scoped access token.** Login (auto-enter), context
-> switching (`select-context`), and silent refresh all converge on the **same** context-mint. No path
-> mints a context token its own way. Corollary — **refresh is token renewal, not workspace navigation:**
-> refreshing a context-scoped session must preserve the entered context (staff refresh returns a staff
-> workspace, owner a owner workspace, …); it never demotes the session or makes the client re-navigate.
+> **Single context access-token mint.** There is exactly one *implementation* of context access-token
+> issuance — `MintContextAccessAsync`. Login/context-selection and silent refresh are **separate
+> orchestrators** (their lifecycles differ — one *starts* a refresh family, the other *rotates* one) that
+> both invoke it; the refresh-family lifecycle (rotation, theft detection, revocation) is owned
+> exclusively by `RotateAsync`. What is canonical is the **mint**, not a single entry point — forcing one
+> public entry would either add flags or make one method own two workflows. Corollary — **refresh is
+> token renewal, not workspace navigation:** a context-scoped session re-enters the *same* context
+> (staff → staff workspace, owner → owner workspace), never a different one and never a demoted session.
 
 This is the definitive spec for the login pipeline. It documents the pipeline as it **is** today and
 the **target** it converges to across B2a–B2d, so that afterwards Authentication is as stable as
@@ -230,13 +233,23 @@ projections derived from them, but **never** legacy actor tables. When no login 
       columns + `GetIdentityIdForActorAsync`. *Accept:* refresh · logout · context-switch · revoked-family
       theft detection · concurrent refresh · **capability-mutation-across-refresh** (permission removed →
       refresh → new token → endpoint denied, proving permissions were never cached in refresh).
-    - **B2c.3d — Compatibility retirement.** Only after 3a–3c: drop `access_contexts.reference_id`, the
-      legacy refresh columns + lookup code, and the Transitional claims (Appendix B). Final cleanup.
-    `user_type` stays throughout (UX/portal semantics, not authorization).
-  The pure-minimal `id · membership · context · org · role` target is the *asymptote*; the retained
-  claims above are re-sourced (owner-ness, staff scoping, tenant) as their consumers migrate.
-- **B2d — Legacy Retirement.** Remove `school_owners` / `staff_affiliations` / `parents` from the
-  login pipeline. Auth now consumes only canonical aggregates + projections.
+    - **B2c.3d — JWT Simplification (done).** Finishes B2c by fully simplifying the *token contract*:
+      remove the five Transitional claims (`active_school_id`, `employment_type`, `kyc_status`,
+      `subdomain`, `school_status` — 0 readers, Appendix B) and the vestigial mint-time feature
+      resolution (the `features` param + `StaffFeatureResolver` reads + their now-dead `IPermissionTemplate`
+      / `IStaffFeatureOverride` deps). Compatibility claims with live backend readers (`is_owner`,
+      `affiliation_id`, `user_id`) stay. **Invariant: the JWT contains only canonical claims plus
+      documented compatibility claims — no dead claims remain.** Scalar plumbing (`employmentType`,
+      `kycStatus`, `subdomain`, `schoolStatus` params) is intentionally retained (Appendix B) and retires
+      with the mint signatures in B2d. `user_type` stays throughout (UX/portal semantics, not authorization).
+- **B2d — Legacy-actor retirement.** The remaining pieces all share one goal — eliminating **legacy
+  actor identity**: drop `access_contexts.reference_id`, the `refresh_tokens` actor columns +
+  `GetIdentityIdForActorAsync`, re-source the mint's actor lookup and `CapabilityResolver`'s
+  `staff_affiliations` join onto Membership/Employment, remove the retained scalar mint params, and drop
+  `school_owners` / `staff_affiliations` / `parents` from login. **Invariant: no authentication or
+  authorization component depends on legacy actor identity — Identity and Membership are the only
+  canonical identity concepts.** The pure-minimal `id · membership · context · org · role` token is the
+  asymptote reached here.
 
 After B2, Authentication is "finished" — future work is product capability, not architectural rewrite.
 ```
@@ -348,18 +361,21 @@ Each has a documented reader set, a retirement sprint, and a replacement mechani
 | `affiliation_id` | `AttendanceService`, `GradeService`, `StaffProfileService` (`CurrentAffiliation()` — scope staff actions to their own arm/records) | when staff scoping re-sources off the legacy actor | `membership_id` / active Employment |
 | `user_id` | `IEduTechRequestContext.UserId` (the legacy actor id — staff_user / owner / parent id — used widely as "the current actor") | **B2d** (legacy actor retirement) | `identity_id` + `membership_id` |
 
-### 3. Transitional — DEPRECATED; retained only because the mint paths aren't yet unified
+### 3. Transitional — RETIRED in B2c.3d (were 0-reader)
 
-Proven **0 readers** (no runtime / frontend / middleware / refresh reader — see Appendix A). Kept only
-because removing them re-touches the refresh/legacy mint signatures; **swept in B2c.3**.
-
-| Claim | Note |
-| --- | --- |
-| `active_school_id` | redundant with `school_id` |
-| `employment_type` | 0 readers |
-| `kyc_status` | 0 readers (the "read-only mode without a DB hit" it was meant to back was never wired) |
-| `subdomain` | 0 readers |
-| `school_status` | 0 readers |
+The five claims below (`active_school_id`, `employment_type`, `kyc_status`, `subdomain`, `school_status`)
+were proven **0 readers** and **removed from the token in B2c.3d**. They are recorded here so a future
+reader knows they were deliberately retired, not overlooked. `active_school_id` was redundant with
+`school_id`; `kyc_status`'s intended "read-only mode without a DB hit" was never wired.
 
 *(`phone` also rides the token as an incidental contact claim — not part of the identity/authorization
 contract; it is not slimming-relevant.)*
+
+### 4. Compatibility plumbing (intentional, not forgotten)
+
+Some scalar values (`employmentType`, `kycStatus`, `subdomain`, `schoolStatus`) continue to flow through
+the mint APIs (`VendSchoolOwnerToken` / `VendStaffScopedToken` / `IssueStaffScoped`) as **parameters**
+after their **claims** were retired in B2c.3d. **This is intentional.** They have no runtime effect and
+remain only to keep B2c's behavioral surface minimal — removing them touches every caller, which advances
+no B2c invariant. They are deleted together with the legacy-actor pipeline in **B2d**, when those call
+sites change anyway. Do not mistake them for accidental technical debt.

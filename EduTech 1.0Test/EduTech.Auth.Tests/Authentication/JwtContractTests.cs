@@ -35,11 +35,10 @@ public class JwtContractTests
     [Fact]
     public void StaffScopedToken_CarriesCanonicalIdentity()
     {
-        var features = new Dictionary<string, bool> { ["can_manage_students"] = true, ["can_view_fees"] = false };
         string token = TokenVendor.VendStaffScopedToken(Key, Iss, Aud,
             userId: Guid.NewGuid().ToString(), phone: "+2348010000001", schoolId: Organization.ToString(),
             affiliationId: Guid.NewGuid().ToString(), role: StaffRoles.Principal, employmentType: "full_time",
-            kycStatus: "approved", features: features,
+            kycStatus: "approved",
             identityId: Identity.ToString(), contextId: Context.ToString(),
             membershipId: Membership.ToString(), organizationId: Organization.ToString());
 
@@ -54,10 +53,15 @@ public class JwtContractTests
         Assert.Equal(StaffRoles.Principal, claims["role"]);
         Assert.Equal(Organization.ToString(), claims["school_id"]);   // tenant binding (kept until FK-repoint)
 
-        // B2c.2: authorization has LEFT the token — no permission flags, even when resolved features
-        // are passed to the vendor. Enforcement is server-side (context_id → CapabilityResolver).
+        // Authorization has LEFT the token (B2c.2) — no permission flags; enforcement is server-side
+        // (context_id → CapabilityResolver).
         Assert.False(claims.ContainsKey("can_manage_students"));
         Assert.False(claims.ContainsKey("can_view_fees"));
+
+        // B2c.3d: the transitional claims are gone (0 readers).
+        Assert.False(claims.ContainsKey("employment_type"));
+        Assert.False(claims.ContainsKey("kyc_status"));
+        Assert.False(claims.ContainsKey("active_school_id"));
 
         // Load-bearing claims the retirement proof shows are still consumed — deliberately KEPT:
         // is_owner (13 business consumers) and affiliation_id (staff-action scoping).
@@ -81,8 +85,10 @@ public class JwtContractTests
         Assert.Equal(UserTypes.School, claims["user_type"]);
         Assert.Equal("true", claims["is_owner"]);
         Assert.Equal("owner", claims["role"]);
-        Assert.True(claims.ContainsKey("subdomain"));      // B2c.2 removes
-        Assert.True(claims.ContainsKey("school_status"));  // B2c.2 removes
+        // B2c.3d: the transitional owner claims are retired (0 readers).
+        Assert.False(claims.ContainsKey("subdomain"));
+        Assert.False(claims.ContainsKey("school_status"));
+        Assert.False(claims.ContainsKey("kyc_status"));
     }
 
     [Fact]
@@ -139,7 +145,7 @@ public class JwtContractTests
             "active", "approved", "divine", Identity, Context, Membership, Organization).Token;
         string staff = issuer.IssueStaffScoped(Guid.NewGuid(), Organization, Guid.NewGuid(), "+2348010000002",
             StaffRoles.Teacher, "full_time", "approved",
-            new Dictionary<string, bool>(), Identity, Context, Membership, Organization).Token;
+            Identity, Context, Membership, Organization).Token;
         string parent = issuer.IssueParent(Guid.NewGuid(), "+2348010000003", Identity, Context,
             Organization, Membership, Organization).Token;
         string identity = issuer.IssueIdentity(Identity, "+2348010000004").Token;

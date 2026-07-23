@@ -40,7 +40,7 @@ public static class TokenVendor
     /// </summary>
     public static string VendStaffScopedToken(string signingKey, string issuer, string audience,
         string userId, string phone, string schoolId, string affiliationId, string role,
-        string employmentType, string kycStatus, IReadOnlyDictionary<string, bool> features,
+        string employmentType, string kycStatus,
         int expiryMinutes = 30,
         string? identityId = null, string? contextId = null,
         string? membershipId = null, string? organizationId = null)
@@ -50,21 +50,16 @@ public static class TokenVendor
             new Claim("user_id", userId),
             new Claim("user_type", UserTypes.Staff),
             new Claim("is_owner", "false"),
-            // school_id mirrors active_school_id so tenant queries resolve via IEduTechRequestContext.
             new Claim("school_id", schoolId),
-            new Claim("active_school_id", schoolId),
             new Claim("affiliation_id", affiliationId),
             new Claim("role", role),
-            new Claim("employment_type", employmentType),
-            new Claim("kyc_status", kycStatus),
             new Claim("phone", phone)
         };
-
-        // EDD-012 B2c.2: the 13 permission flags NO LONGER ride in the token — authorization is
-        // resolved server-side per request from context_id (ICapabilityResolver, B2b). Nothing reads
-        // the flag claims (retirement-proven). The `features` parameter is now vestigial; the mint-time
-        // resolution that fills it is removed when the mint paths are unified in B2c.3.
-        _ = features;
+        // EDD-012 B2c.3d (JWT Simplification): the transitional claims active_school_id / employment_type /
+        // kyc_status are retired (0 readers, Appendix B). The 13 permission flags left in B2c.2; there is
+        // no mint-time feature resolution any more. employmentType/kycStatus remain as parameters (dead
+        // plumbing) until B2d retires the mint signatures with the legacy actor pipeline.
+        _ = (employmentType, kycStatus);
 
         if (identityId is not null) claims.Add(new Claim("identity_id", identityId));
         if (contextId is not null) claims.Add(new Claim("context_id", contextId));
@@ -85,12 +80,12 @@ public static class TokenVendor
     public static string VendStaffIdentityToken(string signingKey, string issuer, string audience,
         string userId, string phone, string kycStatus, int expiryMinutes = 30)
     {
+        _ = kycStatus;  // B2c.3d: kyc_status claim retired (0 readers); parameter kept until B2d.
         List<Claim> claims = new List<Claim>
         {
             new Claim("user_id", userId),
             new Claim("user_type", UserTypes.Staff),
             new Claim("is_owner", "false"),
-            new Claim("kyc_status", kycStatus),
             new Claim("phone", phone)
         };
 
@@ -110,6 +105,9 @@ public static class TokenVendor
         string? identityId = null, string? contextId = null,
         string? membershipId = null, string? organizationId = null)
     {
+        // B2c.3d: school_status / kyc_status / subdomain claims retired (0 readers, Appendix B). The
+        // parameters remain as dead plumbing until B2d retires the mint signatures.
+        _ = (schoolStatus, kycStatus, subdomain);
         List<Claim> claims = new List<Claim>
         {
             new Claim("user_id", userId),
@@ -117,15 +115,8 @@ public static class TokenVendor
             new Claim("school_id", schoolId),
             new Claim("is_owner", "true"),
             new Claim("role", "owner"),
-            new Claim("school_status", schoolStatus),
-            new Claim("kyc_status", kycStatus),
             new Claim("phone", phone)
         };
-
-        if (!string.IsNullOrEmpty(subdomain))
-        {
-            claims.Add(new Claim("subdomain", subdomain));
-        }
 
         if (identityId is not null) claims.Add(new Claim("identity_id", identityId));
         if (contextId is not null) claims.Add(new Claim("context_id", contextId));

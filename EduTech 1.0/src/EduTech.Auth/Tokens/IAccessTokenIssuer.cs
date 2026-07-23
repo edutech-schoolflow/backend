@@ -17,11 +17,11 @@ internal interface IAccessTokenIssuer
     AccessToken IssueStaffIdentity(Guid staffUserId, string phone, string kycStatus);
 
     /// <summary>
-    /// School-scoped staff token for the active affiliation — carries role, employment type, and the
-    /// 13 resolved feature flags.
+    /// School-scoped staff token for the active affiliation — carries identity, context, membership,
+    /// organization, role. Authorization is resolved server-side from context_id (no flags in the token).
     /// </summary>
     AccessToken IssueStaffScoped(Guid staffUserId, Guid schoolId, Guid affiliationId, string phone,
-        string role, string employmentType, string kycStatus, IReadOnlyDictionary<string, bool> features,
+        string role, string employmentType, string kycStatus,
         Guid? identityId = null, Guid? contextId = null,
         Guid? membershipId = null, Guid? organizationId = null);
 

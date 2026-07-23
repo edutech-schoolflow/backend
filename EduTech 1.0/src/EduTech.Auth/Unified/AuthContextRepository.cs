@@ -15,6 +15,8 @@ internal interface IAuthContextRepository
     /// </summary>
     Task<IReadOnlyList<AccessContextRow>> ListAccessContextsAsync(Guid identityId, CancellationToken cancellationToken);
 
+    Task<AccessContextRow?> GetContextByIdAsync(Guid identityId, Guid accessContextId, CancellationToken cancellationToken);
+
     Task<IReadOnlyList<OwnerContextRow>> ListOwnerContextsAsync(Guid identityId, CancellationToken cancellationToken);
     Task<IReadOnlyList<StaffContextRow>> ListStaffContextsAsync(Guid identityId, CancellationToken cancellationToken);
     Task<ParentContextRow?> GetParentContextAsync(Guid identityId, CancellationToken cancellationToken);
@@ -88,6 +90,7 @@ internal sealed class FamilySummaryRow
 
 internal sealed class AccessContextRow
 {
+    public Guid AccessContextId { get; init; }           // access_contexts.id — the true context PK (B2c.3c)
     public Guid ReferenceId { get; init; }
     public string Type { get; init; } = string.Empty;   // owner | staff | parent
     public Guid? OrganizationId { get; init; }
@@ -191,8 +194,8 @@ internal sealed class AuthContextRepository : BaseRepository, IAuthContextReposi
     {
         return QueryAsync<AccessContextRow>(
             """
-            SELECT ac.reference_id AS ReferenceId, ac.type AS Type, ac.organization_id AS OrganizationId,
-                   ac.membership_id AS MembershipId,
+            SELECT ac.id AS AccessContextId, ac.reference_id AS ReferenceId, ac.type AS Type,
+                   ac.organization_id AS OrganizationId, ac.membership_id AS MembershipId,
                    s.name AS OrganizationName, s.slug AS OrganizationSlug, a.role AS Role
             FROM access_contexts ac
             LEFT JOIN schools s ON s.id = ac.organization_id
@@ -201,6 +204,24 @@ internal sealed class AuthContextRepository : BaseRepository, IAuthContextReposi
             ORDER BY CASE ac.type WHEN 'owner' THEN 0 WHEN 'staff' THEN 1 ELSE 2 END, s.name
             """,
             new { IdentityId = identityId }, cancellationToken);
+    }
+
+    /// <summary>One active context by its id, scoped to the identity — the refresh re-entry lookup
+    /// (EDD-012 B2c.3c). Null if the context has ended (projection reflects it) ⇒ the session is over.</summary>
+    public Task<AccessContextRow?> GetContextByIdAsync(Guid identityId, Guid accessContextId,
+        CancellationToken cancellationToken)
+    {
+        return QueryFirstOrDefaultAsync<AccessContextRow>(
+            """
+            SELECT ac.id AS AccessContextId, ac.reference_id AS ReferenceId, ac.type AS Type,
+                   ac.organization_id AS OrganizationId, ac.membership_id AS MembershipId,
+                   s.name AS OrganizationName, s.slug AS OrganizationSlug, a.role AS Role
+            FROM access_contexts ac
+            LEFT JOIN schools s ON s.id = ac.organization_id
+            LEFT JOIN staff_affiliations a ON ac.type = 'staff' AND a.id = ac.reference_id
+            WHERE ac.id = @AccessContextId AND ac.identity_id = @IdentityId AND ac.status = 'active'
+            """,
+            new { IdentityId = identityId, AccessContextId = accessContextId }, cancellationToken);
     }
 
     public Task<IReadOnlyList<OwnerContextRow>> ListOwnerContextsAsync(Guid identityId,

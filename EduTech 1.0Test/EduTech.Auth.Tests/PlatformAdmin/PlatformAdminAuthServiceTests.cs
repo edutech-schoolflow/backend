@@ -78,7 +78,7 @@ public class PlatformAdminAuthServiceTests
         _hasher.Setup(h => h.Verify("adminpass1", "stored-hash")).Returns(true);
         _access.Setup(a => a.IssuePlatformAdmin(admin.Id, PlatformAdminRoles.SuperAdmin, admin.Email))
             .Returns(new AccessToken { Token = "access-jwt", ExpiresAt = DateTime.UtcNow.AddMinutes(15) });
-        _refresh.Setup(r => r.IssueAsync(AuthActorTypes.PlatformAdmin, admin.Id, null, null, It.IsAny<CancellationToken>()))
+        _refresh.Setup(r => r.IssueAsync(AuthActorTypes.PlatformAdmin, admin.Id, It.IsAny<Guid?>(), It.IsAny<Guid?>(), null, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new RefreshTokenIssue
             {
                 Token = "refresh-token",

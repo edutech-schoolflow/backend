@@ -18,15 +18,15 @@ internal sealed class RefreshTokenService : IRefreshTokenService
         _repository = repository;
     }
 
-    public async Task<RefreshTokenIssue> IssueAsync(string actorType, Guid actorId, string? ipAddress,
-        string? userAgent, CancellationToken cancellationToken = default)
+    public async Task<RefreshTokenIssue> IssueAsync(string actorType, Guid actorId, Guid? identityId,
+        Guid? contextId, string? ipAddress, string? userAgent, CancellationToken cancellationToken = default)
     {
         string token = GenerateToken();
         Guid familyId = Guid.NewGuid();
         DateTime expiresAt = DateTime.UtcNow.Add(LifetimeFor(actorType));
 
-        await _repository.InsertAsync(actorType, actorId, HashToken(token), familyId, expiresAt,
-            ipAddress, userAgent, cancellationToken);
+        await _repository.InsertAsync(actorType, actorId, identityId, contextId, HashToken(token), familyId,
+            expiresAt, ipAddress, userAgent, cancellationToken);
 
         return new RefreshTokenIssue { Token = token, FamilyId = familyId, ExpiresAt = expiresAt };
     }
@@ -55,9 +55,10 @@ internal sealed class RefreshTokenService : IRefreshTokenService
         await _repository.MarkRotatedAsync(row.Id, cancellationToken);
 
         string newToken = GenerateToken();
-        // Same family, same expiry — rotation does not extend the session indefinitely.
-        await _repository.InsertAsync(row.ActorType, row.ActorId, HashToken(newToken), row.FamilyId,
-            row.ExpiresAt, ipAddress, userAgent, cancellationToken);
+        // Same family, same expiry, same key (actor + canonical identity/context) — rotation continues
+        // the lineage, it does not extend the session or change who it belongs to.
+        await _repository.InsertAsync(row.ActorType, row.ActorId, row.IdentityId, row.ContextId,
+            HashToken(newToken), row.FamilyId, row.ExpiresAt, ipAddress, userAgent, cancellationToken);
 
         return new RefreshRotationResult
         {
@@ -65,6 +66,8 @@ internal sealed class RefreshTokenService : IRefreshTokenService
             NewToken = newToken,
             ActorType = row.ActorType,
             ActorId = row.ActorId,
+            IdentityId = row.IdentityId,
+            ContextId = row.ContextId,
             ExpiresAt = row.ExpiresAt
         };
     }

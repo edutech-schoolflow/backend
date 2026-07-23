@@ -275,7 +275,7 @@ internal sealed class SchoolOwnerAuthService : ISchoolOwnerAuthService
             owner.Id, owner.SchoolId, phone, status.Status, status.KycStatus, status.Subdomain);
 
         RefreshTokenIssue refresh = await _refreshTokenService.IssueAsync(
-            AuthActorTypes.SchoolOwner, owner.Id, ipAddress, userAgent, cancellationToken);
+            AuthActorTypes.SchoolOwner, owner.Id, identityId: null, contextId: null, ipAddress, userAgent, cancellationToken);
 
         return new LoginResult
         {

@@ -9,17 +9,19 @@ internal sealed class RefreshTokenRepository : BaseRepository, IRefreshTokenRepo
     {
     }
 
-    public Task InsertAsync(string actorType, Guid actorId, string tokenHash, Guid familyId,
-        DateTime expiresAt, string? ipAddress, string? userAgent, CancellationToken cancellationToken)
+    public Task InsertAsync(string actorType, Guid actorId, Guid? identityId, Guid? contextId, string tokenHash,
+        Guid familyId, DateTime expiresAt, string? ipAddress, string? userAgent, CancellationToken cancellationToken)
     {
         return ExecuteAsync(
             "INSERT INTO refresh_tokens " +
-            "(actor_type, actor_id, token_hash, family_id, expires_at, ip_address, user_agent) " +
-            "VALUES (@ActorType, @ActorId, @TokenHash, @FamilyId, @ExpiresAt, @IpAddress, @UserAgent)",
+            "(actor_type, actor_id, identity_id, context_id, token_hash, family_id, expires_at, ip_address, user_agent) " +
+            "VALUES (@ActorType, @ActorId, @IdentityId, @ContextId, @TokenHash, @FamilyId, @ExpiresAt, @IpAddress, @UserAgent)",
             new
             {
                 ActorType = actorType,
                 ActorId = actorId,
+                IdentityId = identityId,
+                ContextId = contextId,
                 TokenHash = tokenHash,
                 FamilyId = familyId,
                 ExpiresAt = expiresAt,
@@ -31,7 +33,7 @@ internal sealed class RefreshTokenRepository : BaseRepository, IRefreshTokenRepo
     public Task<RefreshTokenRow?> GetByHashAsync(string tokenHash, CancellationToken cancellationToken)
     {
         return QueryFirstOrDefaultAsync<RefreshTokenRow>(
-            "SELECT id, actor_type, actor_id, family_id, expires_at, rotated_at, revoked_at " +
+            "SELECT id, actor_type, actor_id, identity_id, context_id, family_id, expires_at, rotated_at, revoked_at " +
             "FROM refresh_tokens WHERE token_hash = @TokenHash",
             new { TokenHash = tokenHash }, cancellationToken);
     }

@@ -7,11 +7,12 @@ namespace EduTech.Auth.RefreshTokens;
 public interface IRefreshTokenService
 {
     /// <summary>
-    /// Issues a new refresh token for an actor, starting a new family. Lifetime is per-portal
-    /// (parent 14d, platform admin 8h, school owner/staff 12h). Returns the RAW token.
+    /// Issues a new refresh token, starting a new family. Carries the canonical key (identity + context;
+    /// context null for an identity-scope session) alongside the legacy actor (EDD-012 B2c.3c). Lifetime
+    /// is per-portal (parent 14d, platform admin 8h, school owner/staff 12h). Returns the RAW token.
     /// </summary>
-    Task<RefreshTokenIssue> IssueAsync(string actorType, Guid actorId, string? ipAddress,
-        string? userAgent, CancellationToken cancellationToken = default);
+    Task<RefreshTokenIssue> IssueAsync(string actorType, Guid actorId, Guid? identityId, Guid? contextId,
+        string? ipAddress, string? userAgent, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Validates and rotates a presented refresh token: marks it rotated and issues a replacement in

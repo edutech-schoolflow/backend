@@ -135,7 +135,7 @@ public class UnifiedAuthServiceTests
         NoContexts(identity.Id);
         _access.Setup(a => a.IssueIdentity(identity.Id, Phone))
             .Returns(new AccessToken { Token = "identity-access", ExpiresAt = DateTime.UtcNow.AddMinutes(30) });
-        _refresh.Setup(r => r.IssueAsync("identity", identity.Id, null, null, It.IsAny<CancellationToken>()))
+        _refresh.Setup(r => r.IssueAsync("identity", identity.Id, It.IsAny<Guid?>(), It.IsAny<Guid?>(), null, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new RefreshTokenIssue { Token = "r", FamilyId = Guid.NewGuid(), ExpiresAt = DateTime.UtcNow.AddHours(12) });
 
         UnifiedLoginResult result = await CreateSut().LoginAsync(
@@ -189,7 +189,7 @@ public class UnifiedAuthServiceTests
         _access.Setup(a => a.IssueParent(parentId, Phone, It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(),
                 It.IsAny<Guid?>(), It.IsAny<Guid?>()))
             .Returns(new AccessToken { Token = "access", ExpiresAt = DateTime.UtcNow.AddMinutes(30) });
-        _refresh.Setup(r => r.IssueAsync(AuthActorTypes.Parent, parentId, null, null, It.IsAny<CancellationToken>()))
+        _refresh.Setup(r => r.IssueAsync(AuthActorTypes.Parent, parentId, It.IsAny<Guid?>(), It.IsAny<Guid?>(), null, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new RefreshTokenIssue { Token = "refresh", FamilyId = Guid.NewGuid(), ExpiresAt = DateTime.UtcNow.AddDays(14) });
 
         UnifiedLoginResult result = await CreateSut().LoginAsync(
@@ -220,7 +220,7 @@ public class UnifiedAuthServiceTests
         _access.Setup(a => a.IssueParent(parentId, Phone, identity.Id, parentId, schoolId,
                 It.IsAny<Guid?>(), It.IsAny<Guid?>()))
             .Returns(new AccessToken { Token = "parent-access", ExpiresAt = DateTime.UtcNow.AddMinutes(30) });
-        _refresh.Setup(r => r.IssueAsync(AuthActorTypes.Parent, parentId, null, null, It.IsAny<CancellationToken>()))
+        _refresh.Setup(r => r.IssueAsync(AuthActorTypes.Parent, parentId, It.IsAny<Guid?>(), It.IsAny<Guid?>(), null, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new RefreshTokenIssue { Token = "r", FamilyId = Guid.NewGuid(), ExpiresAt = DateTime.UtcNow.AddDays(14) });
 
         UnifiedLoginResult result = await CreateSut().LoginAsync(
@@ -251,7 +251,7 @@ public class UnifiedAuthServiceTests
 
         _access.Setup(a => a.IssueIdentity(identity.Id, Phone))
             .Returns(new AccessToken { Token = "identity-access", ExpiresAt = DateTime.UtcNow.AddMinutes(30) });
-        _refresh.Setup(r => r.IssueAsync("identity", identity.Id, null, null, It.IsAny<CancellationToken>()))
+        _refresh.Setup(r => r.IssueAsync("identity", identity.Id, It.IsAny<Guid?>(), It.IsAny<Guid?>(), null, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new RefreshTokenIssue { Token = "r", FamilyId = Guid.NewGuid(), ExpiresAt = DateTime.UtcNow.AddHours(12) });
 
         UnifiedLoginResult result = await CreateSut().LoginAsync(
@@ -297,7 +297,7 @@ public class UnifiedAuthServiceTests
         _access.Setup(a => a.IssueSchoolOwner(ownerId, schoolId, Phone, "active", "approved", "divine",
                 It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>()))
             .Returns(new AccessToken { Token = "owner-access", ExpiresAt = DateTime.UtcNow.AddMinutes(30) });
-        _refresh.Setup(r => r.IssueAsync(AuthActorTypes.SchoolOwner, ownerId, null, null, It.IsAny<CancellationToken>()))
+        _refresh.Setup(r => r.IssueAsync(AuthActorTypes.SchoolOwner, ownerId, It.IsAny<Guid?>(), It.IsAny<Guid?>(), null, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new RefreshTokenIssue { Token = "r", FamilyId = Guid.NewGuid(), ExpiresAt = DateTime.UtcNow.AddHours(12) });
 
         UnifiedLoginResult result = await CreateSut().LoginAsync(
@@ -613,6 +613,62 @@ public class UnifiedAuthServiceTests
         await Assert.ThrowsAsync<AppErrorException>(
             () => CreateSut().RefreshSessionAsync("raw", null, null, CancellationToken.None));
         _refresh.Verify(r => r.RevokeAllForActorAsync(AuthActorTypes.Parent, parentId,
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // ── EDD-012 B2c.3c: a context-scoped session re-enters its context on refresh (token renewal,
+    //    not workspace navigation) through the SAME mint login uses. ────────────────
+
+    private RefreshRotationResult RotationWithContext(Guid identityId, Guid contextId, Guid actorId) => new()
+    {
+        Status = RefreshTokenStatus.Success, NewToken = "new-refresh", ActorType = AuthActorTypes.SchoolOwner,
+        ActorId = actorId, IdentityId = identityId, ContextId = contextId, ExpiresAt = DateTime.UtcNow.AddHours(12)
+    };
+
+    [Fact]
+    public async Task Refresh_ContextScoped_ReentersTheSameWorkspace()
+    {
+        Guid ownerId = Guid.NewGuid(), schoolId = Guid.NewGuid(), contextId = Guid.NewGuid();
+        IdentityAggregate identity = Identity(passwordHash: "h", phoneVerified: true, status: IdentityStatus.Active);
+        _refresh.Setup(r => r.RotateAsync("raw", null, null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(RotationWithContext(identity.Id, contextId, ownerId));
+        _identities.Setup(i => i.GetByIdAsync(identity.Id, It.IsAny<CancellationToken>())).ReturnsAsync(identity);
+        _contexts.Setup(c => c.GetContextByIdAsync(identity.Id, contextId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AccessContextRow
+                { AccessContextId = contextId, ReferenceId = ownerId, Type = "owner", OrganizationId = schoolId });
+        _contexts.Setup(c => c.ListOwnerContextsAsync(identity.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { new OwnerContextRow
+                { OwnerId = ownerId, SchoolId = schoolId, SchoolName = "Divine Wisdom",
+                  Status = "active", KycStatus = "approved", Subdomain = "divine" } });
+        _access.Setup(a => a.IssueSchoolOwner(ownerId, schoolId, Phone, "active", "approved", "divine",
+                identity.Id, ownerId, It.IsAny<Guid?>(), schoolId))
+            .Returns(new AccessToken { Token = "owner-context-access", ExpiresAt = DateTime.UtcNow.AddMinutes(30) });
+
+        UnifiedTokens tokens = await CreateSut().RefreshSessionAsync("raw", null, null, CancellationToken.None);
+
+        // Re-entered the SAME owner workspace via the shared context mint (not a demoted token), and
+        // continued the rotation lineage.
+        Assert.Equal("owner-context-access", tokens.AccessToken);
+        Assert.Equal("new-refresh", tokens.RefreshToken);
+    }
+
+    [Fact]
+    public async Task Refresh_ContextEnded_RevokesFamilyAndRejects()
+    {
+        Guid ownerId = Guid.NewGuid(), contextId = Guid.NewGuid();
+        IdentityAggregate identity = Identity(passwordHash: "h", phoneVerified: true, status: IdentityStatus.Active);
+        _refresh.Setup(r => r.RotateAsync("raw", null, null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(RotationWithContext(identity.Id, contextId, ownerId));
+        _identities.Setup(i => i.GetByIdAsync(identity.Id, It.IsAny<CancellationToken>())).ReturnsAsync(identity);
+        // The context has ended (deactivation / role removed) — the projection no longer returns it.
+        _contexts.Setup(c => c.GetContextByIdAsync(identity.Id, contextId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((AccessContextRow?)null);
+
+        AppErrorException ex = await Assert.ThrowsAsync<AppErrorException>(
+            () => CreateSut().RefreshSessionAsync("raw", null, null, CancellationToken.None));
+
+        Assert.Equal(401, ex.StatusCode);
+        _refresh.Verify(r => r.RevokeAllForActorAsync(AuthActorTypes.SchoolOwner, ownerId,
             It.IsAny<CancellationToken>()), Times.Once);
     }
 

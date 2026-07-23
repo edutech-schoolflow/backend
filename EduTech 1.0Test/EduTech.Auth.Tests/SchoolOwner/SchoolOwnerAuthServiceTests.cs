@@ -71,7 +71,7 @@ public class SchoolOwnerAuthServiceTests
                 It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(),
                 It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>()))
             .Returns(new AccessToken { Token = "access-jwt", ExpiresAt = DateTime.UtcNow.AddMinutes(30) });
-        _refresh.Setup(r => r.IssueAsync(AuthActorTypes.SchoolOwner, owner.Id, null, null, It.IsAny<CancellationToken>()))
+        _refresh.Setup(r => r.IssueAsync(AuthActorTypes.SchoolOwner, owner.Id, It.IsAny<Guid?>(), It.IsAny<Guid?>(), null, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new RefreshTokenIssue
             {
                 Token = "refresh-token",

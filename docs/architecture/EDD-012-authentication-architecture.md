@@ -26,6 +26,12 @@
 > silently relaxed two policies — `SchoolPortal`, `ComplianceActor` — that had leaned on per-portal keys
 > to keep the wrong persona out. The fix made that gating explicit, where it belonged all along.)*
 
+> **There is exactly one way to create a context-scoped access token.** Login (auto-enter), context
+> switching (`select-context`), and silent refresh all converge on the **same** context-mint. No path
+> mints a context token its own way. Corollary — **refresh is token renewal, not workspace navigation:**
+> refreshing a context-scoped session must preserve the entered context (staff refresh returns a staff
+> workspace, owner a owner workspace, …); it never demotes the session or makes the client re-navigate.
+
 This is the definitive spec for the login pipeline. It documents the pipeline as it **is** today and
 the **target** it converges to across B2a–B2d, so that afterwards Authentication is as stable as
 Identity itself.
@@ -214,10 +220,16 @@ projections derived from them, but **never** legacy actor tables. When no login 
       `SchoolAuth`/`ParentAuth`/`IdentityAuth`) → **one `Bearer`** (the default scheme); platform-admin
       keeps its own. Purely mechanical — the persona gates were already explicit (3a), so no authorization,
       claim, or refresh change. Policies authenticate on `Bearer` and gate on `user_type`.
-    - **B2c.3c — Refresh identity re-key.** `refresh_tokens` keyed on `(identity_id, context_id)` instead
-      of `(actor_type, actor_id)`; `GetIdentityIdForActorAsync` retired. The biggest behavioral change —
-      own rollback point. *Accept:* refresh · logout · context-switch · revoked-family theft detection ·
-      concurrent refresh all behave identically.
+    - **B2c.3c — Refresh identity re-key + one mint path.** `refresh_tokens` gains `identity_id` +
+      `context_id` (= `access_contexts.id`), and refresh stops minting its own tokens: it rotates, then
+      re-enters the context through the **same** context-mint login uses (so refreshed tokens also gain
+      `membership_id`/`organization_id`, and staff refresh stays in its workspace — the old demote-to-
+      identity-scope dance was an artifact of flags-in-the-token, gone since B2c.2). Strangler rollout:
+      **Phase 1** both `(actor_type,actor_id)` and `(identity_id,context_id)` populated; **Phase 2** reads
+      prefer identity+context, fall back to actor for in-flight tokens; **Phase 3 (B2d)** drop the actor
+      columns + `GetIdentityIdForActorAsync`. *Accept:* refresh · logout · context-switch · revoked-family
+      theft detection · concurrent refresh · **capability-mutation-across-refresh** (permission removed →
+      refresh → new token → endpoint denied, proving permissions were never cached in refresh).
     - **B2c.3d — Compatibility retirement.** Only after 3a–3c: drop `access_contexts.reference_id`, the
       legacy refresh columns + lookup code, and the Transitional claims (Appendix B). Final cleanup.
     `user_type` stays throughout (UX/portal semantics, not authorization).

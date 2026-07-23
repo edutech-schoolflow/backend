@@ -126,6 +126,8 @@ public sealed class AuthContextItem
 {
     public required Guid Id { get; init; }
     public required string Type { get; init; }        // owner | staff | parent
+    /// <summary>access_contexts.id — the true context PK; refresh re-keys on it (EDD-012 B2c.3c).</summary>
+    public Guid AccessContextId { get; init; }
     public Guid? OrganizationId { get; init; }
     /// <summary>Canonical identity of the context — the Membership it belongs to (EDD-012 B2c.1).</summary>
     public Guid? MembershipId { get; init; }

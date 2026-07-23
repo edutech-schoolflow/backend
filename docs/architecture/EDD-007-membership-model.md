@@ -96,31 +96,68 @@ change across the Nursery → Primary → Secondary → University range.
 
 ---
 
-## 5. Migration sketch (additive, idempotent) — this sprint is light
+## 5. Sprint split — data migration vs authentication architecture
 
-Next migration number: **0045**. The heavy lifting was already done in 0017/0022/0033/0037.
+Sprint B crosses a boundary that deserves two levels of care, so it is split:
 
-1. **Widen `memberships.kind`** to the canonical adult set (`parent, staff, owner, vendor, governor,
-   pta, volunteer, alumni`); keep `UNIQUE(identity_id, school_id, kind)`.
-2. **Backfill adult memberships** from the silos (idempotent): `staff` from `staff_affiliations`,
-   `owner` from `school_owners`. (Parent memberships were already backfilled in 0037.)
-3. **Name the student edge**: document/verify `students` as the Student Membership (no structural
-   change required). Optional later cleanup: move denormalized child fields
-   (`first_name`/`dob`/`gender`) off `students` onto `child_profiles` — **deferred**, not in 0045.
-4. `child_identity_links` (child_profile_id, identity_id, linked_at) — **deferred** until student
-   login is a real feature; nothing needs it yet.
-5. No renames, nothing deleted; legacy silos keep working.
+### B1 — Membership becomes canonical  (data layer; low risk; `access_contexts` untouched)
 
-Domain code this sprint: a `Membership` aggregate over the adult edge + a thin read of the student
-edge; re-point `access_contexts` writers to derive from memberships. Employment stays in Sprint C.
+1. ✅ **Migration `0045`** — widen `memberships.kind` to the adult set (`parent, staff, owner,
+   vendor, governor, pta, volunteer, alumni`); backfill `staff`/`owner` from the silos
+   (`parent` already backfilled in 0037). *Applied + verified against a throwaway Postgres.*
+2. ✅ **Live write completion** — the staff-accept and owner-register flows now write their
+   `staff`/`owner` membership inline (mirroring the existing parent write), so the canonical edge
+   stays complete for new records. *Verified.*
+3. ⬜ **Introduce the `EduTech.Membership` bounded context** — the aggregate + repository that owns
+   adult membership lifecycle (create → active → ended). Adult lifecycle operations read and write
+   **Membership as the source of truth**; the write logic begins moving **out of**
+   `AuthContextRepository` (Auth) into this context.
+4. Student edge = `students` (no structural change). `child_identity_links` and the
+   `students`→`child_profiles` field normalization remain **deferred**.
+
+At the end of B1, Membership is canonical, but authentication still reads the legacy projection.
+
+### B2 — Rebuild the authentication projection  (login pipeline; high risk; plan-first)
+
+Only after B1:
+
+1. Redesign `access_contexts` as a **projection of Membership** (later + Employment + Guardian):
+   `context_id · membership_id · organization_id · kind · role · status` — **no** `owner_id`,
+   `parent_id`, or `affiliation_id`.
+2. Move token minting / login onto the projection. Target JWT:
+   `identity_id · membership_id · context_id · organization_id · role · capabilities` (everything
+   else is loadable).
+3. Verify the projection can be **fully rebuilt from canonical data** (drop → rebuild from
+   memberships → done).
+
+The login pipeline is `Membership → Access Context → Authentication → Workspace`; a mistake there
+means people can't sign in. Hence B2 gets its own EDD/plan and is not bundled with B1.
 
 ---
 
-## 6. Non-goals (explicitly deferred)
+## 6. Invariants & boundaries
+
+- **Access Context is a projection, not canonical state, and not an aggregate.** Like a search index
+  or dashboard summary, it is disposable and regenerable from Membership/Employment/Guardian. It is
+  therefore **not** one of the sacred tables.
+- **Authentication consumes the projection; it does not build it.** The projection is owned by a
+  `ContextProjection` derived from Membership — `Membership → ContextProjection → Authentication` —
+  so Auth stays focused on sessions and tokens, not membership rules. (`AuthContextRepository` does
+  not own this logic long-term.)
+- **The strangler invariant for auth:** *Authentication may consume canonical domain models or
+  projections derived from them, but must never depend directly on legacy actor tables.* If any auth
+  flow still needs `school_owners`, `staff_affiliations`, or `parents`, the strangler isn't finished.
+
+**The Sacred Six** (frozen platform tables): `identities`, `organizations`, `memberships`,
+`employments`, `capabilities`, `permission_templates`. Note `access_contexts` is **not** here — by
+design, it is regenerable.
+
+---
+
+## 7. Non-goals (explicitly deferred)
 
 - Employment aggregate / `employments.membership_id` → Sprint C.
 - `schools` → `organizations` rename → Sprint D (`memberships.organization_id` re-points then).
+- `access_contexts` redesign + token/login re-point → **Sprint B2** (its own plan).
 - `child_identity_links` and the `students`→`child_profiles` field normalization → later.
 - Retiring `parents` / `staff_affiliations` / `school_owners` → as consumers move onto memberships.
-- Access Context stays a lightweight read model (EDD-003); it gains membership sources, it does not
-  become a rich domain.

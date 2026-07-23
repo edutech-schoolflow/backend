@@ -110,7 +110,7 @@ internal sealed class PlatformAdminAuthService : IPlatformAdminAuthService
 
         AccessToken access = _accessTokenIssuer.IssuePlatformAdmin(admin.Id, admin.Role, admin.Email);
         RefreshTokenIssue refresh = await _refreshTokenService.IssueAsync(
-            AuthActorTypes.PlatformAdmin, admin.Id, ipAddress, userAgent, cancellationToken);
+            AuthActorTypes.PlatformAdmin, admin.Id, identityId: null, contextId: null, ipAddress, userAgent, cancellationToken);
 
         return new AdminTokensResult
         {

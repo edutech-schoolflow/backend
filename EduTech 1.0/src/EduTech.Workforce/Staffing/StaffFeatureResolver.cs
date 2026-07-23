@@ -6,6 +6,11 @@ namespace EduTech.Workforce;
 /// Resolves a staff member's effective 13 feature flags for one affiliation, in layers:
 /// role defaults → permission template (if assigned) → per-staff overrides. Mirrors the frontend
 /// computeFeatures(). Output is the full 13-flag map embedded in the scoped token.
+///
+/// <para>EDD-013 B2b: this is now purely the <b>token-mint compatibility adapter</b> — it fills the
+/// legacy flag claims the JWT still carries. Enforcement no longer consults it; authorization is
+/// resolved server-side by <c>ICapabilityResolver</c> (which mirrors this exact algorithm). Retired
+/// when B2c removes the flag claims from the token.</para>
 /// </summary>
 internal static class StaffFeatureResolver
 {

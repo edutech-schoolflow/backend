@@ -8,106 +8,66 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Abstractions;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.DependencyInjection;
+using Moq;
 
 namespace EduTech.Auth.Tests.Authorization;
 
 /// <summary>
-/// The capability authorization policy (EDD-006). Behavior must match the legacy
-/// <c>[RequireFeature]</c> for the 13 mapped capabilities: owners bypass, wrong-portal users are
-/// rejected, and a mapped capability is granted iff its legacy flag claim is "true".
+/// The capability authorization filter (EDD-013). It is now fully actor-neutral: it reads only the
+/// workspace (<c>context_id</c>) and asks the server-side <see cref="ICapabilityResolver"/> — no
+/// <c>is_owner</c>/<c>user_type</c>/flag-claim reads. (Owner=all, parent=∅ etc. are the resolver's
+/// job, covered by CapabilityResolverTests.)
 /// </summary>
 public class RequireCapabilityAttributeTests
 {
+    private static readonly Guid Ctx = Guid.NewGuid();
+
     [Fact]
-    public void Unauthenticated_Returns401()
+    public async Task Unauthenticated_Returns401()
     {
-        AuthorizationFilterContext ctx = BuildContext(authenticated: false);
-
-        new RequireCapabilityAttribute(Capabilities.Admissions.Manage).OnAuthorization(ctx);
-
+        AuthorizationFilterContext ctx = BuildContext(authenticated: false, granted: false);
+        await new RequireCapabilityAttribute(Capabilities.Admissions.Manage).OnAuthorizationAsync(ctx);
         AssertError(ctx, StatusCodes.Status401Unauthorized, ErrorCodes.Unauthorized);
     }
 
     [Fact]
-    public void Owner_BypassesTheCheck()
+    public async Task NoContextId_Returns403()
     {
-        AuthorizationFilterContext ctx = BuildContext(
-            new Claim("is_owner", "true"),
-            new Claim("user_type", UserTypes.School));
-
-        new RequireCapabilityAttribute(Capabilities.Admissions.Manage).OnAuthorization(ctx);
-
-        Assert.Null(ctx.Result); // allowed
-    }
-
-    [Theory]
-    [InlineData(UserTypes.Parent)]
-    [InlineData(UserTypes.PlatformAdmin)]
-    public void WrongPortal_Returns403(string userType)
-    {
-        AuthorizationFilterContext ctx = BuildContext(
-            new Claim("is_owner", "false"),
-            new Claim("user_type", userType));
-
-        new RequireCapabilityAttribute(Capabilities.Admissions.Manage).OnAuthorization(ctx);
-
+        AuthorizationFilterContext ctx = BuildContext(authenticated: true, granted: true, includeContext: false);
+        await new RequireCapabilityAttribute(Capabilities.Admissions.Manage).OnAuthorizationAsync(ctx);
         AssertError(ctx, StatusCodes.Status403Forbidden, ErrorCodes.AccessDenied);
     }
 
     [Fact]
-    public void StaffWithLegacyFlagTrue_IsAllowed()
+    public async Task ResolverGrants_IsAllowed()
     {
-#pragma warning disable CS0618 // asserting the bridge maps to this flag
-        string flag = StaffFeatureFlags.ManageAdmissions;
-#pragma warning restore CS0618
-        AuthorizationFilterContext ctx = BuildContext(
-            new Claim("is_owner", "false"),
-            new Claim("user_type", UserTypes.Staff),
-            new Claim(flag, "true"));
-
-        new RequireCapabilityAttribute(Capabilities.Admissions.Manage).OnAuthorization(ctx);
-
+        AuthorizationFilterContext ctx = BuildContext(authenticated: true, granted: true);
+        await new RequireCapabilityAttribute(Capabilities.Admissions.Manage).OnAuthorizationAsync(ctx);
         Assert.Null(ctx.Result); // allowed
     }
 
     [Fact]
-    public void StaffWithoutLegacyFlag_Returns403()
+    public async Task ResolverDenies_Returns403()
     {
-        AuthorizationFilterContext ctx = BuildContext(
-            new Claim("is_owner", "false"),
-            new Claim("user_type", UserTypes.Staff)); // flag claim absent
-
-        new RequireCapabilityAttribute(Capabilities.Admissions.Manage).OnAuthorization(ctx);
-
+        AuthorizationFilterContext ctx = BuildContext(authenticated: true, granted: false);
+        await new RequireCapabilityAttribute(Capabilities.Admissions.Manage).OnAuthorizationAsync(ctx);
         AssertError(ctx, StatusCodes.Status403Forbidden, ErrorCodes.AccessDenied);
     }
 
-    [Fact]
-    public void StaffWithLegacyFlagFalse_Returns403()
+    private static AuthorizationFilterContext BuildContext(bool authenticated, bool granted, bool includeContext = true)
     {
-#pragma warning disable CS0618
-        string flag = StaffFeatureFlags.ManageAdmissions;
-#pragma warning restore CS0618
-        AuthorizationFilterContext ctx = BuildContext(
-            new Claim("is_owner", "false"),
-            new Claim("user_type", UserTypes.Staff),
-            new Claim(flag, "false"));
-
-        new RequireCapabilityAttribute(Capabilities.Admissions.Manage).OnAuthorization(ctx);
-
-        AssertError(ctx, StatusCodes.Status403Forbidden, ErrorCodes.AccessDenied);
-    }
-
-    private static AuthorizationFilterContext BuildContext(params Claim[] claims) =>
-        BuildContext(authenticated: true, claims);
-
-    private static AuthorizationFilterContext BuildContext(bool authenticated, params Claim[] claims)
-    {
+        List<Claim> claims = new();
+        if (includeContext) claims.Add(new Claim("context_id", Ctx.ToString()));
         // A non-null authentication type is what makes ClaimsIdentity.IsAuthenticated true.
-        ClaimsIdentity identity = authenticated
-            ? new ClaimsIdentity(claims, authenticationType: "test")
-            : new ClaimsIdentity(claims);
-        DefaultHttpContext http = new() { User = new ClaimsPrincipal(identity) };
+        ClaimsIdentity identity = authenticated ? new ClaimsIdentity(claims, "test") : new ClaimsIdentity(claims);
+
+        Mock<ICapabilityResolver> resolver = new();
+        resolver.Setup(r => r.HasCapabilityAsync(Ctx, Capabilities.Admissions.Manage, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(granted);
+
+        ServiceProvider sp = new ServiceCollection().AddSingleton(resolver.Object).BuildServiceProvider();
+        DefaultHttpContext http = new() { User = new ClaimsPrincipal(identity), RequestServices = sp };
         ActionContext actionContext = new(http, new RouteData(), new ActionDescriptor());
         return new AuthorizationFilterContext(actionContext, new List<IFilterMetadata>());
     }

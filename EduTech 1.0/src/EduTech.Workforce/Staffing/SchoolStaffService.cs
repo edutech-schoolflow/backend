@@ -1,6 +1,9 @@
 using EduTech.Shared.Constants;
 using EduTech.Shared.Context;
 using EduTech.Shared.Exceptions;
+using EduTech.Membership;
+using EduTech.Membership.Domain;
+using EduTech.People;
 
 namespace EduTech.Workforce;
 
@@ -17,11 +20,19 @@ internal sealed class SchoolStaffService : ISchoolStaffService
 {
     private readonly IEduTechRequestContext _requestContext;
     private readonly IStaffAffiliationRepository _affiliations;
+    private readonly IMembershipRepository _memberships;
+    private readonly IEmploymentRepository _employments;
+    private readonly EduTech.Shared.Authorization.ICapabilityResolver _capabilities;
 
-    public SchoolStaffService(IEduTechRequestContext requestContext, IStaffAffiliationRepository affiliations)
+    public SchoolStaffService(IEduTechRequestContext requestContext, IStaffAffiliationRepository affiliations,
+        IMembershipRepository memberships, IEmploymentRepository employments,
+        EduTech.Shared.Authorization.ICapabilityResolver capabilities)
     {
         _requestContext = requestContext;
         _affiliations = affiliations;
+        _memberships = memberships;
+        _employments = employments;
+        _capabilities = capabilities;
     }
 
     public async Task<IReadOnlyList<StaffDirectoryItemResponse>> ListAsync(CancellationToken cancellationToken)
@@ -49,6 +60,8 @@ internal sealed class SchoolStaffService : ISchoolStaffService
             throw new AppErrorException("Staff member not found.", 404, ErrorCodes.NotFound);
         }
 
+        // Role changed → the workspace's capabilities changed; drop the cached set (EDD-013).
+        _capabilities.Invalidate(affiliationId);
         return await GetOrThrowAsync(affiliationId, schoolId, cancellationToken);
     }
 
@@ -68,6 +81,34 @@ internal sealed class SchoolStaffService : ISchoolStaffService
             throw new AppErrorException("Staff member not found.", 404, ErrorCodes.NotFound);
         }
 
+        // Keep the canonical 'staff' membership (EDD-007) in step with the affiliation: deactivating
+        // ends the belonging edge, reactivating restores it. Closes the lifecycle gap where a
+        // deactivated staff member kept an active membership.
+        if (await _affiliations.GetIdentityIdAsync(affiliationId, schoolId, cancellationToken) is Guid identityId)
+        {
+            if (status == "active")
+            {
+                await _memberships.EnsureActiveAsync(identityId, schoolId, MembershipKind.Staff, cancellationToken);
+            }
+            else
+            {
+                await _memberships.EndAsync(identityId, schoolId, MembershipKind.Staff, cancellationToken);
+            }
+        }
+
+        // Keep the canonical 'staff' employment (EDD-009) in step with the affiliation, alongside the
+        // membership: reactivate restores it, deactivate ends it.
+        if (status == "active")
+        {
+            await _employments.EnsureFromAffiliationAsync(affiliationId, cancellationToken);
+        }
+        else
+        {
+            await _employments.EndByAffiliationAsync(affiliationId, cancellationToken);
+        }
+
+        // Status changed → drop the cached capability set for this workspace (EDD-013).
+        _capabilities.Invalidate(affiliationId);
         return await GetOrThrowAsync(affiliationId, schoolId, cancellationToken);
     }
 

@@ -15,10 +15,12 @@ public class GuardianLinkedTests
 {
     private readonly Mock<IIdentityRepository> _identities = new();
     private readonly Mock<IAuthContextRepository> _contexts = new();
+    private readonly Mock<EduTech.Membership.IMembershipRepository> _memberships = new();
+    private readonly Mock<IAccessContextProjector> _projector = new();
     private readonly Mock<IParentRepository> _parents = new();
 
     private EnsureIdentityOnGuardianLinked CreateSut() =>
-        new(_identities.Object, _contexts.Object, _parents.Object,
+        new(_identities.Object, _contexts.Object, _memberships.Object, _projector.Object, _parents.Object,
             NullLogger<EnsureIdentityOnGuardianLinked>.Instance);
 
     private const string Phone = "+2348030000009";
@@ -36,8 +38,9 @@ public class GuardianLinkedTests
         await CreateSut().HandleAsync(new GuardianLinkedEvent(schoolId, Phone, "Bola", "Ade"), CancellationToken.None);
 
         _contexts.Verify(c => c.LinkParentAsync(parentId, identityId, It.IsAny<CancellationToken>()), Times.Once);
-        _contexts.Verify(c => c.EnsureParentMembershipAsync(identityId, schoolId, It.IsAny<CancellationToken>()),
-            Times.Once);
+        _memberships.Verify(m => m.EnsureActiveAsync(identityId, schoolId,
+            EduTech.Membership.Domain.MembershipKind.Parent, It.IsAny<CancellationToken>()), Times.Once);
+        _projector.Verify(p => p.ProjectForIdentityAsync(identityId, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]

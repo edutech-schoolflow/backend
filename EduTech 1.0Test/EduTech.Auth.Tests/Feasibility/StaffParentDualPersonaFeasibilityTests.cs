@@ -199,11 +199,12 @@ public class StaffParentDualPersonaFeasibilityTests
             .ReturnsAsync(new Dictionary<string, bool>());
         access.Setup(a => a.IssueStaffScoped(staffUserId, schoolId, affiliationId, SharedPhone, "teacher",
                 "full_time", "approved", It.IsAny<IReadOnlyDictionary<string, bool>>(),
-                It.IsAny<Guid?>(), It.IsAny<Guid?>()))
+                It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>()))
             .Returns(new AccessToken { Token = "staff-token", ExpiresAt = DateTime.UtcNow.AddMinutes(30) });
-        access.Setup(a => a.IssueParent(parentId, SharedPhone, It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>()))
+        access.Setup(a => a.IssueParent(parentId, SharedPhone, It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(),
+                It.IsAny<Guid?>(), It.IsAny<Guid?>()))
             .Returns(new AccessToken { Token = "parent-token", ExpiresAt = DateTime.UtcNow.AddMinutes(30) });
-        refresh.Setup(r => r.IssueAsync(It.IsAny<string>(), It.IsAny<Guid>(), null, null, It.IsAny<CancellationToken>()))
+        refresh.Setup(r => r.IssueAsync(It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(), null, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new EduTech.Auth.RefreshTokens.RefreshTokenIssue
                 { Token = "r", FamilyId = Guid.NewGuid(), ExpiresAt = DateTime.UtcNow.AddHours(12) });
 
@@ -212,6 +213,9 @@ public class StaffParentDualPersonaFeasibilityTests
             staffUsers.Object, affiliations.Object, templates.Object, overrides.Object,
             new Mock<EduTech.Auth.SchoolOwner.ISchoolRepository>().Object,
             new Mock<EduTech.Auth.SchoolOwner.ISchoolOwnerRepository>().Object,
+            new Mock<EduTech.Membership.IMembershipRepository>().Object,
+            new Mock<EduTech.People.IEmploymentRepository>().Object,
+            new Mock<EduTech.Auth.Unified.IAccessContextProjector>().Object,
             new Mock<EduTech.Shared.Persistence.IDbConnectionFactory>().Object);
 
         access.Setup(a => a.IssueIdentity(identity.Id, SharedPhone))

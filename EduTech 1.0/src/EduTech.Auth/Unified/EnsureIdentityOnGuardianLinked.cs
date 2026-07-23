@@ -1,5 +1,7 @@
 using EduTech.Auth.Parent;
 using EduTech.Identity;
+using EduTech.Membership;
+using EduTech.Membership.Domain;
 using EduTech.Shared.Events;
 using Microsoft.Extensions.Logging;
 
@@ -15,14 +17,19 @@ internal sealed class EnsureIdentityOnGuardianLinked : IDomainEventHandler<Guard
 {
     private readonly IIdentityRepository _identities;
     private readonly IAuthContextRepository _contexts;
+    private readonly IMembershipRepository _memberships;
+    private readonly IAccessContextProjector _projector;
     private readonly IParentRepository _parents;
     private readonly ILogger<EnsureIdentityOnGuardianLinked> _logger;
 
     public EnsureIdentityOnGuardianLinked(IIdentityRepository identities, IAuthContextRepository contexts,
-        IParentRepository parents, ILogger<EnsureIdentityOnGuardianLinked> logger)
+        IMembershipRepository memberships, IAccessContextProjector projector, IParentRepository parents,
+        ILogger<EnsureIdentityOnGuardianLinked> logger)
     {
         _identities = identities;
         _contexts = contexts;
+        _memberships = memberships;
+        _projector = projector;
         _parents = parents;
         _logger = logger;
     }
@@ -41,7 +48,9 @@ internal sealed class EnsureIdentityOnGuardianLinked : IDomainEventHandler<Guard
             await _contexts.LinkParentAsync(parentId, identityId, cancellationToken);
         }
 
-        await _contexts.EnsureParentMembershipAsync(identityId, domainEvent.SchoolId, cancellationToken);
+        // Canonical belonging edge first (EDD-007), then project the access_context from it (EDD-012 B2a).
+        await _memberships.EnsureActiveAsync(identityId, domainEvent.SchoolId, MembershipKind.Parent, cancellationToken);
+        await _projector.ProjectForIdentityAsync(identityId, cancellationToken);
 
         _logger.LogInformation("Guardian {Phone} ensured as identity {IdentityId} with membership at {SchoolId}.",
             domainEvent.Phone, identityId, domainEvent.SchoolId);

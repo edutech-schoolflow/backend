@@ -2,13 +2,12 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace EduTech.Workforce;
 
-/// <summary>Registers the Workforce module (positions today; employments/invites migrate here — EDD-002 V6).</summary>
+/// <summary>Registers the Workforce (business) module — staff profiles, invites, attendance. Position
+/// moved to the EduTech.People foundation context (EDD-008).</summary>
 public static class WorkforceServiceCollectionExtensions
 {
     public static IServiceCollection AddWorkforceModule(this IServiceCollection services)
     {
-        services.AddScoped<IPositionRepository, PositionRepository>();
-
         // Staff domain (EDD-002 V6): profiles, employments (affiliations), invites, feature templates.
         services.AddScoped<IStaffUserRepository, StaffUserRepository>();
         services.AddScoped<IStaffAffiliationRepository, StaffAffiliationRepository>();

@@ -350,7 +350,7 @@ internal sealed class StaffAuthService : IStaffAuthService
         AccessToken access = _accessTokenIssuer.IssueStaffIdentity(staffUserId, phone, kycStatus);
 
         RefreshTokenIssue refresh = await _refreshTokenService.IssueAsync(
-            AuthActorTypes.Staff, staffUserId, ipAddress, userAgent, cancellationToken);
+            AuthActorTypes.Staff, staffUserId, identityId: null, contextId: null, ipAddress, userAgent, cancellationToken);
 
         return new StaffTokensResult
         {

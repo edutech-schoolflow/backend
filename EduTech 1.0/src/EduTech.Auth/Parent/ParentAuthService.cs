@@ -392,7 +392,7 @@ internal sealed class ParentAuthService : IParentAuthService
         AccessToken access = _accessTokenIssuer.IssueParent(parentId, phone);
 
         RefreshTokenIssue refresh = await _refreshTokenService.IssueAsync(
-            AuthActorTypes.Parent, parentId, ipAddress, userAgent, cancellationToken);
+            AuthActorTypes.Parent, parentId, identityId: null, contextId: null, ipAddress, userAgent, cancellationToken);
 
         return new ParentTokensResult
         {

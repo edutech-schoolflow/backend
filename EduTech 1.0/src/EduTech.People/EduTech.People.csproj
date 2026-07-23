@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\EduTech.Shared\EduTech.Shared.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Auth and Workforce drive Employment lifecycle through this context (EDD-009) via the internal
+         repository; the transition also lets them read Position/Employment internals. -->
+    <InternalsVisibleTo Include="EduTech.Auth" />
+    <InternalsVisibleTo Include="EduTech.Workforce" />
+    <InternalsVisibleTo Include="EduTech.Auth.Tests" />
+    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

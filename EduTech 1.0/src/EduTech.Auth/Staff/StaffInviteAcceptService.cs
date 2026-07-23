@@ -11,6 +11,9 @@ using EduTech.Shared.Exceptions;
 using EduTech.Shared.Notifications;
 using EduTech.Shared.Persistence;
 using EduTech.Workforce;
+using EduTech.Membership;
+using EduTech.Membership.Domain;
+using EduTech.People;
 
 
 
@@ -48,6 +51,9 @@ internal sealed class StaffInviteAcceptService : IStaffInviteAcceptService
     private readonly IAccessTokenIssuer _accessTokenIssuer;
     private readonly IRefreshTokenService _refreshTokenService;
     private readonly IAuthContextRepository _identityLinks;
+    private readonly IMembershipRepository _memberships;
+    private readonly IEmploymentRepository _employments;
+    private readonly IAccessContextProjector _projector;
     private readonly IDomainEventPublisher _events;
 
     public StaffInviteAcceptService(
@@ -61,6 +67,9 @@ internal sealed class StaffInviteAcceptService : IStaffInviteAcceptService
         IAccessTokenIssuer accessTokenIssuer,
         IRefreshTokenService refreshTokenService,
         IAuthContextRepository identityLinks,
+        IMembershipRepository memberships,
+        IEmploymentRepository employments,
+        IAccessContextProjector projector,
         IDomainEventPublisher events)
     {
         _connectionFactory = connectionFactory;
@@ -71,7 +80,11 @@ internal sealed class StaffInviteAcceptService : IStaffInviteAcceptService
         _otpService = otpService;
         _notifications = notifications;
         _accessTokenIssuer = accessTokenIssuer;
-        _refreshTokenService = refreshTokenService;        _identityLinks = identityLinks;
+        _refreshTokenService = refreshTokenService;
+        _identityLinks = identityLinks;
+        _memberships = memberships;
+        _employments = employments;
+        _projector = projector;
         _events = events;
 
     }
@@ -145,10 +158,22 @@ internal sealed class StaffInviteAcceptService : IStaffInviteAcceptService
 
         // Identity platform (EDD-001): the accepted employment links to its identity + position, and
         // the fact is published (audited via IAuditableEvent; Authorization/Communication react later).
-        string staffName = await _identityLinks.EnsureStaffIdentityLinksAsync(staffUserId, affiliation.Id,
+        StaffIdentityLink link = await _identityLinks.EnsureStaffIdentityLinksAsync(staffUserId, affiliation.Id,
             cancellationToken);
-        await _events.PublishAsync(new EmploymentStartedEvent(affiliation.Id, affiliation.SchoolId,
-            staffUserId, affiliation.Role, staffName), cancellationToken);
+
+        // Canonical belonging edge (EDD-007) + working relationship (EDD-009): the active affiliation
+        // IS a 'staff' membership + employment, driven through the Membership/People contexts.
+        await _employments.EnsureFromAffiliationAsync(affiliation.Id, cancellationToken);
+        if (link.IdentityId is Guid identityId)
+        {
+            await _memberships.EnsureActiveAsync(identityId, affiliation.SchoolId, MembershipKind.Staff,
+                cancellationToken);
+            // Project the staff access_context from the canonical edges just written (EDD-012 B2a).
+            await _projector.ProjectForIdentityAsync(identityId, cancellationToken);
+        }
+
+        await _events.PublishAsync(new EmploymentActivated(affiliation.Id, affiliation.SchoolId,
+            staffUserId, affiliation.Role, link.Name), cancellationToken);
 
         return await IssueTokensAsync(staffUserId, state.Phone, state.KycStatus, ipAddress, userAgent,
             cancellationToken);
@@ -238,7 +263,7 @@ internal sealed class StaffInviteAcceptService : IStaffInviteAcceptService
         AccessToken access = _accessTokenIssuer.IssueStaffIdentity(staffUserId, phone, kycStatus);
 
         RefreshTokenIssue refresh = await _refreshTokenService.IssueAsync(
-            AuthActorTypes.Staff, staffUserId, ipAddress, userAgent, cancellationToken);
+            AuthActorTypes.Staff, staffUserId, identityId: null, contextId: null, ipAddress, userAgent, cancellationToken);
 
         return new StaffTokensResult
         {

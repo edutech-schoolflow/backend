@@ -10,11 +10,16 @@ using EduTech.Compliance;
 using EduTech.Fees;
 using EduTech.Grades;
 using EduTech.Identity;
+using EduTech.Membership;
+using EduTech.People;
+using EduTech.Organization;
+using EduTech.Admissions;
 using EduTech.Notifications;
 using EduTech.Students;
 using EduTech.School;
 using EduTech.Shared.Audit;
 using EduTech.Shared.Auth;
+using EduTech.Shared.Authorization;
 using EduTech.Shared.Caching;
 using EduTech.Shared.Constants;
 using EduTech.Shared.Context;
@@ -57,11 +62,14 @@ builder.Host.UseSerilog();
 // ─── Configuration helpers ────────────────────────────────────────────────────
 ConfigurationManager config = builder.Configuration;
 
-string staffKey    = config["Jwt:StaffSigningKey"]         ?? throw new InvalidOperationException("Jwt:StaffSigningKey is missing");
-string schoolKey   = config["Jwt:SchoolSigningKey"]        ?? throw new InvalidOperationException("Jwt:SchoolSigningKey is missing");
-string parentKey   = config["Jwt:ParentSigningKey"]        ?? throw new InvalidOperationException("Jwt:ParentSigningKey is missing");
+// EDD-012 B2c.3a — ONE signing key for every identity/portal token (owner · staff · parent · identity):
+// the per-portal keys are retired. Platform-admin keeps its own key — a distinct internal trust boundary
+// (admin.schoolflow.com), so a leak of the user key can never forge an admin token. Falls back to the
+// legacy staff key so a pre-config deploy keeps validating; in-flight tokens signed with an old key fail
+// and silently refresh (refresh tokens are opaque DB rows, unaffected) — no hard logout.
+string signingKey  = config["Jwt:SigningKey"] ?? config["Jwt:StaffSigningKey"]
+    ?? throw new InvalidOperationException("Jwt:SigningKey is missing");
 string adminKey    = config["Jwt:PlatformAdminSigningKey"] ?? throw new InvalidOperationException("Jwt:PlatformAdminSigningKey is missing");
-string identityKey = config["Jwt:IdentitySigningKey"] ?? parentKey;   // identity-scope tokens (EDD-001)
 string jwtIssuer   = config["Jwt:Issuer"]                  ?? "EduTech";
 string jwtAudience = config["Jwt:Audience"]                ?? "EduTechApp";
 
@@ -78,26 +86,14 @@ builder.Services.AddEduTechPersistence(config);
 IConnectionMultiplexer? redis = TryConnectRedis(config);
 builder.Services.AddEduTechCaching(redis);
 
-// ─── Authentication: one JWT scheme per portal ────────────────────────────────
-builder.Services.AddAuthentication()
-    .AddJwtBearer("StaffAuth", options =>
+// ─── Authentication: ONE Bearer scheme for every identity/portal token (EDD-012 B2c.3b). The per-portal
+// schemes (StaffAuth/SchoolAuth/ParentAuth/IdentityAuth) are gone — a scheme proves authenticity, never
+// persona; portal eligibility is authorization (see PortalGates). Platform-admin keeps its own scheme +
+// key: a distinct internal trust boundary. ─────────────────────────────────────
+builder.Services.AddAuthentication("Bearer")
+    .AddJwtBearer("Bearer", options =>
     {
-        options.TokenValidationParameters = BuildTokenParams(staffKey, jwtIssuer, jwtAudience);
-        ReadTokenFromCookie(options);
-    })
-    .AddJwtBearer("SchoolAuth", options =>
-    {
-        options.TokenValidationParameters = BuildTokenParams(schoolKey, jwtIssuer, jwtAudience);
-        ReadTokenFromCookie(options);
-    })
-    .AddJwtBearer("ParentAuth", options =>
-    {
-        options.TokenValidationParameters = BuildTokenParams(parentKey, jwtIssuer, jwtAudience);
-        ReadTokenFromCookie(options);
-    })
-    .AddJwtBearer("IdentityAuth", options =>
-    {
-        options.TokenValidationParameters = BuildTokenParams(identityKey, jwtIssuer, jwtAudience);
+        options.TokenValidationParameters = BuildTokenParams(signingKey, jwtIssuer, jwtAudience);
         ReadTokenFromCookie(options);
     })
     .AddJwtBearer("PlatformAdminAuth", options =>
@@ -106,36 +102,40 @@ builder.Services.AddAuthentication()
         ReadTokenFromCookie(options);
     });
 
-// ─── Authorization: named policies map portals to schemes ────────────────────
+// ─── Authorization: one Bearer scheme; each policy states its persona restriction EXPLICITLY on
+// user_type (never inferred from a scheme). Platform-admin authenticates on its own scheme. ──────────
 builder.Services.AddAuthorizationBuilder()
     .AddPolicy("StaffOnly", policy => policy
-        .AddAuthenticationSchemes("StaffAuth")
+        .AddAuthenticationSchemes("Bearer")
         .RequireAuthenticatedUser()
         .RequireClaim("user_type", UserTypes.Staff))
     .AddPolicy("SchoolOnly", policy => policy
-        .AddAuthenticationSchemes("SchoolAuth")
+        .AddAuthenticationSchemes("Bearer")
         .RequireAuthenticatedUser()
         .RequireClaim("user_type", UserTypes.School))
     .AddPolicy("ParentOnly", policy => policy
-        .AddAuthenticationSchemes("ParentAuth")
+        .AddAuthenticationSchemes("Bearer")
         .RequireAuthenticatedUser()
         .RequireClaim("user_type", UserTypes.Parent))
     .AddPolicy("PlatformAdminOnly", policy => policy
         .AddAuthenticationSchemes("PlatformAdminAuth")
         .RequireAuthenticatedUser()
         .RequireClaim("user_type", UserTypes.PlatformAdmin))
+    // Staff OR parent — the user_type gate is explicit (EDD-012 B2c.3a); one Bearer scheme authenticates.
     .AddPolicy("ComplianceActor", policy => policy
-        .AddAuthenticationSchemes("StaffAuth", "ParentAuth")
-        .RequireAuthenticatedUser())
-    // School-management endpoints (students, classes, calendar): the owner OR a staff member with an
-    // active school. Both tokens carry school_id; per-action [RequireFeature] gates staff (owner bypasses).
+        .AddAuthenticationSchemes("Bearer")
+        .RequireAuthenticatedUser()
+        .RequireAssertion(ctx => PortalGates.IsStaffOrParent(ctx.User)))
+    // School-management endpoints (students, classes, calendar): the owner OR a staff member. The explicit
+    // user_type gate keeps parents/identities out (per-action capabilities gate staff further).
     .AddPolicy("SchoolPortal", policy => policy
-        .AddAuthenticationSchemes("SchoolAuth", "StaffAuth")
-        .RequireAuthenticatedUser())
-    // "Are you an authenticated person?" — any session (identity-scope or portal) qualifies; the
-    // persona is irrelevant. Identity-surface endpoints (/auth/me, select-context, onboarding) use this.
+        .AddAuthenticationSchemes("Bearer")
+        .RequireAuthenticatedUser()
+        .RequireAssertion(ctx => PortalGates.IsSchoolOrStaff(ctx.User)))
+    // "Are you an authenticated person?" — any user session (identity-scope or in a workspace) qualifies;
+    // the persona is irrelevant. Admin is excluded (separate scheme). Used by /auth/me, select-context, …
     .AddPolicy("AuthenticatedIdentity", policy => policy
-        .AddAuthenticationSchemes("SchoolAuth", "StaffAuth", "ParentAuth", "IdentityAuth")
+        .AddAuthenticationSchemes("Bearer")
         .RequireAuthenticatedUser());
 
 // ─── Rate limiting ────────────────────────────────────────────────────────────
@@ -256,9 +256,14 @@ builder.Services.AddFeatureFlags();
 builder.Services.AddSlackNotifications(config);     // error alerts -> Slack (real) or logs (dev)
 builder.Services.AddDomainEvents();                 // Observer: publisher; modules register their handlers
 builder.Services.AddAuditLog();                     // Observer: writes every auditable event to the trail
+builder.Services.AddCapabilityResolution();         // EDD-013 B2b — the single server-side authorization API
 builder.Services.AddAuthModule();
 builder.Services.AddWorkforceModule();
 builder.Services.AddIdentityModule();   // EDD-001 Sprint 1 — global identities (unified auth lands Sprint 2)
+builder.Services.AddMembershipModule(); // EDD-007 Sprint B1 — canonical belonging edge (adult lifecycle)
+builder.Services.AddPeopleModule();     // EDD-008/009 Sprint C — Position catalog + Employment
+builder.Services.AddOrganizationModule(); // EDD-010 Sprint D — platform root (shadow root)
+builder.Services.AddAdmissionsModule();   // EDD-014 — first Layer-3 module (vertical slices)
 builder.Services.AddNotificationsModule(config);
 builder.Services.AddSchoolModule(config);
 builder.Services.AddComplianceModule(config);

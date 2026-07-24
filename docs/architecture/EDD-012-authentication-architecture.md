@@ -256,6 +256,19 @@ projections derived from them, but **never** legacy actor tables. When no login 
     and `CapabilityResolver` (`WHERE reference_id = @ContextId` + the `staff_affiliations` join). Nothing
     deleted yet. *Accept:* identical behavior; compatibility columns still populated; grep shows no
     business logic reading actor ids.
+    - **Resolver — DONE** (EDD-015 / B2d.1). `CanonicalCapabilityResolver` reads the canonical permission
+      model (Position/Employment templates + overrides); proven byte-identical by the Validation Gate over
+      every seeded context; DI flipped to it (Commit A, `60a6964`). Legacy resolver kept as revert target.
+    - **Mint — its own focused session** (login = the highest lockout surface, so it gets the resolver
+      treatment: build `CanonicalContextMint` beside the legacy mint → a **claim-equivalence harness**
+      (assert the *semantic* claims match — `identity_id · membership_id · context_id · organization_id ·
+      school_id · role · user_type` + compat claims — ignoring `iat`/`exp`/`jti`/`nbf`) → flip DI → delete
+      the legacy reads). Owner drops `school_owners`; staff drops `staff_affiliations` (role → canonical).
+      > **Mint invariant: the mint may read legacy tables only to populate documented *compatibility*
+      > claims. No *canonical* claim may originate from a legacy actor table.** So `identity_id`,
+      > `membership_id`, `context_id`, `organization_id`, `role` are canonical-sourced; only the `user_id`
+      > claim keeps a `staff_users` lookup — `staff_users` is no longer an authority, just a compatibility
+      > lookup — until `user_id` retires (Appendix B).
   - **Phase 2 — Coexistence window.** Leave `refresh_tokens.actor_type/actor_id` alive as fallback-only
     until in-flight actor-only refresh tokens expire (≤14d). No code prefers them.
   - **Phase 3 — Physical deletion.** Only after 1–2: drop `access_contexts.reference_id`, the refresh

@@ -1,4 +1,3 @@
-using Dapper;
 using EduTech.Shared.Authorization;
 using EduTech.Shared.Persistence;
 using Microsoft.Extensions.Caching.Memory;
@@ -33,8 +32,15 @@ public class CapabilityEquivalenceGateTests
 
         await using NpgsqlConnection db = new(conn);
         await db.OpenAsync();
-        List<Guid> contexts =
-            (await db.QueryAsync<Guid>("SELECT reference_id FROM access_contexts WHERE status = 'active'")).ToList();
+        List<Guid> contexts = new();
+        await using (NpgsqlCommand cmd = new("SELECT reference_id FROM access_contexts WHERE status = 'active'", db))
+        await using (NpgsqlDataReader reader = await cmd.ExecuteReaderAsync())
+        {
+            while (await reader.ReadAsync())
+            {
+                contexts.Add(reader.GetGuid(0));
+            }
+        }
 
         Assert.NotEmpty(contexts);   // the seed must produce active contexts, or the gate proves nothing
 

@@ -11,7 +11,12 @@ public static class AuthorizationServiceCollectionExtensions
     public static IServiceCollection AddCapabilityResolution(this IServiceCollection services)
     {
         services.AddMemoryCache();   // idempotent (TryAdd); the resolver's per-context cache
-        services.AddScoped<ICapabilityResolver, CapabilityResolver>();
+        // EDD-015 / B2d.1 Stage 3 (Commit A): authorization now resolves from the CANONICAL model
+        // (AccessContext → Membership → Employment → Position → template/overrides) — no staff_affiliations.
+        // Proven byte-identical to the legacy resolver by the Validation Gate before this swap. The legacy
+        // CapabilityResolver stays present (unregistered) as an instant `git revert` target until Commit B
+        // deletes it, once production has proven the canonical path.
+        services.AddScoped<ICapabilityResolver, CanonicalCapabilityResolver>();
         return services;
     }
 }

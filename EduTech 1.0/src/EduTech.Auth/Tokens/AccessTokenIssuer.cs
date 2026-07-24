@@ -64,14 +64,14 @@ internal sealed class AccessTokenIssuer : IAccessTokenIssuer
     }
 
     public AccessToken IssueStaffScoped(Guid staffUserId, Guid schoolId, Guid affiliationId, string phone,
-        string role, string employmentType, string kycStatus, IReadOnlyDictionary<string, bool> features,
+        string role, string employmentType, string kycStatus,
         Guid? identityId = null, Guid? contextId = null,
         Guid? membershipId = null, Guid? organizationId = null)
     {
         string token = TokenVendor.VendStaffScopedToken(
             _signingKey, _issuer, _audience,
             staffUserId.ToString(), phone, schoolId.ToString(), affiliationId.ToString(),
-            role, employmentType, kycStatus, features, StaffAccessMinutes,
+            role, employmentType, kycStatus, StaffAccessMinutes,
             identityId?.ToString(), contextId?.ToString(),
             membershipId?.ToString(), organizationId?.ToString());
 

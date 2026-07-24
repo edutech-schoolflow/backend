@@ -12,8 +12,8 @@ public interface IStaffSchoolService
     Task<IReadOnlyList<StaffSchoolItem>> ListMySchoolsAsync(CancellationToken cancellationToken);
 
     /// <summary>
-    /// Switches the active school: verifies an active affiliation, resolves the 13 feature flags
-    /// (role → template → overrides), and mints a school-scoped access token.
+    /// Switches the active school: verifies an active affiliation and mints a school-scoped access token.
+    /// Authorization is resolved per request from context_id (no flags in the token).
     /// </summary>
     Task<StaffSwitchResult> SwitchAsync(Guid schoolId, CancellationToken cancellationToken);
 }
@@ -23,23 +23,17 @@ internal sealed class StaffSchoolService : IStaffSchoolService
     private readonly IEduTechRequestContext _requestContext;
     private readonly IStaffUserRepository _staffUsers;
     private readonly IStaffAffiliationRepository _affiliations;
-    private readonly IPermissionTemplateRepository _permissionTemplates;
-    private readonly IStaffFeatureOverrideRepository _overrides;
     private readonly IAccessTokenIssuer _accessTokenIssuer;
 
     public StaffSchoolService(
         IEduTechRequestContext requestContext,
         IStaffUserRepository staffUsers,
         IStaffAffiliationRepository affiliations,
-        IPermissionTemplateRepository permissionTemplates,
-        IStaffFeatureOverrideRepository overrides,
         IAccessTokenIssuer accessTokenIssuer)
     {
         _requestContext = requestContext;
         _staffUsers = staffUsers;
         _affiliations = affiliations;
-        _permissionTemplates = permissionTemplates;
-        _overrides = overrides;
         _accessTokenIssuer = accessTokenIssuer;
     }
 
@@ -78,20 +72,10 @@ internal sealed class StaffSchoolService : IStaffSchoolService
         StaffUserTokenRow staff = await _staffUsers.GetTokenClaimsAsync(staffUserId, cancellationToken)
             ?? throw new AppErrorException("Account not found.", 404, ErrorCodes.NotFound);
 
-        // Resolve the 13 feature flags: role defaults → permission template → per-staff overrides.
-        IReadOnlyDictionary<string, bool>? templateFeatures = affiliation.PermissionTemplateId is Guid templateId
-            ? await _permissionTemplates.GetFeaturesAsync(templateId, cancellationToken)
-            : null;
-
-        IReadOnlyDictionary<string, bool> overrides =
-            await _overrides.GetForAffiliationAsync(affiliation.AffiliationId, cancellationToken);
-
-        IReadOnlyDictionary<string, bool> features =
-            StaffFeatureResolver.Resolve(affiliation.Role, templateFeatures, overrides);
-
+        // No mint-time feature resolution (B2c.3d): authorization is resolved per request from context_id.
         AccessToken access = _accessTokenIssuer.IssueStaffScoped(staffUserId, schoolId,
             affiliation.AffiliationId, staff.Phone, affiliation.Role, affiliation.EmploymentType,
-            staff.KycStatus, features);
+            staff.KycStatus);
 
         return new StaffSwitchResult
         {

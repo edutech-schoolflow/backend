@@ -69,14 +69,11 @@ public class StaffParentDualPersonaFeasibilityTests
         Guid staffUserId = Guid.NewGuid();
         Guid schoolAWhereHeWorks = Guid.NewGuid();
         Guid affiliationId = Guid.NewGuid();
-        IReadOnlyDictionary<string, bool> features =
-            StaffFeatureResolver.Resolve(StaffRoles.Teacher, null, null);
-
         Guid parentId = Guid.NewGuid();
 
         JwtSecurityToken staff = Decode(issuer.IssueStaffScoped(
             staffUserId, schoolAWhereHeWorks, affiliationId, SharedPhone,
-            StaffRoles.Teacher, EmploymentTypes.PartTime, "verified", features).Token);
+            StaffRoles.Teacher, EmploymentTypes.PartTime, "verified").Token);
 
         JwtSecurityToken parent = Decode(issuer.IssueParent(parentId, SharedPhone).Token);
 
@@ -198,7 +195,7 @@ public class StaffParentDualPersonaFeasibilityTests
         overrides.Setup(o => o.GetForAffiliationAsync(affiliationId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Dictionary<string, bool>());
         access.Setup(a => a.IssueStaffScoped(staffUserId, schoolId, affiliationId, SharedPhone, "teacher",
-                "full_time", "approved", It.IsAny<IReadOnlyDictionary<string, bool>>(),
+                "full_time", "approved",
                 It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>()))
             .Returns(new AccessToken { Token = "staff-token", ExpiresAt = DateTime.UtcNow.AddMinutes(30) });
         access.Setup(a => a.IssueParent(parentId, SharedPhone, It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(),
@@ -210,7 +207,8 @@ public class StaffParentDualPersonaFeasibilityTests
 
         var sut = new EduTech.Auth.Unified.UnifiedAuthService(identities.Object, contexts.Object,
             parents.Object, hasher.Object, otp.Object, sms.Object, access.Object, refresh.Object,
-            staffUsers.Object, affiliations.Object, templates.Object, overrides.Object,
+            staffUsers.Object,
+            new EduTech.Auth.Unified.LegacyContextMinter(contexts.Object, affiliations.Object, staffUsers.Object, access.Object),
             new Mock<EduTech.Auth.SchoolOwner.ISchoolRepository>().Object,
             new Mock<EduTech.Auth.SchoolOwner.ISchoolOwnerRepository>().Object,
             new Mock<EduTech.Membership.IMembershipRepository>().Object,

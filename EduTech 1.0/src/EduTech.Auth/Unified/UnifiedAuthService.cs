@@ -119,9 +119,7 @@ internal sealed class UnifiedAuthService : IUnifiedAuthService
     private readonly IAccessTokenIssuer _accessTokenIssuer;
     private readonly IRefreshTokenService _refreshTokens;
     private readonly IStaffUserRepository _staffUsers;
-    private readonly IStaffAffiliationRepository _affiliations;
-    private readonly IPermissionTemplateRepository _permissionTemplates;
-    private readonly IStaffFeatureOverrideRepository _overrides;
+    private readonly IContextMinter _minter;
     private readonly ISchoolRepository _schools;
     private readonly ISchoolOwnerRepository _owners;
     private readonly IMembershipRepository _memberships;
@@ -139,9 +137,7 @@ internal sealed class UnifiedAuthService : IUnifiedAuthService
         IAccessTokenIssuer accessTokenIssuer,
         IRefreshTokenService refreshTokens,
         IStaffUserRepository staffUsers,
-        IStaffAffiliationRepository affiliations,
-        IPermissionTemplateRepository permissionTemplates,
-        IStaffFeatureOverrideRepository overrides,
+        IContextMinter minter,
         ISchoolRepository schools,
         ISchoolOwnerRepository owners,
         IMembershipRepository memberships,
@@ -164,9 +160,7 @@ internal sealed class UnifiedAuthService : IUnifiedAuthService
         _accessTokenIssuer = accessTokenIssuer;
         _refreshTokens = refreshTokens;
         _staffUsers = staffUsers;
-        _affiliations = affiliations;
-        _permissionTemplates = permissionTemplates;
-        _overrides = overrides;
+        _minter = minter;
     }
 
     // ── Register: creates an Identity (claim-aware) — never a role ────────────────────────────
@@ -859,84 +853,12 @@ internal sealed class UnifiedAuthService : IUnifiedAuthService
     private async Task<UnifiedTokens> EnterContextAsync(EduTech.Identity.Domain.Identity identity,
         AuthContextItem context, string? ipAddress, string? userAgent, CancellationToken cancellationToken)
     {
-        ContextMint mint = await MintContextAccessAsync(identity, context, cancellationToken);
+        ContextMint mint = await _minter.MintAsync(identity, context, cancellationToken);
         // Login / select-context START a new refresh family, keyed on the canonical (identity, context)
         // plus the legacy actor (which coexists until B2d).
         RefreshTokenIssue refresh = await _refreshTokens.IssueAsync(mint.RefreshActorType, mint.RefreshActorId,
             identityId: identity.Id, contextId: context.AccessContextId, ipAddress, userAgent, cancellationToken);
         return Tokens(mint.Access, refresh);
-    }
-
-    /// <summary>
-    /// The ONE place a context-scoped access token is minted (EDD-012 B2c.3c) — shared by login
-    /// auto-enter, select-context, and silent refresh; there is no parallel mint path. Resolves the
-    /// entered context's persona details and mints the matching token with the canonical identity claims,
-    /// and returns the legacy actor for the coexisting refresh key.
-    /// </summary>
-    private async Task<ContextMint> MintContextAccessAsync(EduTech.Identity.Domain.Identity identity,
-        AuthContextItem context, CancellationToken cancellationToken)
-    {
-        Guid actorId = context.Id;
-
-        switch (context.Type)
-        {
-            case "owner":
-            {
-                IReadOnlyList<OwnerContextRow> owners =
-                    await _contexts.ListOwnerContextsAsync(identity.Id, cancellationToken);
-                OwnerContextRow owner = owners.First(o => o.OwnerId == actorId);
-                AccessToken access = _accessTokenIssuer.IssueSchoolOwner(owner.OwnerId, owner.SchoolId,
-                    identity.Phone, owner.Status, owner.KycStatus, owner.Subdomain,
-                    identityId: identity.Id, contextId: owner.OwnerId,
-                    membershipId: context.MembershipId, organizationId: context.OrganizationId);
-                return new ContextMint(access, AuthActorTypes.SchoolOwner, owner.OwnerId);
-            }
-
-            case "staff":
-            {
-                IReadOnlyList<StaffContextRow> staffContexts =
-                    await _contexts.ListStaffContextsAsync(identity.Id, cancellationToken);
-                StaffContextRow staffContext = staffContexts.First(s => s.AffiliationId == actorId);
-
-                StaffSwitchRow affiliation = await _affiliations.GetActiveForSwitchAsync(
-                        staffContext.StaffUserId, staffContext.SchoolId, cancellationToken)
-                    ?? throw new AppErrorException("You don't have an active role at this school.",
-                        403, ErrorCodes.Forbidden);
-                StaffUserTokenRow staff = await _staffUsers.GetTokenClaimsAsync(staffContext.StaffUserId, cancellationToken)
-                    ?? throw new AppErrorException("Account not found.", 404, ErrorCodes.NotFound);
-
-                // Features no longer ride the token (B2c.2); the resolution is vestigial and retires with
-                // the IssueStaffScoped `features` parameter in a later cleanup.
-                IReadOnlyDictionary<string, bool>? templateFeatures =
-                    affiliation.PermissionTemplateId is Guid templateId
-                        ? await _permissionTemplates.GetFeaturesAsync(templateId, cancellationToken)
-                        : null;
-                IReadOnlyDictionary<string, bool> overrides =
-                    await _overrides.GetForAffiliationAsync(affiliation.AffiliationId, cancellationToken);
-                IReadOnlyDictionary<string, bool> features =
-                    StaffFeatureResolver.Resolve(affiliation.Role, templateFeatures, overrides);
-
-                AccessToken access = _accessTokenIssuer.IssueStaffScoped(staffContext.StaffUserId,
-                    staffContext.SchoolId, affiliation.AffiliationId, identity.Phone,
-                    affiliation.Role, affiliation.EmploymentType, staff.KycStatus, features,
-                    identityId: identity.Id, contextId: affiliation.AffiliationId,
-                    membershipId: context.MembershipId, organizationId: context.OrganizationId);
-                return new ContextMint(access, AuthActorTypes.Staff, staffContext.StaffUserId);
-            }
-
-            case "parent":
-            {
-                // Org-scoped parent context (EDD-002 revision): the token carries the school so parent
-                // data binds @SchoolId + @ParentId. A legacy NULL-org context stays school-agnostic.
-                AccessToken access = _accessTokenIssuer.IssueParent(actorId, identity.Phone,
-                    identityId: identity.Id, contextId: actorId, schoolId: context.OrganizationId,
-                    membershipId: context.MembershipId, organizationId: context.OrganizationId);
-                return new ContextMint(access, AuthActorTypes.Parent, actorId);
-            }
-
-            default:
-                throw new AppErrorException("Unknown context.", 400, ErrorCodes.ValidationError);
-        }
     }
 
     /// <summary>Silent refresh of a context-scoped session (EDD-012 B2c.3c): rotate, then re-enter the
@@ -957,7 +879,7 @@ internal sealed class UnifiedAuthService : IUnifiedAuthService
             await RevokeAndRejectAsync(rotation, "context ended", cancellationToken);
         }
 
-        ContextMint mint = await MintContextAccessAsync(identity!, MapContext(row!), cancellationToken);
+        ContextMint mint = await _minter.MintAsync(identity!, MapContext(row!), cancellationToken);
         return new UnifiedTokens
         {
             AccessToken = mint.Access.Token,
@@ -966,8 +888,6 @@ internal sealed class UnifiedAuthService : IUnifiedAuthService
             RefreshTokenExpiresAt = rotation.ExpiresAt
         };
     }
-
-    private sealed record ContextMint(AccessToken Access, string RefreshActorType, Guid RefreshActorId);
 
     private static UnifiedTokens Tokens(AccessToken access, RefreshTokenIssue refresh) => new UnifiedTokens
     {

@@ -32,8 +32,6 @@ public class UnifiedAuthServiceTests
     private readonly Mock<IRefreshTokenService> _refresh = new();
     private readonly Mock<IStaffUserRepository> _staffUsers = new();
     private readonly Mock<IStaffAffiliationRepository> _affiliations = new();
-    private readonly Mock<IPermissionTemplateRepository> _templates = new();
-    private readonly Mock<IStaffFeatureOverrideRepository> _overrides = new();
     private readonly Mock<EduTech.Auth.SchoolOwner.ISchoolRepository> _schools = new();
     private readonly Mock<EduTech.Auth.SchoolOwner.ISchoolOwnerRepository> _owners = new();
     private readonly Mock<EduTech.Membership.IMembershipRepository> _memberships = new();
@@ -43,8 +41,9 @@ public class UnifiedAuthServiceTests
 
     private UnifiedAuthService CreateSut() => new(
         _identities.Object, _contexts.Object, _parents.Object, _hasher.Object, _otp.Object,
-        _sms.Object, _access.Object, _refresh.Object, _staffUsers.Object, _affiliations.Object,
-        _templates.Object, _overrides.Object, _schools.Object, _owners.Object, _memberships.Object,
+        _sms.Object, _access.Object, _refresh.Object, _staffUsers.Object,
+        new EduTech.Auth.Unified.LegacyContextMinter(_contexts.Object, _affiliations.Object, _staffUsers.Object, _access.Object),
+        _schools.Object, _owners.Object, _memberships.Object,
         _employments.Object, _projector.Object, _dbFactory.Object);
 
     private const string Phone = "+2348033334444";
@@ -670,6 +669,42 @@ public class UnifiedAuthServiceTests
         Assert.Equal(401, ex.StatusCode);
         _refresh.Verify(r => r.RevokeAllForActorAsync(AuthActorTypes.SchoolOwner, ownerId,
             It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Refresh_PreservesTheEnteredContext_NeverFindsADifferentOne()
+    {
+        // One identity, two owner workspaces (School A, School B). Refresh re-enters whichever context
+        // the refresh token carries — it preserves a context, it never "finds" one.
+        Guid ownerA = Guid.NewGuid(), schoolA = Guid.NewGuid(), ctxA = Guid.NewGuid();
+        Guid ownerB = Guid.NewGuid(), schoolB = Guid.NewGuid(), ctxB = Guid.NewGuid();
+        IdentityAggregate identity = Identity(passwordHash: "h", phoneVerified: true, status: IdentityStatus.Active);
+        _identities.Setup(i => i.GetByIdAsync(identity.Id, It.IsAny<CancellationToken>())).ReturnsAsync(identity);
+        _contexts.Setup(c => c.ListOwnerContextsAsync(identity.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[]
+            {
+                new OwnerContextRow { OwnerId = ownerA, SchoolId = schoolA, SchoolName = "A", Status = "active", KycStatus = "approved", Subdomain = "a" },
+                new OwnerContextRow { OwnerId = ownerB, SchoolId = schoolB, SchoolName = "B", Status = "active", KycStatus = "approved", Subdomain = "b" }
+            });
+        _contexts.Setup(c => c.GetContextByIdAsync(identity.Id, ctxA, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AccessContextRow { AccessContextId = ctxA, ReferenceId = ownerA, Type = "owner", OrganizationId = schoolA });
+        _contexts.Setup(c => c.GetContextByIdAsync(identity.Id, ctxB, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AccessContextRow { AccessContextId = ctxB, ReferenceId = ownerB, Type = "owner", OrganizationId = schoolB });
+        _access.Setup(a => a.IssueSchoolOwner(ownerA, schoolA, Phone, "active", "approved", "a", identity.Id, ownerA, It.IsAny<Guid?>(), schoolA))
+            .Returns(new AccessToken { Token = "school-A-access", ExpiresAt = DateTime.UtcNow.AddMinutes(30) });
+        _access.Setup(a => a.IssueSchoolOwner(ownerB, schoolB, Phone, "active", "approved", "b", identity.Id, ownerB, It.IsAny<Guid?>(), schoolB))
+            .Returns(new AccessToken { Token = "school-B-access", ExpiresAt = DateTime.UtcNow.AddMinutes(30) });
+        _refresh.Setup(r => r.RotateAsync("rawA", null, null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(RotationWithContext(identity.Id, ctxA, ownerA));
+        _refresh.Setup(r => r.RotateAsync("rawB", null, null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(RotationWithContext(identity.Id, ctxB, ownerB));
+
+        UnifiedAuthService sut = CreateSut();
+        UnifiedTokens inA = await sut.RefreshSessionAsync("rawA", null, null, CancellationToken.None);
+        UnifiedTokens inB = await sut.RefreshSessionAsync("rawB", null, null, CancellationToken.None);
+
+        Assert.Equal("school-A-access", inA.AccessToken);   // still School A
+        Assert.Equal("school-B-access", inB.AccessToken);   // still School B
     }
 
     // ── /identity/home — the ONE rich projection (EDD-005) ─────────────────────────

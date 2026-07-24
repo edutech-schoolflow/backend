@@ -207,7 +207,8 @@ public class StaffParentDualPersonaFeasibilityTests
 
         var sut = new EduTech.Auth.Unified.UnifiedAuthService(identities.Object, contexts.Object,
             parents.Object, hasher.Object, otp.Object, sms.Object, access.Object, refresh.Object,
-            staffUsers.Object, affiliations.Object,
+            staffUsers.Object,
+            new EduTech.Auth.Unified.LegacyContextMinter(contexts.Object, affiliations.Object, staffUsers.Object, access.Object),
             new Mock<EduTech.Auth.SchoolOwner.ISchoolRepository>().Object,
             new Mock<EduTech.Auth.SchoolOwner.ISchoolOwnerRepository>().Object,
             new Mock<EduTech.Membership.IMembershipRepository>().Object,

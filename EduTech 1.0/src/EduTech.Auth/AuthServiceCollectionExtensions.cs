@@ -52,6 +52,9 @@ public static class AuthServiceCollectionExtensions
         // EDD-001 Sprint 2 — unified identity auth (one register/login; contexts pick the portal).
         services.AddScoped<Unified.IAuthContextRepository, Unified.AuthContextRepository>();
         services.AddScoped<Unified.IAccessContextProjector, Unified.AccessContextProjector>();
+        // EDD-012 B2d — the ONE context-token minter. LegacyContextMinter reads legacy actor tables; a
+        // CanonicalContextMinter will be swapped in after a claim-equivalence proof (mint re-source).
+        services.AddScoped<Unified.IContextMinter, Unified.LegacyContextMinter>();
         services.AddScoped<Unified.IUnifiedAuthService, Unified.UnifiedAuthService>();
         services.AddScoped<Parent.IParentProfileService, Parent.ParentProfileService>();
         services.AddScoped<EduTech.Shared.Events.IDomainEventHandler<EduTech.Shared.Events.GuardianLinkedEvent>,

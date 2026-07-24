@@ -41,7 +41,8 @@ public class UnifiedAuthServiceTests
 
     private UnifiedAuthService CreateSut() => new(
         _identities.Object, _contexts.Object, _parents.Object, _hasher.Object, _otp.Object,
-        _sms.Object, _access.Object, _refresh.Object, _staffUsers.Object, _affiliations.Object,
+        _sms.Object, _access.Object, _refresh.Object, _staffUsers.Object,
+        new EduTech.Auth.Unified.LegacyContextMinter(_contexts.Object, _affiliations.Object, _staffUsers.Object, _access.Object),
         _schools.Object, _owners.Object, _memberships.Object,
         _employments.Object, _projector.Object, _dbFactory.Object);
 

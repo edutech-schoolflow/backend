@@ -307,6 +307,13 @@ projections derived from them, but **never** legacy actor tables. When no login 
   □ grep "reference_id" in Auth/Authz → 0
   □ grep "actor_type" → 0     □ grep "actor_id" → 0
   ```
+  **Final concept grep (stronger than "tests pass" — the codebase itself must reflect the architecture).**
+  These legacy *concepts* must have **zero runtime hits** — acceptable hits only in migrations, historical
+  docs, and compatibility/deletion notes (until those are removed too):
+  ```
+  reference_id · actor_type · actor_id · staff_affiliations · school_owners ·
+  LegacyContextMinter · LegacyCapabilityResolver · GetIdentityIdForActorAsync · ParentAuthService
+  ```
 
 > **V1 acceptance criterion (the strongest form): every runtime authentication and authorization decision
 > must be explainable by the canonical graph alone** — `Identity → Membership → Access Context → Employment

@@ -205,10 +205,23 @@ public class StaffParentDualPersonaFeasibilityTests
             .ReturnsAsync(new EduTech.Auth.RefreshTokens.RefreshTokenIssue
                 { Token = "r", FamilyId = Guid.NewGuid(), ExpiresAt = DateTime.UtcNow.AddHours(12) });
 
+        // The mint is a collaborator (its own gate tests cover it); here we mock it per persona.
+        var minter = new Mock<EduTech.Auth.Unified.IContextMinter>();
+        minter.Setup(m => m.MintAsync(It.IsAny<EduTech.Identity.Domain.Identity>(),
+                It.Is<EduTech.Auth.Unified.AuthContextItem>(c => c.Id == affiliationId), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new EduTech.Auth.Unified.ContextMint(
+                new EduTech.Auth.Tokens.AccessToken { Token = "staff-token", ExpiresAt = DateTime.UtcNow.AddMinutes(30) },
+                EduTech.Auth.AuthActorTypes.Staff, staffUserId));
+        minter.Setup(m => m.MintAsync(It.IsAny<EduTech.Identity.Domain.Identity>(),
+                It.Is<EduTech.Auth.Unified.AuthContextItem>(c => c.Id == parentId), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new EduTech.Auth.Unified.ContextMint(
+                new EduTech.Auth.Tokens.AccessToken { Token = "parent-token", ExpiresAt = DateTime.UtcNow.AddMinutes(30) },
+                EduTech.Auth.AuthActorTypes.Parent, parentId));
+
         var sut = new EduTech.Auth.Unified.UnifiedAuthService(identities.Object, contexts.Object,
             parents.Object, hasher.Object, otp.Object, sms.Object, access.Object, refresh.Object,
             staffUsers.Object,
-            new EduTech.Auth.Unified.LegacyContextMinter(contexts.Object, affiliations.Object, staffUsers.Object, access.Object),
+            minter.Object,
             new Mock<EduTech.Auth.SchoolOwner.ISchoolRepository>().Object,
             new Mock<EduTech.Auth.SchoolOwner.ISchoolOwnerRepository>().Object,
             new Mock<EduTech.Membership.IMembershipRepository>().Object,

@@ -1,8 +1,8 @@
 using System.IdentityModel.Tokens.Jwt;
 using EduTech.Auth.Tokens;
 using EduTech.Auth.Unified;
+using EduTech.Shared.Constants;
 using EduTech.Shared.Persistence;
-using EduTech.Workforce;
 using Microsoft.Extensions.Configuration;
 using Moq;
 using Npgsql;
@@ -10,36 +10,33 @@ using Npgsql;
 namespace EduTech.Auth.Tests.Authentication;
 
 /// <summary>
-/// The mint equivalence gate (EDD-012 B2d mint re-source) — the mint's analogue of the resolver Validation
-/// Gate. It mints a token for EVERY active access context through BOTH the legacy minter (reads
-/// school_owners / staff_affiliations) and the canonical minter (reads Employment/Position; staff_users only
-/// for the user_id compat claim), and asserts the SEMANTIC claims are identical (ignoring iat/exp/nbf/jti)
-/// plus the refresh actor key. Green here is the merge gate for the DI flip. Runs only when a seeded DB is
-/// supplied via GATE_DB (the throwaway-PG harness); skipped in normal CI.
+/// Canonical mint regression gate (EDD-012 B2d V1). Mints a token for EVERY active access context through
+/// the LIVE <see cref="CanonicalContextMinter"/> against a REAL, seeded database and asserts the token
+/// carries the canonical claims (identity + membership + context + organization, correct user_type, role
+/// for staff) and NO legacy authorization (no can_* flag claims). This is the DB-integration coverage of
+/// the canonical mint, kept after the legacy minter + the legacy-vs-canonical equivalence gate were deleted.
+///
+/// Runs only when a database is supplied via <c>GATE_DB</c> (the throwaway-PG harness sets it); otherwise
+/// it no-ops, so the normal unit suite stays DB-free.
 /// </summary>
-public class MintEquivalenceGateTests
+public class MintCanonicalGateTests
 {
-    private static readonly string[] IgnoredClaims = { "iat", "exp", "nbf", "jti" };
-
     [Fact]
-    public async Task CanonicalMint_IsClaimEquivalentToLegacy_ForEverySeededContext()
+    public async Task CanonicalMint_ProducesCanonicalClaims_ForEverySeededContext()
     {
         string? conn = Environment.GetEnvironmentVariable("GATE_DB");
         if (string.IsNullOrWhiteSpace(conn))
         {
-            return;   // no DB → skip (normal CI). The harness supplies GATE_DB.
+            return;   // no DB provided → skip (normal CI). The harness supplies GATE_DB.
         }
 
         DapperConfiguration.Configure();   // production's global Dapper setup (snake_case column matching)
         NpgsqlConnectionFactory factory = new(conn);
         IAccessTokenIssuer issuer = new AccessTokenIssuer(Config());
-        IContextMinter legacy = new LegacyContextMinter(new AuthContextRepository(factory),
-            new StaffAffiliationRepository(factory), new StaffUserRepository(factory), issuer);
-        IContextMinter canonical = new CanonicalContextMinter(factory, issuer);
-
+        IContextMinter minter = new CanonicalContextMinter(factory, issuer);
         AuthContextRepository contexts = new(factory);
-        int compared = 0;
 
+        int minted = 0;
         foreach ((Guid identityId, string phone) in await LoadIdentitiesWithContextsAsync(conn))
         {
             EduTech.Identity.Domain.Identity identity = new(identityId, "T", null, "T", phone, null, null,
@@ -54,34 +51,47 @@ public class MintEquivalenceGateTests
                     AccessContextId = row.AccessContextId,
                     OrganizationId = row.OrganizationId,
                     MembershipId = row.MembershipId,
-                    OrganizationName = row.OrganizationName,
-                    OrganizationSlug = row.OrganizationSlug,
                     Role = row.Type == "owner" ? "owner" : row.Role
                 };
 
-                ContextMint legacyMint = await legacy.MintAsync(identity, context, default);
-                ContextMint canonicalMint = await canonical.MintAsync(identity, context, default);
+                ContextMint mint = await minter.MintAsync(identity, context, default);
+                Dictionary<string, string> claims = Claims(mint.Access.Token);
 
-                Assert.Equal(legacyMint.RefreshActorType, canonicalMint.RefreshActorType);
-                Assert.Equal(legacyMint.RefreshActorId, canonicalMint.RefreshActorId);
-                Assert.Equal(Claims(legacyMint.Access.Token), Claims(canonicalMint.Access.Token));
-                compared++;
+                // Canonical identity of the session — no legacy actor authority.
+                Assert.Equal(identityId.ToString(), claims["identity_id"]);
+                Assert.Equal(context.Id.ToString(), claims["context_id"]);
+                Assert.Equal(context.MembershipId.ToString(), claims["membership_id"]);
+                Assert.Equal(context.OrganizationId.ToString(), claims["organization_id"]);
+                Assert.Equal(ExpectedUserType(context.Type), claims["user_type"]);
+                if (context.Type == "staff")
+                {
+                    Assert.False(string.IsNullOrEmpty(claims.GetValueOrDefault("role")));
+                }
+
+                // Authorization is resolved server-side (B2b) — no flag claim rides the token.
+                Assert.DoesNotContain(claims.Keys, k => k.StartsWith("can_", StringComparison.Ordinal));
+                minted++;
             }
         }
 
-        Assert.True(compared > 0, "the gate compared no contexts — seed the DB first");
+        Assert.True(minted > 0, "the gate minted no contexts — seed the DB first");
     }
 
-    private static SortedDictionary<string, string> Claims(string token)
+    private static string ExpectedUserType(string contextType) => contextType switch
+    {
+        "owner" => UserTypes.School,
+        "staff" => UserTypes.Staff,
+        "parent" => UserTypes.Parent,
+        _ => contextType
+    };
+
+    private static Dictionary<string, string> Claims(string token)
     {
         JwtSecurityToken jwt = new JwtSecurityTokenHandler().ReadJwtToken(token);
-        SortedDictionary<string, string> claims = new(StringComparer.Ordinal);
+        Dictionary<string, string> claims = new(StringComparer.Ordinal);
         foreach (System.Security.Claims.Claim c in jwt.Claims)
         {
-            if (!IgnoredClaims.Contains(c.Type))
-            {
-                claims[c.Type] = c.Value;
-            }
+            claims[c.Type] = c.Value;
         }
         return claims;
     }

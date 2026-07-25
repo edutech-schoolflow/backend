@@ -271,7 +271,15 @@ projections derived from them, but **never** legacy actor tables. When no login 
       > lookup — until `user_id` retires (Appendix B).
   - **Phase 2 — Coexistence window.** Leave `refresh_tokens.actor_type/actor_id` alive as fallback-only
     until in-flight actor-only refresh tokens expire (≤14d). No code prefers them.
-  - **Phase 3 — Physical deletion.** Only after 1–2: drop `access_contexts.reference_id`, the refresh
+
+    > **Production-readiness gate — ALL must hold before Phase 3 deletion begins** (deletion is timing +
+    > operational readiness, not code): (1) production runs exclusively on the canonical mint **and**
+    > canonical resolver (the two flips are live); (2) no unexpected authorization differences observed;
+    > (3) no authentication regressions / login lockouts observed; (4) the equivalence gates
+    > (`--filter EquivalenceGate`) remain green against representative data; (5) the ≤14d coexistence window
+    > for legacy refresh tokens has fully elapsed. Until every box is checked, the legacy resolver + legacy
+    > minter stay as instant `git revert` targets.
+  - **Phase 3 — Physical deletion.** Only after 1–2 **and the production-readiness gate**: drop `access_contexts.reference_id`, the refresh
     actor columns, `GetIdentityIdForActorAsync`, the legacy actor mint paths, the retained scalar mint
     params, and the compatibility DTO fields. The closing grep is ceremonial: `school_owner` → none;
     `staff_affiliation` (outside Workforce) → none; `reference_id` → none; `GetIdentityIdForActor` → none.
@@ -300,7 +308,10 @@ projections derived from them, but **never** legacy actor tables. When no login 
   □ grep "actor_type" → 0     □ grep "actor_id" → 0
   ```
 
-After B2, Authentication is "finished" — future work is product capability, not architectural rewrite.
+After B2, authentication **and** authorization are **closed** — maintenance, not architecture. A future
+change to Identity / Membership / Access Context / Employment / Position / Auth triggers an **architectural
+review**: it signals either a foundation defect or a genuinely-new cross-cutting platform capability.
+Ordinary module work stays entirely above the platform layer (the platform-maturity rule Admissions proved).
 ```
 FOUNDATION ✅ → PLATFORM INTEGRATION (B2a→B2d) → PLATFORM STABILIZATION → BUSINESS MODULES
 ```

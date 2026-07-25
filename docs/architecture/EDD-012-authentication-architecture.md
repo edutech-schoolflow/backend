@@ -308,6 +308,13 @@ projections derived from them, but **never** legacy actor tables. When no login 
   □ grep "actor_type" → 0     □ grep "actor_id" → 0
   ```
 
+> **V1 acceptance criterion (the strongest form): every runtime authentication and authorization decision
+> must be explainable by the canonical graph alone** — `Identity → Membership → Access Context → Employment
+> → Position → Permission Template → Employment Overrides → Capabilities`. If any runtime path still needs to
+> ask "what's the staff affiliation?", "who's the owner record?", or "what's the actor id?", V1 is not yet
+> fully canonical. (Compatibility claims served over the token are allowed *only* where a business reader
+> hasn't migrated yet, and each is tracked for retirement in Appendix B.)
+
 After B2, authentication **and** authorization are **closed** — maintenance, not architecture. A future
 change to Identity / Membership / Access Context / Employment / Position / Auth triggers an **architectural
 review**: it signals either a foundation defect or a genuinely-new cross-cutting platform capability.

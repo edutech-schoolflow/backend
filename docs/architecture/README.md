@@ -65,6 +65,14 @@ never leak platform concerns back into the foundation.
   Identity / Membership / Employment / Organization / Position / Authentication. Bug fixes and
   refinements: yes. Redesigns: no. The foundation is done.
 - **No authentication rewrites while the foundation is still changing** (satisfied — foundation is complete).
+- **Authentication is closed** (EDD-012 §B2): canonical Identity/Membership/Employment/Organization/Access
+  Context, server-side authorization, slim JWT (`context_id = access_contexts.id`), identity+context
+  refresh. Changes here are maintenance, not architecture — a change to the auth foundation triggers an
+  architectural review, not a routine edit. The remaining legacy-identity work is **domain migration**
+  ([EDD-016 — Platform Convergence](EDD-016-platform-convergence.md)), not auth.
+- **No new dependency on `affiliation_id`, `user_id`, or `reference_id`** (EDD-016): no new actor-keyed
+  columns, no new reads of the compatibility claims — canonical identities only (`identity_id` /
+  `membership_id` / `employment_id`). The proactive form of the retirement concept grep.
 - **Authentication must never resolve permissions** (EDD-012): auth ends at *issue token → context_id*;
   everything after is Authorization.
 - **Platform-maturity test (the real next milestone):** *can a brand-new module be built without

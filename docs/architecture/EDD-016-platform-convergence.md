@@ -1,0 +1,71 @@
+# EDD-016 — Platform Convergence (Module Canonicalization)
+
+**Status:** OPEN epic. Supersedes the tail of B2. This is **domain migration, not platform work** —
+no new auth design, no JWT/resolver/mint changes, no new platform concepts.
+
+## The reframe that opened this epic
+
+Retiring the JWT compatibility claims surfaced a boundary:
+
+> **`is_owner` was *authentication state*. `affiliation_id` and `user_id` are *business identities*.**
+
+`is_owner` was a pure authz check with a canonical equivalent (`user_type == School`), so it was a claim
+swap — retired in B2d. But `affiliation_id`/`user_id` are not really "claims to drop": the **business
+data models themselves** are keyed on the legacy actor ids, and the token claim is merely how each module
+reads them today. So the remaining work isn't finishing auth — **auth is finished** — it's making each
+business module stop using legacy identities.
+
+| Legacy id | Lives in (domain) | Canonical target |
+| --- | --- | --- |
+| `attendance.submitted_by_affiliation_id`, `class_teacher_affiliation_id` | Attendance | Employment / Membership |
+| Grades teacher / `submitted_by` / `approved_by` | Grades | Employment / Membership |
+| `audit.actor_id` | Audit | Identity |
+| staff-invite `invited_by` | Workforce | Identity |
+| Fees payer / operator ids | Fees | Identity / Membership |
+| Compliance actor ids | Compliance | Identity |
+| Parent `parent_id` lookups | Students (Family) | Identity / Membership |
+
+## The platform is complete (what this epic does NOT touch)
+
+Authentication and authorization are **closed** (EDD-012 §B2, EDD-015). Canonical, live, gate-proven:
+Identity · Membership · Employment · Position · Organization · Access Context (`context_id =
+access_contexts.id`) · Capabilities (server-side resolver) · slim JWT · identity+context refresh. The one
+compatibility claim that *was* auth state — `is_owner` — is retired. No work in this epic changes any of it.
+
+## The rule (proactive — the concept grep, enforced forward)
+
+> **No module may introduce a new dependency on `affiliation_id`, `user_id`, or `reference_id`.**
+> Every change must satisfy: no new actor-keyed columns · no new reads of the compatibility claims ·
+> canonical identities only (`identity_id` / `membership_id` / `employment_id`).
+
+This is the forward-looking equivalent of the retirement concept grep: stop the bleeding while the
+existing readers migrate.
+
+## Per-module migration pattern (each module is an ordinary sprint)
+
+Pre-launch V1 (no production data) means each module is a direct re-key — no backfill/dual-write window:
+
+1. **Identify** the module's actor-keyed columns + its reads of `affiliation_id`/`user_id`.
+2. **Add** canonical columns (`employment_id` / `membership_id` / `identity_id`); migrate the actor-keyed
+   ones over (additive migration; for V1, cut the columns directly).
+3. **Re-source** the service reads onto the canonical claim (`membership_id`/`identity_id` from the token)
+   instead of `_context.AffiliationId`/`_context.UserId`.
+4. **Verify** — module tests green; an equivalence check where behavior must be identical.
+5. **Drop** the module's legacy columns + its compat-claim reads.
+
+When **every** module is done: drop the `affiliation_id`/`user_id` claims from the token, then drop
+`access_contexts.reference_id`, then the final concept grep declares the legacy actor identity gone.
+
+## Module order (value + proof first; mechanical last)
+
+1. **Attendance** — heavily exercised, `submitted_by_affiliation_id`/`class_teacher_affiliation_id` is
+   *exactly* the canonicalization to prove. Do it first to establish the pattern.
+2. **Grades** — same shape (teacher / submitted_by / approved_by). Second proof.
+3. **Workforce** — invites, employment/role changes. Lives next to Employment already.
+4. **Fees** — payer/operator identities; mostly straightforward.
+5. **Compliance** — actor identities; audit-style.
+6. **Audit** — isolated + mechanical *by the time the pattern is established* (don't start here — it's the
+   least valuable even though it looks easiest).
+7. **Students** — whatever remains (parent-by-`parent_id` lookups).
+
+Each is bounded, independently shippable, and free of platform risk.

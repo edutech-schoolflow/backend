@@ -69,3 +69,55 @@ When **every** module is done: drop the `affiliation_id`/`user_id` claims from t
 7. **Students** — whatever remains (parent-by-`parent_id` lookups).
 
 Each is bounded, independently shippable, and free of platform risk.
+
+---
+
+## Sprint 1 — Attendance Canonicalization (the pattern-setter)
+
+Scoped design (Product → Domain → Physical → Commands → Plan). Ready to execute.
+
+### Product
+Staff mark student attendance for the arms they teach; the owner may mark any. Staff also check
+in/out (staff attendance), with a manual override path. None of this changes — only the *identities*
+behind "who teaches this class", "who submitted", "whose attendance", and "who overrode" become canonical.
+
+### Domain
+The actor concepts map to canonical aggregates:
+- *class teacher* / *submitter* / *staff-attendance subject* → **Employment** (the staff member's
+  employment at that school = Membership + Position). One active employment per staff membership today.
+- *overrider* → **Identity**.
+Owner-vs-staff scoping stays as-is — already canonical (`IsSchoolOwner = user_type == School`, B2d).
+
+### Physical model (migration — V1 has no data, so add-canonical / drop-legacy directly)
+| Table (owner) | Drop | Add |
+| --- | --- | --- |
+| `attendance_records` (Attendance) | `submitted_by_affiliation_id → staff_affiliations` | `submitted_by_employment_id → employments` (NULL = owner) |
+| `classes` + `class_arms` (Classes) | `class_teacher_affiliation_id → staff_affiliations` | `class_teacher_employment_id → employments` |
+| `staff_attendance` (Workforce) | `affiliation_id → staff_affiliations`, `overridden_by` (actor) | `employment_id → employments`, `overridden_by_identity_id → identities` |
+
+> **Cross-module:** `class_teacher_*` lives in **Classes** — attendance's markable-arm scoping joins it,
+> so the Classes teacher-assignment write path migrates in this same sprint. (This is why Attendance is
+> the pattern-setter: it exercises the cross-module case the later modules also hit.)
+
+### Commands / Queries touched
+- `AttendanceService.ListMarkableArmsAsync` — scope by `class_teacher_employment_id == my employment`.
+- `AttendanceService.SubmitAttendanceAsync` — `submitted_by = my employment` (owner → NULL).
+- `CurrentAffiliation()` (`_context.AffiliationId`) → **`CurrentEmployment()`** resolved from
+  `_context.MembershipId` (the canonical claim already in the token → active employment).
+- Classes: assign-teacher command writes `class_teacher_employment_id`.
+- `StaffAttendanceService` check-in → `employment_id`; override → `overridden_by = _context.IdentityId`.
+
+### Plan
+1. Migration: the three tables above (add canonical cols, drop actor cols).
+2. Classes: teacher-assignment write path → `class_teacher_employment_id`.
+3. Attendance service/repo: `CurrentAffiliation` → `CurrentEmployment` (from `membership_id`); scope +
+   `submitted_by` on `employment_id`.
+4. StaffAttendance service/repo: `employment_id` + `overridden_by_identity_id`.
+5. Verify: module tests green; a scoping equivalence check (owner sees all arms; a teacher sees only
+   arms whose `class_teacher_employment_id` is their employment).
+6. Exit: Attendance + Classes-teacher-assignment + StaffAttendance make **zero** reads of
+   `_context.AffiliationId` / `_context.UserId`, and hold no `staff_affiliations` FK. (Concept grep for
+   `affiliation_id` in these modules → 0.)
+
+**Not in this sprint:** dropping the `affiliation_id`/`user_id` *claims* or `reference_id` — those wait
+until *every* module is done (the claims still serve the not-yet-migrated modules).

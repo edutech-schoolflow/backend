@@ -269,17 +269,17 @@ projections derived from them, but **never** legacy actor tables. When no login 
       > `membership_id`, `context_id`, `organization_id`, `role` are canonical-sourced; only the `user_id`
       > claim keeps a `staff_users` lookup — `staff_users` is no longer an authority, just a compatibility
       > lookup — until `user_id` retires (Appendix B).
-  - **Phase 2 — Coexistence window.** Leave `refresh_tokens.actor_type/actor_id` alive as fallback-only
-    until in-flight actor-only refresh tokens expire (≤14d). No code prefers them.
+  - **Phase 2 — Coexistence window.** ~~Leave `refresh_tokens.actor_type/actor_id` alive as fallback-only
+    until in-flight actor-only refresh tokens expire (≤14d).~~ **N/A for V1.**
 
-    > **Production-readiness gate — ALL must hold before Phase 3 deletion begins** (deletion is timing +
-    > operational readiness, not code): (1) production runs exclusively on the canonical mint **and**
-    > canonical resolver (the two flips are live); (2) no unexpected authorization differences observed;
-    > (3) no authentication regressions / login lockouts observed; (4) the equivalence gates
-    > (`--filter EquivalenceGate`) remain green against representative data; (5) the ≤14d coexistence window
-    > for legacy refresh tokens has fully elapsed. Until every box is checked, the legacy resolver + legacy
-    > minter stay as instant `git revert` targets.
-  - **Phase 3 — Physical deletion.** Only after 1–2 **and the production-readiness gate**: drop `access_contexts.reference_id`, the refresh
+    > **V1 reframe (the platform has never been deployed — no users, no production refresh tokens, no
+    > integrations, first public release):** coexistence protects *existing production state*, of which
+    > there is none. So there is **no coexistence window** and V1 ships **canonical-only** — carrying a
+    > parallel legacy model into V1 would be shipping migration debt before the first customer. The one
+    > condition on deletion is unchanged: **delete because the canonical path is *proven* (equivalence
+    > gates green), never because we're tired of it.** The gates are green; the legacy implementations have
+    > served their purpose.
+  - **Phase 3 — Physical deletion (now, for V1).** After the gates pass one final time: drop `access_contexts.reference_id`, the refresh
     actor columns, `GetIdentityIdForActorAsync`, the legacy actor mint paths, the retained scalar mint
     params, and the compatibility DTO fields. The closing grep is ceremonial: `school_owner` → none;
     `staff_affiliation` (outside Workforce) → none; `reference_id` → none; `GetIdentityIdForActor` → none.

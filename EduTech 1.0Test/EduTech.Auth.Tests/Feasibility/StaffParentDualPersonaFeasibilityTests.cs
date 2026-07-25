@@ -181,8 +181,8 @@ public class StaffParentDualPersonaFeasibilityTests
             .ReturnsAsync(new[]
             {
                 new EduTech.Auth.Unified.AccessContextRow
-                    { ReferenceId = affiliationId, Type = "staff", OrganizationId = schoolId, OrganizationName = "Divine Wisdom", Role = "teacher" },
-                new EduTech.Auth.Unified.AccessContextRow { ReferenceId = parentId, Type = "parent" }
+                    { AccessContextId = affiliationId, ReferenceId = affiliationId, Type = "staff", OrganizationId = schoolId, OrganizationName = "Divine Wisdom", Role = "teacher" },
+                new EduTech.Auth.Unified.AccessContextRow { AccessContextId = parentId, ReferenceId = parentId, Type = "parent" }
             });
         contexts.Setup(c => c.ListStaffContextsAsync(identity.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new[] { new EduTech.Auth.Unified.StaffContextRow

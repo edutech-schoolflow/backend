@@ -46,19 +46,20 @@ internal sealed class CanonicalContextMinter : BaseRepository, IContextMinter
     public async Task<ContextMint> MintAsync(EduTech.Identity.Domain.Identity identity, AuthContextItem context,
         CancellationToken cancellationToken)
     {
-        Guid actorId = context.Id;                          // = reference_id (context_id claim, unchanged)
+        Guid referenceId = context.ReferenceId;             // legacy actor id — fills the compat claims only
+        Guid contextId = context.Id;                        // = access_contexts.id — the canonical context_id
         Guid organizationId = context.OrganizationId ?? Guid.Empty;
 
         switch (context.Type)
         {
             case "owner":
             {
-                // owner_id and school both come from the context — school_owners is not read.
-                AccessToken access = _accessTokenIssuer.IssueSchoolOwner(actorId, organizationId,
+                // owner_id (user_id/compat) and school both come from the context — school_owners is not read.
+                AccessToken access = _accessTokenIssuer.IssueSchoolOwner(referenceId, organizationId,
                     identity.Phone, schoolStatus: string.Empty, kycStatus: string.Empty, subdomain: null,
-                    identityId: identity.Id, contextId: actorId,
+                    identityId: identity.Id, contextId: contextId,
                     membershipId: context.MembershipId, organizationId: context.OrganizationId);
-                return new ContextMint(access, AuthActorTypes.SchoolOwner, actorId);
+                return new ContextMint(access, AuthActorTypes.SchoolOwner, referenceId);
             }
 
             case "staff":
@@ -79,19 +80,19 @@ internal sealed class CanonicalContextMinter : BaseRepository, IContextMinter
                         new { MembershipId = membershipId }, cancellationToken)
                     : null;
 
-                AccessToken access = _accessTokenIssuer.IssueStaffScoped(staffUserId, organizationId, actorId,
+                AccessToken access = _accessTokenIssuer.IssueStaffScoped(staffUserId, organizationId, referenceId,
                     identity.Phone, role ?? string.Empty, employmentType: string.Empty, kycStatus: string.Empty,
-                    identityId: identity.Id, contextId: actorId,
+                    identityId: identity.Id, contextId: contextId,
                     membershipId: context.MembershipId, organizationId: context.OrganizationId);
                 return new ContextMint(access, AuthActorTypes.Staff, staffUserId);
             }
 
             case "parent":
             {
-                AccessToken access = _accessTokenIssuer.IssueParent(actorId, identity.Phone,
-                    identityId: identity.Id, contextId: actorId, schoolId: context.OrganizationId,
+                AccessToken access = _accessTokenIssuer.IssueParent(referenceId, identity.Phone,
+                    identityId: identity.Id, contextId: contextId, schoolId: context.OrganizationId,
                     membershipId: context.MembershipId, organizationId: context.OrganizationId);
-                return new ContextMint(access, AuthActorTypes.Parent, actorId);
+                return new ContextMint(access, AuthActorTypes.Parent, referenceId);
             }
 
             default:

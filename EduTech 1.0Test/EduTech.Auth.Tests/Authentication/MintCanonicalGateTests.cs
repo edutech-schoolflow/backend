@@ -46,9 +46,9 @@ public class MintCanonicalGateTests
             {
                 AuthContextItem context = new()
                 {
-                    Id = row.ReferenceId,
+                    Id = row.AccessContextId,          // THE context id (B2d.1)
                     Type = row.Type,
-                    AccessContextId = row.AccessContextId,
+                    ReferenceId = row.ReferenceId,     // legacy actor id — compat claims only
                     OrganizationId = row.OrganizationId,
                     MembershipId = row.MembershipId,
                     Role = row.Type == "owner" ? "owner" : row.Role

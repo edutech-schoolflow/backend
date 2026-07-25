@@ -729,9 +729,9 @@ internal sealed class UnifiedAuthService : IUnifiedAuthService
     /// refresh re-entry (EDD-012 B2c.3c).</summary>
     private static AuthContextItem MapContext(AccessContextRow r) => new AuthContextItem
     {
-        Id = r.ReferenceId,
+        Id = r.AccessContextId,          // THE context id = access_contexts.id (B2d.1)
         Type = r.Type,
-        AccessContextId = r.AccessContextId,
+        ReferenceId = r.ReferenceId,     // legacy actor id — compat claims only
         OrganizationId = r.OrganizationId,
         MembershipId = r.MembershipId,
         OrganizationName = r.OrganizationName,
@@ -857,7 +857,7 @@ internal sealed class UnifiedAuthService : IUnifiedAuthService
         // Login / select-context START a new refresh family, keyed on the canonical (identity, context)
         // plus the legacy actor (which coexists until B2d).
         RefreshTokenIssue refresh = await _refreshTokens.IssueAsync(mint.RefreshActorType, mint.RefreshActorId,
-            identityId: identity.Id, contextId: context.AccessContextId, ipAddress, userAgent, cancellationToken);
+            identityId: identity.Id, contextId: context.Id, ipAddress, userAgent, cancellationToken);
         return Tokens(mint.Access, refresh);
     }
 

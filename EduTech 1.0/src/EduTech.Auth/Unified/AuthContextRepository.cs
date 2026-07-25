@@ -159,7 +159,7 @@ internal sealed class AuthContextRepository : BaseRepository, IAuthContextReposi
     {
         return QueryAsync<ContextRecencyRow>(
             """
-            SELECT ac.reference_id AS ContextId,
+            SELECT ac.id AS ContextId,
                    MAX(rt.issued_at) AS LastActiveAt
             FROM access_contexts ac
             LEFT JOIN refresh_tokens rt
@@ -168,7 +168,7 @@ internal sealed class AuthContextRepository : BaseRepository, IAuthContextReposi
               OR (ac.type = 'staff'  AND rt.actor_type = 'staff'
                   AND rt.actor_id = (SELECT sa.staff_user_id FROM staff_affiliations sa WHERE sa.id = ac.reference_id))
             WHERE ac.identity_id = @IdentityId AND ac.status = 'active'
-            GROUP BY ac.reference_id
+            GROUP BY ac.id
             """,
             new { IdentityId = identityId }, cancellationToken);
     }
@@ -336,7 +336,7 @@ internal sealed class AuthContextRepository : BaseRepository, IAuthContextReposi
     {
         return QueryAsync<DraftOrganizationRow>(
             """
-            SELECT ac.reference_id AS ContextId, ac.organization_id AS OrganizationId, s.slug AS Slug
+            SELECT ac.id AS ContextId, ac.organization_id AS OrganizationId, s.slug AS Slug
             FROM access_contexts ac
             JOIN schools s ON s.id = ac.organization_id
             WHERE ac.identity_id = @IdentityId AND ac.type = 'owner' AND ac.status = 'active'

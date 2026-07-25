@@ -183,7 +183,7 @@ public class UnifiedAuthServiceTests
         _hasher.Setup(h => h.Verify("password123", "hashed")).Returns(true);
         NoContexts(identity.Id);
         _contexts.Setup(c => c.ListAccessContextsAsync(identity.Id, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new[] { new AccessContextRow { ReferenceId = parentId, Type = "parent" } });
+            .ReturnsAsync(new[] { new AccessContextRow { AccessContextId = parentId, ReferenceId = parentId, Type = "parent" } });
         _minter.Setup(m => m.MintAsync(It.IsAny<IdentityAggregate>(),
                 It.Is<AuthContextItem>(c => c.Type == "parent"), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ContextMint(new AccessToken { Token = "access", ExpiresAt = DateTime.UtcNow.AddMinutes(30) },
@@ -213,7 +213,7 @@ public class UnifiedAuthServiceTests
         _contexts.Setup(c => c.ListAccessContextsAsync(identity.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new[] { new AccessContextRow
             {
-                ReferenceId = parentId, Type = "parent", OrganizationId = schoolId,
+                AccessContextId = parentId, ReferenceId = parentId, Type = "parent", OrganizationId = schoolId,
                 OrganizationName = "Divine Wisdom", OrganizationSlug = "divine-wisdom"
             } });
         _minter.Setup(m => m.MintAsync(It.IsAny<IdentityAggregate>(),
@@ -286,7 +286,7 @@ public class UnifiedAuthServiceTests
         _hasher.Setup(h => h.Verify("password123", "hashed")).Returns(true);
         _contexts.Setup(c => c.ListAccessContextsAsync(identity.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new[] { new AccessContextRow
-                { ReferenceId = ownerId, Type = "owner", OrganizationId = schoolId, OrganizationName = "Divine Wisdom" } });
+                { AccessContextId = ownerId, ReferenceId = ownerId, Type = "owner", OrganizationId = schoolId, OrganizationName = "Divine Wisdom" } });
         _minter.Setup(m => m.MintAsync(It.IsAny<IdentityAggregate>(),
                 It.Is<AuthContextItem>(c => c.Type == "owner"), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ContextMint(new AccessToken { Token = "owner-access", ExpiresAt = DateTime.UtcNow.AddMinutes(30) },
@@ -631,7 +631,7 @@ public class UnifiedAuthServiceTests
             .ReturnsAsync(new AccessContextRow
                 { AccessContextId = contextId, ReferenceId = ownerId, Type = "owner", OrganizationId = schoolId });
         _minter.Setup(m => m.MintAsync(It.IsAny<IdentityAggregate>(),
-                It.Is<AuthContextItem>(c => c.Id == ownerId), It.IsAny<CancellationToken>()))
+                It.Is<AuthContextItem>(c => c.Id == contextId), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ContextMint(new AccessToken { Token = "owner-context-access", ExpiresAt = DateTime.UtcNow.AddMinutes(30) },
                 AuthActorTypes.SchoolOwner, ownerId));
 
@@ -676,9 +676,9 @@ public class UnifiedAuthServiceTests
             .ReturnsAsync(new AccessContextRow { AccessContextId = ctxA, ReferenceId = ownerA, Type = "owner", OrganizationId = schoolA });
         _contexts.Setup(c => c.GetContextByIdAsync(identity.Id, ctxB, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AccessContextRow { AccessContextId = ctxB, ReferenceId = ownerB, Type = "owner", OrganizationId = schoolB });
-        _minter.Setup(m => m.MintAsync(It.IsAny<IdentityAggregate>(), It.Is<AuthContextItem>(c => c.Id == ownerA), It.IsAny<CancellationToken>()))
+        _minter.Setup(m => m.MintAsync(It.IsAny<IdentityAggregate>(), It.Is<AuthContextItem>(c => c.Id == ctxA), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ContextMint(new AccessToken { Token = "school-A-access", ExpiresAt = DateTime.UtcNow.AddMinutes(30) }, AuthActorTypes.SchoolOwner, ownerA));
-        _minter.Setup(m => m.MintAsync(It.IsAny<IdentityAggregate>(), It.Is<AuthContextItem>(c => c.Id == ownerB), It.IsAny<CancellationToken>()))
+        _minter.Setup(m => m.MintAsync(It.IsAny<IdentityAggregate>(), It.Is<AuthContextItem>(c => c.Id == ctxB), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ContextMint(new AccessToken { Token = "school-B-access", ExpiresAt = DateTime.UtcNow.AddMinutes(30) }, AuthActorTypes.SchoolOwner, ownerB));
         _refresh.Setup(r => r.RotateAsync("rawA", null, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(RotationWithContext(identity.Id, ctxA, ownerA));
@@ -703,7 +703,7 @@ public class UnifiedAuthServiceTests
         Guid schoolId = Guid.NewGuid();
         MeBaseline(identity,
             contexts: new[] { new AccessContextRow
-                { ReferenceId = ownerId, Type = "owner", OrganizationId = schoolId,
+                { AccessContextId = ownerId, ReferenceId = ownerId, Type = "owner", OrganizationId = schoolId,
                   OrganizationName = "Divine Wisdom", OrganizationSlug = "divine-wisdom" } },
             invites: new[] { new PendingInviteRow
                 { SchoolName = "Greenfield", Role = "teacher", ExpiresAt = DateTime.UtcNow.AddDays(2) } },

@@ -65,8 +65,9 @@ public class CapabilityCanonicalGateTests
         List<(Guid, string)> rows = new();
         await using NpgsqlConnection db = new(conn);
         await db.OpenAsync();
+        // context_id is now access_contexts.id (B2d.1) — the resolver keys on it.
         await using NpgsqlCommand cmd = new(
-            "SELECT reference_id, type FROM access_contexts WHERE status = 'active'", db);
+            "SELECT id, type FROM access_contexts WHERE status = 'active'", db);
         await using NpgsqlDataReader reader = await cmd.ExecuteReaderAsync();
         while (await reader.ReadAsync())
         {

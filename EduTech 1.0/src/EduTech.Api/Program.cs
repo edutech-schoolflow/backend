@@ -222,6 +222,11 @@ builder.Services.AddSwaggerGen(options =>
         Version = "v1"
     });
 
+    // Disambiguate same-named types across modules (e.g. EduTech.Shared.Constants.AssessmentType vs
+    // EduTech.Admissions.Domain.AssessmentType) — Swashbuckle's default short-name schemaId collides.
+    // Non-generic types use their full namespace; generics keep the readable "XOfY" form.
+    options.CustomSchemaIds(SwaggerSchemaId );
+
     // Allow pasting a Bearer token in Swagger UI
     options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
@@ -383,6 +388,21 @@ app.MapControllers();
 app.Run();
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+// Swagger schemaId: full namespace for non-generic types (so same-named types in different modules
+// don't collide), and a readable "XOfY" form for generics.
+static string SwaggerSchemaId(Type type)
+{
+    if (!type.IsGenericType)
+    {
+        return type.FullName!.Replace("+", ".");
+    }
+
+    string baseName = type.Name[..type.Name.IndexOf('`')];
+    string args = string.Join("And", type.GetGenericArguments().Select(SwaggerSchemaId));
+    return $"{baseName}Of{args}";
+}
+
 static TokenValidationParameters BuildTokenParams(string signingKey, string issuer, string audience)
 {
     return new TokenValidationParameters

@@ -30,8 +30,8 @@ public class RequireRoleAttribute : Attribute, IAuthorizationFilter
             return;
         }
 
-        // School owners bypass all role checks
-        if (user.FindFirst("is_owner")?.Value == "true") return;
+        // School owners bypass all role checks. owner ⟺ user_type == School (is_owner retired, B2d.2).
+        if (user.FindFirst("user_type")?.Value == UserTypes.School) return;
 
         string? role = user.FindFirst("role")?.Value;
         if (role == null || !_roles.Contains(role))

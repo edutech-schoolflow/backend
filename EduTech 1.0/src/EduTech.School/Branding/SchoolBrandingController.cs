@@ -35,7 +35,7 @@ public sealed class SchoolBrandingController : ControllerBase
     public async Task<ActionResult<ServiceResponses<object>>> UploadLogo(
         IFormFile? logo, CancellationToken cancellationToken)
     {
-        if (!_context.IsOwner)
+        if (!_context.IsSchoolOwner)
         {
             throw new AppErrorException("Only the school owner can change the logo.", 403, ErrorCodes.Forbidden);
         }

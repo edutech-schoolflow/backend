@@ -26,7 +26,7 @@ internal sealed class AttendanceService : IAttendanceService
     public async Task<IReadOnlyList<MarkableArmResponse>> ListMarkableArmsAsync(CancellationToken cancellationToken)
     {
         IReadOnlyList<MarkableArmRow> rows =
-            await _repository.ListMarkableArmsAsync(CurrentAffiliation(), _context.IsOwner, cancellationToken);
+            await _repository.ListMarkableArmsAsync(CurrentAffiliation(), _context.IsSchoolOwner, cancellationToken);
 
         return rows.Select(r => new MarkableArmResponse
         {
@@ -122,7 +122,7 @@ internal sealed class AttendanceService : IAttendanceService
             termId = await _repository.GetCurrentTermIdAsync(cancellationToken);
         }
 
-        Guid? submittedBy = _context.IsOwner ? null : CurrentAffiliation();
+        Guid? submittedBy = _context.IsSchoolOwner ? null : CurrentAffiliation();
 
         (Guid id, DateTime submittedAt) = await _repository.UpsertRecordAsync(
             request.ClassId, request.ArmId, request.Date, termId, submittedBy, marks, cancellationToken);
@@ -189,7 +189,7 @@ internal sealed class AttendanceService : IAttendanceService
         UnitInfoRow unit = await _repository.GetUnitAsync(classId, armId, cancellationToken)
             ?? throw new AppErrorException("Class or arm not found.", 404, ErrorCodes.NotFound);
 
-        if (_context.IsOwner)
+        if (_context.IsSchoolOwner)
         {
             return unit;
         }

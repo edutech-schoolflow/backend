@@ -63,9 +63,9 @@ public class JwtContractTests
         Assert.False(claims.ContainsKey("kyc_status"));
         Assert.False(claims.ContainsKey("active_school_id"));
 
-        // Load-bearing claims the retirement proof shows are still consumed — deliberately KEPT:
-        // is_owner (13 business consumers) and affiliation_id (staff-action scoping).
-        Assert.True(claims.ContainsKey("is_owner"));
+        // B2d.2: is_owner retired (readers migrated to IsSchoolOwner = user_type == School).
+        Assert.False(claims.ContainsKey("is_owner"));
+        // affiliation_id still consumed (staff-action scoping) — retired later in B2d.2.
         Assert.True(claims.ContainsKey("affiliation_id"));
     }
 
@@ -82,8 +82,8 @@ public class JwtContractTests
 
         Assert.Equal(Membership.ToString(), claims["membership_id"]);
         Assert.Equal(Organization.ToString(), claims["organization_id"]);
-        Assert.Equal(UserTypes.School, claims["user_type"]);
-        Assert.Equal("true", claims["is_owner"]);
+        Assert.Equal(UserTypes.School, claims["user_type"]);   // owner ⟺ user_type == School (is_owner retired, B2d.2)
+        Assert.False(claims.ContainsKey("is_owner"));
         Assert.Equal("owner", claims["role"]);
         // B2c.3d: the transitional owner claims are retired (0 readers).
         Assert.False(claims.ContainsKey("subdomain"));

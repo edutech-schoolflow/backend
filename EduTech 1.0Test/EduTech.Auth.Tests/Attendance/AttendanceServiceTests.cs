@@ -23,13 +23,13 @@ public class AttendanceServiceTests
 
     private void AsOwner()
     {
-        _context.SetupGet(c => c.IsOwner).Returns(true);
+        _context.SetupGet(c => c.IsSchoolOwner).Returns(true);
         _context.SetupGet(c => c.AffiliationId).Returns((string?)null);
     }
 
     private void AsClassTeacher(Guid affiliation)
     {
-        _context.SetupGet(c => c.IsOwner).Returns(false);
+        _context.SetupGet(c => c.IsSchoolOwner).Returns(false);
         _context.SetupGet(c => c.AffiliationId).Returns(affiliation.ToString());
     }
 

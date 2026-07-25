@@ -58,7 +58,7 @@ internal sealed class SchoolFeeService : ISchoolFeeService
         FeeCategory category = request.Category ?? FeeCategory.Compulsory;
 
         // Owner-created fees are approved immediately; staff-created fees wait for owner approval.
-        bool ownerCreated = _context.IsOwner;
+        bool ownerCreated = _context.IsSchoolOwner;
         FeeApprovalStatus status = ownerCreated ? FeeApprovalStatus.Approved : FeeApprovalStatus.PendingApproval;
         Guid? approvedBy = ownerCreated && Guid.TryParse(_context.UserId, out Guid uid) ? uid : null;
 
@@ -150,7 +150,7 @@ internal sealed class SchoolFeeService : ISchoolFeeService
     private async Task<FeeApprovalStatus> RequireOwnerAndGetStatusAsync(Guid feeTypeId, FeeApprovalStatus target,
         CancellationToken cancellationToken)
     {
-        if (!_context.IsOwner)
+        if (!_context.IsSchoolOwner)
         {
             throw new AppErrorException("Only the school owner can approve or reject fees.", 403, ErrorCodes.AccessDenied);
         }

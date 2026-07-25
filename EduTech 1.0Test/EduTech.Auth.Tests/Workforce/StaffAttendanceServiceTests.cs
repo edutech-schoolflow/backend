@@ -20,7 +20,7 @@ public class StaffAttendanceServiceTests
     {
         _context.SetupGet(c => c.SchoolId).Returns(School.ToString());
         _context.SetupGet(c => c.AffiliationId).Returns(Affiliation.ToString());
-        _context.SetupGet(c => c.IsOwner).Returns(false);
+        _context.SetupGet(c => c.IsSchoolOwner).Returns(false);
     }
 
     [Fact]
@@ -102,7 +102,7 @@ public class StaffAttendanceServiceTests
     public async Task Override_InvalidStatus_Throws400()
     {
         _context.SetupGet(c => c.SchoolId).Returns(School.ToString());
-        _context.SetupGet(c => c.IsOwner).Returns(true);
+        _context.SetupGet(c => c.IsSchoolOwner).Returns(true);
 
         AppErrorException ex = await Assert.ThrowsAsync<AppErrorException>(() =>
             CreateSut().OverrideAsync(new OverrideStaffAttendanceRequest

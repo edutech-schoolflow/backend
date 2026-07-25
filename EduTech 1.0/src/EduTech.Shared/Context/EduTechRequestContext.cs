@@ -24,7 +24,6 @@ public class EduTechRequestContext : IEduTechRequestContext
     public string? ContextId => User?.FindFirst("context_id")?.Value;
     public string? MembershipId => User?.FindFirst("membership_id")?.Value;
     public string? OrganizationId => User?.FindFirst("organization_id")?.Value;
-    public bool IsOwner => User?.FindFirst("is_owner")?.Value == "true";
 
     public bool IsStaff => UserType == UserTypes.Staff;
     public bool IsSchoolOwner => UserType == UserTypes.School;

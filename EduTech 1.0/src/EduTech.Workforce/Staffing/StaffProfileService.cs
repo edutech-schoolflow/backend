@@ -38,9 +38,9 @@ internal sealed class StaffProfileService : IStaffProfileService
         Guid schoolId = SchoolId();
 
         // Owners aren't directory entries — they simply hold every feature.
-        if (_context.IsOwner || !Guid.TryParse(_context.AffiliationId, out Guid affiliationId))
+        if (_context.IsSchoolOwner || !Guid.TryParse(_context.AffiliationId, out Guid affiliationId))
         {
-            if (!_context.IsOwner)
+            if (!_context.IsSchoolOwner)
             {
                 throw new AppErrorException("Authentication required.", 401, ErrorCodes.Unauthorized);
             }

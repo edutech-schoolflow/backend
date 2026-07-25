@@ -49,7 +49,6 @@ public static class TokenVendor
         {
             new Claim("user_id", userId),
             new Claim("user_type", UserTypes.Staff),
-            new Claim("is_owner", "false"),
             new Claim("school_id", schoolId),
             new Claim("affiliation_id", affiliationId),
             new Claim("role", role),
@@ -85,7 +84,6 @@ public static class TokenVendor
         {
             new Claim("user_id", userId),
             new Claim("user_type", UserTypes.Staff),
-            new Claim("is_owner", "false"),
             new Claim("phone", phone)
         };
 
@@ -113,7 +111,6 @@ public static class TokenVendor
             new Claim("user_id", userId),
             new Claim("user_type", UserTypes.School),
             new Claim("school_id", schoolId),
-            new Claim("is_owner", "true"),
             new Claim("role", "owner"),
             new Claim("phone", phone)
         };
@@ -144,7 +141,6 @@ public static class TokenVendor
         {
             new Claim("user_id", identityId),
             new Claim("user_type", "identity"),
-            new Claim("is_owner", "false"),
             new Claim("role", "identity"),
             new Claim("phone", phone)
         };
@@ -161,7 +157,6 @@ public static class TokenVendor
         {
             new Claim("user_id", userId),
             new Claim("user_type", UserTypes.Parent),
-            new Claim("is_owner", "false"),
             new Claim("role", UserTypes.Parent),
             new Claim("phone", phone)
         };
@@ -192,7 +187,6 @@ public static class TokenVendor
         {
             new Claim("user_id", adminId),
             new Claim("user_type", UserTypes.PlatformAdmin),
-            new Claim("is_owner", "false"),
             new Claim("role", role),
             new Claim("email", email)
         };

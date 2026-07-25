@@ -431,7 +431,7 @@ Each has a documented reader set, a retirement sprint, and a replacement mechani
 
 | Claim | Remaining readers | Retires | Replacement |
 | --- | --- | --- | --- |
-| `is_owner` | 13 business sites via `IEduTechRequestContext.IsOwner` (Attendance, Grades, Fees, StaffAttendance, StaffProfile, SchoolBranding) | capability-model work (post-B2c) | owner context → capabilities (owner Position grants all) / an explicit ownership policy |
+| ~~`is_owner`~~ | **RETIRED (B2d.2)** — all readers migrated to `IEduTechRequestContext.IsSchoolOwner` (= `user_type == School`, a canonical claim); the `IsOwner` property + the claim emission + the `[RequireRole]` owner-bypass are gone | done | `user_type == School` |
 | `affiliation_id` | `AttendanceService`, `GradeService`, `StaffProfileService` (`CurrentAffiliation()` — scope staff actions to their own arm/records) | when staff scoping re-sources off the legacy actor | `membership_id` / active Employment |
 | `user_id` | `IEduTechRequestContext.UserId` (the legacy actor id — staff_user / owner / parent id — used widely as "the current actor") | **B2d** (legacy actor retirement) | `identity_id` + `membership_id` |
 

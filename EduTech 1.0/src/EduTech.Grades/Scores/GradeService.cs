@@ -29,7 +29,7 @@ internal sealed class GradeService : IGradeService
     public async Task<IReadOnlyList<GradeableArmResponse>> ListGradeableArmsAsync(CancellationToken cancellationToken)
     {
         IReadOnlyList<GradeableArmRow> rows =
-            await _repository.ListGradeableArmsAsync(CurrentAffiliation(), _context.IsOwner, cancellationToken);
+            await _repository.ListGradeableArmsAsync(CurrentAffiliation(), _context.IsSchoolOwner, cancellationToken);
 
         return rows.Select(r => new GradeableArmResponse
         {
@@ -118,7 +118,7 @@ internal sealed class GradeService : IGradeService
             entries.Add((entry.StudentId, score));
         }
 
-        Guid? submittedBy = _context.IsOwner ? null : CurrentAffiliation();
+        Guid? submittedBy = _context.IsSchoolOwner ? null : CurrentAffiliation();
         (Guid id, DateTime submittedAt) = await _repository.UpsertRecordAsync(
                 request.ArmId, request.SubjectId, request.TermId, assessment, maxScore, submittedBy, entries, cancellationToken)
             ?? throw new AppErrorException("These grades are published and can't be edited.", 409, ErrorCodes.Conflict,
@@ -216,7 +216,7 @@ internal sealed class GradeService : IGradeService
             throw new AppErrorException("That subject doesn't belong to this class.", 400, ErrorCodes.ValidationError);
         }
 
-        if (_context.IsOwner)
+        if (_context.IsSchoolOwner)
         {
             return (arm, subject);
         }

@@ -44,7 +44,7 @@ internal sealed class StaffAttendanceService : IStaffAttendanceService
     public async Task<StaffAttendanceSettingsResponse> UpdateSettingsAsync(
         UpdateStaffAttendanceSettingsRequest request, CancellationToken cancellationToken)
     {
-        if (!_context.IsOwner)
+        if (!_context.IsSchoolOwner)
         {
             throw new AppErrorException("Only the school owner can change attendance settings.",
                 403, ErrorCodes.Forbidden);
@@ -132,7 +132,7 @@ internal sealed class StaffAttendanceService : IStaffAttendanceService
     public async Task<StaffCheckInResponse> OverrideAsync(OverrideStaffAttendanceRequest request,
         CancellationToken cancellationToken)
     {
-        if (!_context.IsOwner)
+        if (!_context.IsSchoolOwner)
         {
             throw new AppErrorException("Only the school owner can override attendance.",
                 403, ErrorCodes.Forbidden);

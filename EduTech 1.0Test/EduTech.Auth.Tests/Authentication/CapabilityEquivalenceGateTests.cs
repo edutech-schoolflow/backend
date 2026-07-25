@@ -26,6 +26,7 @@ public class CapabilityEquivalenceGateTests
             return;   // no DB provided → skip (normal CI). The harness supplies GATE_DB.
         }
 
+        DapperConfiguration.Configure();   // production's global Dapper setup (snake_case column matching)
         NpgsqlConnectionFactory factory = new(conn);
         ICapabilityResolver legacy = new CapabilityResolver(factory, new MemoryCache(new MemoryCacheOptions()));
         ICapabilityResolver canonical = new CanonicalCapabilityResolver(factory, new MemoryCache(new MemoryCacheOptions()));

@@ -45,6 +45,12 @@ INSERT INTO staff_affiliations (id, staff_user_id, school_id, identity_id, role,
 INSERT INTO staff_feature_overrides (affiliation_id, feature_key, enabled) VALUES
   ('11110000-0000-0000-0000-00000000000c', 'can_manage_fees', true);
 
+-- owner D's legacy actor row (school_owners) — the LEGACY mint reads it via ListOwnerContextsAsync;
+-- the canonical mint does not. id = the owner context's reference_id so both mints agree on user_id/context_id.
+INSERT INTO school_owners (id, school_id, identity_id, phone, password_hash, first_name, last_name, is_active) VALUES
+  ('44440000-0000-0000-0000-00000000000d', 'a0000000-0000-0000-0000-000000000001', 'd0000000-0000-0000-0000-00000000000d',
+   '+2348000000004', 'x', 'Dd', 'Dd', TRUE);
+
 -- ── canonical rows (what CanonicalCapabilityResolver reads, keyed by membership) ──
 INSERT INTO employments (id, membership_id, organization_id, position_id, permission_template_id, status, started_at) VALUES
   ('22220000-0000-0000-0000-00000000000a', 'f0000000-0000-0000-0000-00000000000a', 'a0000000-0000-0000-0000-000000000001', (SELECT id FROM positions WHERE slug = 'teacher' AND school_id IS NULL), NULL,                                     'active', NOW()),

@@ -102,9 +102,12 @@ Owner-vs-staff scoping is untouched (`IsSchoolOwner = user_type == School`, B2d)
 - `EduTech.Attendance/AttendanceService.cs` — `CurrentAffiliation()` → **`CurrentMembership()`**
   (`_context.MembershipId`); scope check + `submittedBy`.
 - `EduTech.Students/Classes/ClassRepository.cs` — class/class_arm teacher **reads (JOIN staff_affiliations
-  → memberships)** + **writes** (`UPDATE/INSERT class_teacher_*`). The assign-teacher input is an
-  affiliation id today. **Open sub-decision:** the assign-teacher command + the staff-directory picker
-  must supply a `membership_id` — confirm the directory exposes it (likely a small add).
+  → memberships)** + **writes** (`UPDATE/INSERT class_teacher_*`).
+  - **FE-AFFECTING (resolved):** the class-teacher assignment is an API contract, not server-only.
+    `SetClassTeacherRequest` + `ClassTeacherResponse` carry `affiliation_id`, and the staff directory
+    (`StaffDirectoryRow`) exposes `AffiliationId` — all three move to `membership_id`, and the frontend
+    (staff-directory picker + class-teacher assign) sends/reads `membership_id`. So this sprint is
+    **backend + FE contract**, which is exactly why it's the first convergence *sprint*, not a quick edit.
 - `EduTech.Workforce/StaffAttendance/StaffAttendanceRepository.cs` + `StaffAttendanceService.cs` —
   `staff_checkins.affiliation_id` → `membership_id`; `overridden_by` = `_context.IdentityId`.
 - Tests: AttendanceServiceTests, StaffAttendanceServiceTests, Class repo/service tests.

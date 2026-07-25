@@ -47,7 +47,6 @@ public static class AuthServiceCollectionExtensions
 
         // Parent (Actor 3)
         services.AddScoped<IParentRepository, ParentRepository>();
-        services.AddScoped<IParentAuthService, ParentAuthService>();
 
         // EDD-001 Sprint 2 — unified identity auth (one register/login; contexts pick the portal).
         services.AddScoped<Unified.IAuthContextRepository, Unified.AuthContextRepository>();

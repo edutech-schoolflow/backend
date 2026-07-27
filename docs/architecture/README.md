@@ -13,7 +13,7 @@ built **foundation-first** via a strangler migration off the legacy actor tables
 | EDD-007 | Membership — the belonging edge (Identity **or** Child Profile ↔ Organization) | ✅ |
 | EDD-008 | Position — the job catalog an organization employs into | ✅ |
 | EDD-009 | Employment — the working relationship (Membership × Organization) | ✅ |
-| EDD-017 | Identity Verification (KYC) — NIN/verification state owned by Identity; Compliance = the verification service | 📐 design |
+| EDD-017 | Identity Verification (KYC) — NIN/verification state owned by Identity; Compliance = the verification service | ✅ design complete (code deferred to retirement) |
 
 ### Organization Domain — *the organization and its structure*
 | EDD | Aggregate | Status |

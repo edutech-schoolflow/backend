@@ -219,3 +219,39 @@ final-schema grep confirms **no `*_affiliation_id` column remains** in any of th
 (`attendance_records`, `classes`, `class_arms`, `staff_checkins`, `grade_records`, `class_subject_teachers`).
 With the shared `class_teacher`/subject-teacher columns both gone, **the entire Classes module is now
 affiliation-free** — there is no separate Classes convergence sprint to schedule.
+
+---
+
+## Sprint 3 — Fees Canonicalization
+
+**Status: DONE — commit `d7b436c`.** The smallest convergence so far — one write-only `user_id` column.
+
+### Domain / scope finding
+Fees has two actor-ish columns; only one is in scope:
+| Column | What it is | Decision |
+| --- | --- | --- |
+| `fee_types.approved_by_user_id` | the **owner** who approved a fee type; written from `_context.UserId`, **never read / not in any DTO** | → `approved_by_identity_id` (this sprint) |
+| `fee_types.submitted_by_is_owner` | a **boolean** (owner vs staff submitter) — not an actor id | leave (out of scope, like `is_owner`) |
+| `payments.parent_id` | the **payer**, a `parents(id)` FK resolved via `GetParentIdByIdentityAsync` and joined against `parent_children` | **defer to Students/Family** — it's part of retiring the legacy `parents` table + guardian model, kept coherent there (Fees *references* `parents`, the Family domain *owns* it) |
+
+Canonical target = **Identity** (the approver is the owner acting as a person). Because the column is
+write-only, this is a pure server-side change: **no read to migrate, no DTO/FE contract touched.**
+
+### Physical model (migration 0062 — V1, direct cut)
+| Table | Drop | Add |
+| --- | --- | --- |
+| `fee_types` | `approved_by_user_id` (bare UUID) | `approved_by_identity_id → identities(id)` (nullable) |
+
+### File map
+- `SchoolFeeService` — `approvedBy` on create (owner path) and `ApproveFeeTypeAsync` now read
+  `_context.IdentityId` instead of `_context.UserId`.
+- `SchoolFeeRepository` — `approved_by_identity_id` in the create INSERT, the edit-clear UPDATE, and the
+  approve UPDATE; `approvedByUserId` params → `approvedByIdentityId`.
+- Tests: SchoolFee tests if any assert the approver.
+
+### Exit
+The fee-type **approval** is fully canonical (`approved_by_identity_id`, written from `_context.IdentityId`).
+Two parent-payer concerns remain and **both defer to the Students/Family sprint** (the `parents`-table
+retirement): `payments.parent_id`, and the one surviving `_context.UserId` read —
+`ParentFeeService.CurrentIdentityId` (`_context.IdentityId ?? _context.UserId`), the identity-session
+parent fallback that is load-bearing for parent logins. Build 0/0 · full suite green · `0062` on throwaway PG.

@@ -13,6 +13,7 @@ built **foundation-first** via a strangler migration off the legacy actor tables
 | EDD-007 | Membership — the belonging edge (Identity **or** Child Profile ↔ Organization) | ✅ |
 | EDD-008 | Position — the job catalog an organization employs into | ✅ |
 | EDD-009 | Employment — the working relationship (Membership × Organization) | ✅ |
+| EDD-017 | Identity Verification (KYC) — NIN/verification state owned by Identity; Compliance = the verification service | 📐 design |
 
 ### Organization Domain — *the organization and its structure*
 | EDD | Aggregate | Status |
@@ -81,6 +82,13 @@ never leak platform concerns back into the foundation.
 - **Design sequence (every module):** **Product → Domain → Physical Model → Commands/Queries →
   Implementation Plan → Code.** Never Product → Code. Each stage is written down (in the module's EDD)
   and reviewed before the next begins.
+- **A legacy table is never migrated directly** (canonical-first): first define the canonical **bounded
+  context** in an EDD — ownership, aggregates, workflows, events, contracts — and only *then* migrate the
+  data and retire the legacy implementation. The legacy deletion is the *consequence* of finishing a
+  canonical module, never a standalone task. This is what kept B2 (and EDD-016) from degenerating into a
+  series of ad-hoc migrations; it forces each area to become a coherent product + domain model first.
+  (Corollary — the EDD-016 finding: a module that *FK-references* an actor id is a **convergence**, a
+  column repoint; a module that *owns/embeds* the actor table is a **redesign** with its own EDD.)
 - **Platform Validation Rule:** **Admissions** is the first module built entirely on the finished
   platform — its **reference implementation** (identity-first, membership creation, event-driven
   workflow, capability authorization, workspace, notifications, audit, clean aggregates). *Admissions

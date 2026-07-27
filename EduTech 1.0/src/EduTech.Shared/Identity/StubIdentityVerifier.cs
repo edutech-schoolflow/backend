@@ -12,6 +12,8 @@ public sealed class StubIdentityVerifier : IIdentityVerifier
         _logger = logger;
     }
 
+    public string ProviderName => "stub";
+
     public Task<IdentityVerificationResult> VerifyNinAsync(string nin, string expectedName,
         CancellationToken cancellationToken = default)
     {

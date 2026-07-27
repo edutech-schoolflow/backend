@@ -211,9 +211,15 @@ canonical columns stay reader-less until Auth flips to them — **no dual-write 
    nin_verified_at, reverification_required}` + `identity_verifications` + backfill from `staff_users`/`parents`
    (best status wins, NIN coalesced; V1 has no data so it's a release no-op). **No runtime readers** → inert,
    no dual-write. Verified on throwaway PG: schema, CHECK, and backfill precedence (`verified` beats `pending`).
-2. **Slice 2 — Compliance workflow on Identity.** Re-key off `_context.IdentityId`; `SubmitNin` writes
-   `identities` + appends an attempt; drop `ResolveActor()` (`UserType`/`UserId`). One path for all actor
-   types; publish the Identity verification events. **Still no Auth changes.**
+2. **Slice 2 — Compliance workflow on Identity** ✅ **DONE.** `SubmitNin` re-keyed off `_context.IdentityId`
+   (the legacy actor id is gone; `UserType` kept only for the portal gate + response label); writes the
+   verified fact to `identities` + **one `identity_verifications` attempt per submission**; the encrypted NIN
+   lands **only** on Identity; publishes `IdentityVerification{Submitted,Succeeded,Failed,Rejected}`.
+   `IIdentityVerifier` gained `ProviderName`. **Auth kept frozen** — the current portal's legacy `kyc_status`
+   is still synced on success (untouched on failure, as before), so login is byte-identical. Verified: build
+   0/0; 525 unit tests; PG integration proves one attempt/call, the transitions, NIN-only-on-Identity, and the
+   legacy sync. *(The KYC events are plain `DomainEvent`s, not `IAuditableEvent` — identity-level, not
+   school-scoped; `identity_verifications` is the KYC audit trail.)*
 3. **Slice 3 — Auth reads canonical.** Repoint the `staff_users.kyc_status` reads (`StaffUserRepository`,
    `ContextMinter`, `UnifiedAuthService`, `StaffAuthService`) to `identities.kyc_status` — one read, one
    source (a *simplification*, reviewed as such). Keep legacy writes until cutover if needed.

@@ -168,7 +168,7 @@ internal sealed class ClassService : IClassService
                 .Select(s => new SubjectTeacherResponse
                 {
                     Id = s.Id, Subject = s.Subject,
-                    TeacherAffiliationId = s.TeacherAffiliationId, TeacherName = s.TeacherName
+                    TeacherMembershipId = s.TeacherMembershipId, TeacherName = s.TeacherName
                 })
                 .ToList()
         }).ToList();
@@ -266,17 +266,17 @@ internal sealed class ClassService : IClassService
             throw new AppErrorException("Class arm not found.", 404, ErrorCodes.NotFound);
         }
 
-        if (!await _repository.AffiliationActiveAsync(request.TeacherAffiliationId, cancellationToken))
+        if (!await _repository.MembershipActiveAsync(request.TeacherMembershipId, cancellationToken))
         {
             throw new AppErrorException("That teacher isn't an active staff member at this school.",
                 400, ErrorCodes.ValidationError);
         }
 
-        Guid id = await _repository.AddSubjectTeacherAsync(armId, request.TeacherAffiliationId, subject, cancellationToken);
+        Guid id = await _repository.AddSubjectTeacherAsync(armId, request.TeacherMembershipId, subject, cancellationToken);
 
         return new SubjectTeacherResponse
         {
-            Id = id, Subject = subject, TeacherAffiliationId = request.TeacherAffiliationId, TeacherName = string.Empty
+            Id = id, Subject = subject, TeacherMembershipId = request.TeacherMembershipId, TeacherName = string.Empty
         };
     }
 

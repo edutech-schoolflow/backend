@@ -47,7 +47,7 @@ public sealed class SubjectTeacherResponse
 {
     public required Guid Id { get; init; }
     public required string Subject { get; init; }
-    public required Guid TeacherAffiliationId { get; init; }
+    public required Guid TeacherMembershipId { get; init; }
     public required string TeacherName { get; init; }
 }
 
@@ -65,6 +65,6 @@ public sealed class SetClassTeacherRequest
 
 public sealed class AddSubjectTeacherRequest
 {
-    public Guid TeacherAffiliationId { get; init; }
+    public Guid TeacherMembershipId { get; init; }
     public string Subject { get; init; } = string.Empty;
 }

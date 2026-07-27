@@ -29,7 +29,7 @@ internal sealed class GradeService : IGradeService
     public async Task<IReadOnlyList<GradeableArmResponse>> ListGradeableArmsAsync(CancellationToken cancellationToken)
     {
         IReadOnlyList<GradeableArmRow> rows =
-            await _repository.ListGradeableArmsAsync(CurrentMembership(), CurrentAffiliation(), _context.IsSchoolOwner, cancellationToken);
+            await _repository.ListGradeableArmsAsync(CurrentMembership(), _context.IsSchoolOwner, cancellationToken);
 
         return rows.Select(r => new GradeableArmResponse
         {
@@ -118,7 +118,7 @@ internal sealed class GradeService : IGradeService
             entries.Add((entry.StudentId, score));
         }
 
-        Guid? submittedBy = _context.IsSchoolOwner ? null : CurrentAffiliation();
+        Guid? submittedBy = _context.IsSchoolOwner ? null : CurrentMembership();
         (Guid id, DateTime submittedAt) = await _repository.UpsertRecordAsync(
                 request.ArmId, request.SubjectId, request.TermId, assessment, maxScore, submittedBy, entries, cancellationToken)
             ?? throw new AppErrorException("These grades are published and can't be edited.", 409, ErrorCodes.Conflict,
@@ -225,12 +225,10 @@ internal sealed class GradeService : IGradeService
         ClassLevel level = SnakeCaseEnum.Parse<ClassLevel>(arm.Level);
         bool primaryTier = IsPrimaryTier(level);
 
-        // Primary tier: the class teacher grades (canonical membership). Secondary: the subject teacher
-        // grades (subject teachers stay affiliation-keyed until the Grades convergence sprint).
-        bool allowed = primaryTier
-            ? (membership is Guid mem && arm.ClassTeacherMembershipId == mem)
-            : (CurrentAffiliation() is Guid aff
-                 && await _repository.IsSubjectTeacherAsync(armId, subject.Name, aff, cancellationToken));
+        // Both tiers scope by canonical membership: primary = the class teacher, secondary = the subject teacher.
+        bool allowed = membership is Guid mem && (primaryTier
+            ? arm.ClassTeacherMembershipId == mem
+            : await _repository.IsSubjectTeacherAsync(armId, subject.Name, mem, cancellationToken));
 
         if (!allowed)
         {
@@ -263,9 +261,6 @@ internal sealed class GradeService : IGradeService
 
     private static int MaxFor(AssessmentType assessment, SubjectInfoRow subject) =>
         assessment == AssessmentType.Exam ? subject.MaxExam : subject.MaxCa;
-
-    private Guid? CurrentAffiliation() =>
-        Guid.TryParse(_context.AffiliationId, out Guid id) ? id : (Guid?)null;
 
     private Guid? CurrentMembership() =>
         Guid.TryParse(_context.MembershipId, out Guid id) ? id : (Guid?)null;

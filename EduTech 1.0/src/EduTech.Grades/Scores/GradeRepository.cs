@@ -9,9 +9,9 @@ internal interface IGradeRepository
     Task<ArmGradingRow?> GetArmAsync(Guid armId, CancellationToken cancellationToken);
     Task<SubjectInfoRow?> GetSubjectAsync(Guid subjectId, CancellationToken cancellationToken);
     Task<bool> TermExistsAsync(Guid termId, CancellationToken cancellationToken);
-    Task<bool> IsSubjectTeacherAsync(Guid armId, string subjectName, Guid affiliationId, CancellationToken cancellationToken);
+    Task<bool> IsSubjectTeacherAsync(Guid armId, string subjectName, Guid membershipId, CancellationToken cancellationToken);
 
-    Task<IReadOnlyList<GradeableArmRow>> ListGradeableArmsAsync(Guid? membershipId, Guid? affiliationId, bool isOwner, CancellationToken cancellationToken);
+    Task<IReadOnlyList<GradeableArmRow>> ListGradeableArmsAsync(Guid? membershipId, bool isOwner, CancellationToken cancellationToken);
     Task<IReadOnlyList<Guid>> GetActiveStudentIdsAsync(Guid armId, CancellationToken cancellationToken);
 
     Task<GradeRecordHeaderRow?> GetRecordHeaderAsync(Guid armId, Guid subjectId, Guid termId,
@@ -24,7 +24,7 @@ internal interface IGradeRepository
     /// id + submit time, or null when the record is already published (nothing was written).
     /// </summary>
     Task<(Guid Id, DateTime SubmittedAt)?> UpsertRecordAsync(Guid armId, Guid subjectId, Guid termId,
-        AssessmentType assessmentType, int maxScore, Guid? submittedByAffiliationId,
+        AssessmentType assessmentType, int maxScore, Guid? submittedByMembershipId,
         IReadOnlyList<(Guid StudentId, decimal Score)> entries, CancellationToken cancellationToken);
 
     /// <summary>The record's identity for authorization (arm + subject) and its status; null if not found.</summary>
@@ -148,23 +148,23 @@ internal sealed class GradeRepository : TenantRepository, IGradeRepository
             TenantParameters(new { Id = termId }), cancellationToken) > 0;
     }
 
-    public async Task<bool> IsSubjectTeacherAsync(Guid armId, string subjectName, Guid affiliationId,
+    public async Task<bool> IsSubjectTeacherAsync(Guid armId, string subjectName, Guid membershipId,
         CancellationToken cancellationToken)
     {
         return await ExecuteScalarAsync<int>(
             """
             SELECT COUNT(1) FROM class_subject_teachers
             WHERE school_id = @SchoolId AND class_arm_id = @ArmId
-              AND teacher_affiliation_id = @Aff AND lower(subject) = lower(@Subject)
+              AND teacher_membership_id = @Mem AND lower(subject) = lower(@Subject)
             """,
-            TenantParameters(new { ArmId = armId, Aff = affiliationId, Subject = subjectName }), cancellationToken) > 0;
+            TenantParameters(new { ArmId = armId, Mem = membershipId, Subject = subjectName }), cancellationToken) > 0;
     }
 
-    public Task<IReadOnlyList<GradeableArmRow>> ListGradeableArmsAsync(Guid? membershipId, Guid? affiliationId, bool isOwner,
+    public Task<IReadOnlyList<GradeableArmRow>> ListGradeableArmsAsync(Guid? membershipId, bool isOwner,
         CancellationToken cancellationToken)
     {
-        // Primary tier scopes by the class teacher (canonical membership); secondary tier by the subject
-        // teacher (class_subject_teachers stays affiliation-keyed until the Grades convergence sprint).
+        // Both tiers scope by canonical membership: primary by the class teacher, secondary by the
+        // subject teacher (class_subject_teachers.teacher_membership_id).
         return QueryAsync<GradeableArmRow>(
             $"""
             SELECT a.id AS ArmId, {ArmNameSql} AS ArmName, c.id AS ClassId, c.name AS ClassName, c.level AS Level
@@ -175,11 +175,11 @@ internal sealed class GradeRepository : TenantRepository, IGradeRepository
                OR (c.level IN ('pre_school','nursery','primary') AND a.class_teacher_membership_id = @Mem)
                OR (c.level IN ('junior_secondary','senior_secondary') AND EXISTS (
                      SELECT 1 FROM class_subject_teachers st
-                     WHERE st.class_arm_id = a.id AND st.teacher_affiliation_id = @Aff))
+                     WHERE st.class_arm_id = a.id AND st.teacher_membership_id = @Mem))
             )
             ORDER BY c.display_order, c.name, a.arm
             """,
-            TenantParameters(new { IsOwner = isOwner, Mem = membershipId, Aff = affiliationId }), cancellationToken);
+            TenantParameters(new { IsOwner = isOwner, Mem = membershipId }), cancellationToken);
     }
 
     public Task<IReadOnlyList<Guid>> GetActiveStudentIdsAsync(Guid armId, CancellationToken cancellationToken)
@@ -224,7 +224,7 @@ internal sealed class GradeRepository : TenantRepository, IGradeRepository
     }
 
     public async Task<(Guid Id, DateTime SubmittedAt)?> UpsertRecordAsync(Guid armId, Guid subjectId, Guid termId,
-        AssessmentType assessmentType, int maxScore, Guid? submittedByAffiliationId,
+        AssessmentType assessmentType, int maxScore, Guid? submittedByMembershipId,
         IReadOnlyList<(Guid StudentId, decimal Score)> entries, CancellationToken cancellationToken)
     {
         await using DbTransactionScope transaction = await _connectionFactory.BeginTransactionAsync(cancellationToken);
@@ -235,18 +235,18 @@ internal sealed class GradeRepository : TenantRepository, IGradeRepository
             """
             INSERT INTO grade_records
                 (school_id, class_arm_id, subject_id, term_id, assessment_type, max_score,
-                 submitted_by_affiliation_id, submitted_at)
+                 submitted_by_membership_id, submitted_at)
             VALUES (@SchoolId, @ArmId, @SubjectId, @TermId, @Assessment, @MaxScore, @SubmittedBy, NOW())
             ON CONFLICT (class_arm_id, subject_id, term_id, assessment_type) DO UPDATE
                 SET max_score = EXCLUDED.max_score,
-                    submitted_by_affiliation_id = EXCLUDED.submitted_by_affiliation_id,
+                    submitted_by_membership_id = EXCLUDED.submitted_by_membership_id,
                     submitted_at = NOW(),
                     updated_at = NOW()
                 WHERE grade_records.status = 'draft'
             RETURNING id, submitted_at AS SubmittedAt
             """,
             TenantParameters(new { ArmId = armId, SubjectId = subjectId, TermId = termId,
-                Assessment = SnakeCaseEnum.ToWire(assessmentType), MaxScore = maxScore, SubmittedBy = submittedByAffiliationId }),
+                Assessment = SnakeCaseEnum.ToWire(assessmentType), MaxScore = maxScore, SubmittedBy = submittedByMembershipId }),
             cancellationToken, transaction.Transaction);
 
         if (header is null)

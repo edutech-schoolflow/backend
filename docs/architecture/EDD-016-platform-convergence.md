@@ -74,7 +74,10 @@ Each is bounded, independently shippable, and free of platform risk.
 
 ## Sprint 1 — Attendance Canonicalization (the pattern-setter)
 
-Scoped design (Product → Domain → Physical → Commands → Plan). Ready to execute.
+**Status: DONE — commit `5dec4ae`.** Build 0/0 · 522 tests green · migration `0001→0060` verified on
+throwaway Postgres. Outcome + the one design surprise are recorded at the end of this section.
+
+Scoped design (Product → Domain → Physical → Commands → Plan).
 
 ### Product
 Staff mark student attendance for the arms they teach; the owner may mark any. Staff also check
@@ -126,3 +129,24 @@ Owner-vs-staff scoping is untouched (`IsSchoolOwner = user_type == School`, B2d)
 
 **Not in this sprint:** dropping the `affiliation_id`/`user_id` *claims* or `reference_id` — those wait
 until *every* module is done (the claims still serve the not-yet-migrated modules).
+
+### Outcome + the pattern-setting learning
+
+Delivered as committed: `attendance_records.submitted_by_membership_id`, `classes`/`class_arms`
+`class_teacher_membership_id`, `staff_checkins.membership_id` + `overridden_by_identity_id`; services
+re-sourced onto `_context.MembershipId` / `_context.IdentityId`; the teacher-name JOIN moved
+`staff_affiliations→staff_users` ⟶ `memberships→identities`; `MembershipActiveAsync` validates "active
+staff" as *a membership with an active employment* (the projector's own definition); the staff directory
+now exposes `membership_id` so the class-teacher picker can send it.
+
+**The surprise (a rule for every later sprint): a shared column drags its other readers into the sprint.**
+`class_teacher` is a **Classes** column, but **Grades** also reads it for grade-entry scoping. Dropping
+`class_teacher_affiliation_id` would have broken Grades, so Grades' *class-teacher* scoping migrated in
+this sprint too (`GradeService`/`GradeRepository` primary-tier reads → `class_teacher_membership_id` /
+`@Mem`). Grades' *own* `submitted_by` and its *subject-teacher* path stay affiliation-keyed for the Grades
+sprint. **Takeaway:** scope a convergence sprint by *column ownership*, and migrate **all** readers of a
+migrated column together — never leave a dropped column with a stale reader in another module.
+
+**FE contract that changed:** `SetClassTeacherRequest` / `ClassTeacherResponse` and the staff-directory
+picker now carry `membership_id` (was `affiliation_id`). Acceptable pre-launch; the frontend updates
+separately. This is the first convergence unit that touched an API contract, not just server internals.

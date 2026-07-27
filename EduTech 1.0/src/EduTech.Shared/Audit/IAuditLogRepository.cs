@@ -13,7 +13,7 @@ public interface IAuditLogRepository
 public sealed class AuditLogEntry
 {
     public Guid Id { get; init; }
-    public Guid? ActorUserId { get; init; }
+    public Guid? ActorIdentityId { get; init; }
     public string? ActorType { get; init; }
     public string Action { get; init; } = string.Empty;
     public string? EntityType { get; init; }

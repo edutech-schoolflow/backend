@@ -20,11 +20,11 @@ internal sealed class AuditLogRepository : TenantRepository, IAuditLogRepository
     public Task InsertAsync(string action, string entityType, Guid entityId, string summary, string? metadata,
         CancellationToken cancellationToken)
     {
-        Guid? actorId = Guid.TryParse(_context.UserId, out Guid parsed) ? parsed : null;
+        Guid? actorId = Guid.TryParse(_context.IdentityId, out Guid parsed) ? parsed : null;
 
         return ExecuteAsync(
             """
-            INSERT INTO audit_logs (school_id, actor_user_id, actor_type, action, entity_type, entity_id, summary, metadata)
+            INSERT INTO audit_logs (school_id, actor_identity_id, actor_type, action, entity_type, entity_id, summary, metadata)
             VALUES (@SchoolId, @ActorId, @ActorType, @Action, @EntityType, @EntityId, @Summary, @Metadata::jsonb)
             """,
             TenantParameters(new
@@ -45,7 +45,7 @@ internal sealed class AuditLogRepository : TenantRepository, IAuditLogRepository
     {
         return QueryAsync<AuditLogEntry>(
             """
-            SELECT id, actor_user_id AS ActorUserId, actor_type AS ActorType, action,
+            SELECT id, actor_identity_id AS ActorIdentityId, actor_type AS ActorType, action,
                    entity_type AS EntityType, entity_id AS EntityId, summary,
                    metadata::text AS Metadata, created_at AS CreatedAt
             FROM audit_logs

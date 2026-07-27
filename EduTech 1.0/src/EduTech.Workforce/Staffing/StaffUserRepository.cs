@@ -153,9 +153,11 @@ internal sealed class StaffUserRepository : BaseRepository, IStaffUserRepository
     {
         return QuerySingleOrDefaultAsync<StaffUserLoginRow>(
             """
-            SELECT id, password_hash, phone_verified, is_active, kyc_status, failed_login_count, locked_until
-            FROM staff_users
-            WHERE phone = @Phone
+            SELECT s.id, s.password_hash, s.phone_verified, s.is_active,
+                   COALESCE(i.kyc_status, 'unverified') AS kyc_status, s.failed_login_count, s.locked_until
+            FROM staff_users s
+            LEFT JOIN identities i ON i.id = s.identity_id
+            WHERE s.phone = @Phone
             """,
             new { Phone = phone }, cancellationToken);
     }
@@ -182,7 +184,8 @@ internal sealed class StaffUserRepository : BaseRepository, IStaffUserRepository
     public Task<StaffUserTokenRow?> GetTokenClaimsAsync(Guid staffUserId, CancellationToken cancellationToken)
     {
         return QuerySingleOrDefaultAsync<StaffUserTokenRow>(
-            "SELECT phone, kyc_status, is_active FROM staff_users WHERE id = @Id",
+            // EDD-017 Slice 3: KYC status sources from Identity (staff_users.kyc_status is now a write-only mirror).
+            "SELECT s.phone, COALESCE(i.kyc_status, 'unverified') AS kyc_status, s.is_active FROM staff_users s LEFT JOIN identities i ON i.id = s.identity_id WHERE s.id = @Id",
             new { Id = staffUserId }, cancellationToken);
     }
 
@@ -190,10 +193,11 @@ internal sealed class StaffUserRepository : BaseRepository, IStaffUserRepository
     {
         return QuerySingleOrDefaultAsync<StaffAccountState>(
             """
-            SELECT phone, first_name, last_name, kyc_status,
-                   (password_hash IS NOT NULL) AS has_password, phone_verified, is_active
-            FROM staff_users
-            WHERE id = @Id
+            SELECT s.phone, s.first_name, s.last_name, COALESCE(i.kyc_status, 'unverified') AS kyc_status,
+                   (s.password_hash IS NOT NULL) AS has_password, s.phone_verified, s.is_active
+            FROM staff_users s
+            LEFT JOIN identities i ON i.id = s.identity_id
+            WHERE s.id = @Id
             """,
             new { Id = staffUserId }, cancellationToken);
     }
@@ -220,7 +224,7 @@ internal sealed class StaffUserRepository : BaseRepository, IStaffUserRepository
     public Task<StaffProfileRow?> GetProfileAsync(Guid staffUserId, CancellationToken cancellationToken)
     {
         return QuerySingleOrDefaultAsync<StaffProfileRow>(
-            "SELECT concat_ws(' ', first_name, middle_name, last_name) AS full_name, phone, email, phone_verified, kyc_status FROM staff_users WHERE id = @Id",
+            "SELECT concat_ws(' ', s.first_name, s.middle_name, s.last_name) AS full_name, s.phone, s.email, s.phone_verified, COALESCE(i.kyc_status, 'unverified') AS kyc_status FROM staff_users s LEFT JOIN identities i ON i.id = s.identity_id WHERE s.id = @Id",
             new { Id = staffUserId }, cancellationToken);
     }
 }

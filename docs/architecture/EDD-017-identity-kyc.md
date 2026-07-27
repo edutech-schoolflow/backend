@@ -220,9 +220,17 @@ canonical columns stay reader-less until Auth flips to them — **no dual-write 
    0/0; 525 unit tests; PG integration proves one attempt/call, the transitions, NIN-only-on-Identity, and the
    legacy sync. *(The KYC events are plain `DomainEvent`s, not `IAuditableEvent` — identity-level, not
    school-scoped; `identity_verifications` is the KYC audit trail.)*
-3. **Slice 3 — Auth reads canonical.** Repoint the `staff_users.kyc_status` reads (`StaffUserRepository`,
-   `ContextMinter`, `UnifiedAuthService`, `StaffAuthService`) to `identities.kyc_status` — one read, one
-   source (a *simplification*, reviewed as such). Keep legacy writes until cutover if needed.
+3. **Slice 3 — Auth reads canonical** ✅ **DONE.** *Finding: person KYC is no longer part of authentication —
+   no login decision consumes it (static grep), it was only a discarded mint param + an FE-unused `/me` field;
+   the one live FE surface (the compliance endpoint) was already canonical from Slice 2.* So the flip was
+   narrow and safe — all four `StaffUserRepository` person-KYC reads (`GetByPhoneForLogin`, `GetTokenClaims`,
+   `GetAccountState`, `GetProfile`) now source `identities.kyc_status` via `LEFT JOIN … ON i.id = s.identity_id`,
+   returning **canonical values with NO vocabulary mapper** — the FE has zero `not_submitted`/`unverified`
+   person branches (its only `not_submitted` branch is *school* KYC, a separate aggregate). `staff_users.kyc_status`
+   is now a **write-only mirror** (the Slice 2 sync keeps it as the rollback path; it retires in Slice 5).
+   **Invariant established: Identity is the single runtime source of truth for KYC.** Verified: build 0/0; 525
+   tests; static grep (no auth KYC decision); PG proof — with the legacy column deliberately stale the read
+   returns Identity's value (legacy ignored).
 4. **Slice 4 — runtime cleanup.** Remove the duplicated legacy reads; `staff_users`/`parents` `kyc_status`
    become compatibility-only.
 5. **Slice 5 — retirement.** With Workforce + Family, drop `nin`/`kyc_status` from `staff_users` + `parents`;

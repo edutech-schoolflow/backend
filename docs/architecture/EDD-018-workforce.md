@@ -1,7 +1,8 @@
 # EDD-018 — Workforce (the organization-facing reference module)
 
-**Status:** DESIGN (in progress — no code until complete, per the canonical-first rule). The second of the
-three canonical domains closing EDD-016, and the **second reference module** after Admissions.
+**Status:** DESIGN COMPLETE. All five open decisions are resolved (see *Resolved decisions*); code is
+deferred to the actor-table retirement, per the canonical-first rule. The second of the three canonical
+domains closing EDD-016, and the **second reference module** after Admissions.
 
 > Admissions proved **Platform → student-facing workflow**. Workforce proves **Platform → organization-facing
 > workflow**: hiring, employment lifecycle, directory, profile, permissions — built entirely on
@@ -64,6 +65,12 @@ Unchanged from today: exclusivity rules, the SMS invite + token, the permissions
 
 ## 3. Domain model
 
+> **Core invariant — an Employment is the *only* source of organizational work.** Permissions derive from
+> Employment → Position; the directory derives from Employment; invitations *create* an Employment;
+> activation activates it; resignation ends it. **No other aggregate may represent "working for the
+> organization."** (Ownership is *governance*, not work — decision E.) This one rule keeps future features
+> from reintroducing a parallel "staff" concept.
+
 ### The graph (canonical, already present)
 ```
 Identity ──< Membership (Identity × School) ──< Employment (Membership × Position)
@@ -102,6 +109,14 @@ It is a property of *employment*, not of a legacy table.
 The directory/role/suspend endpoints identify a staff engagement by its **Employment** (a person may have
 two). The directory row carries `identityId` + `membershipId` + `employmentId`. **FE-affecting** (the staff
 pages re-key), acceptable pre-launch — and the natural consequence of "a person can hold two roles."
+
+### Decision E — **Owner is an Organization concept (governance), not an Employment**
+Employment answers *"what work does this person perform?"*; ownership answers *"who controls this
+organization?"* — different relationships. An owner may never teach, never appear in the directory, never
+draw payroll. So ownership stays on **Organization** (`Organization.owner_membership_id`, EDD-010); an owner
+*may optionally* also hold an Employment (an owner who is also Principal). This makes the eventual
+`school_owners` retirement **clean** — replaced by a canonical Organization ownership model, not by
+pretending ownership is a job. Workforce lists an owner only if they *also* hold an Employment.
 
 ### What Workforce owns vs. consumes
 - **Owns:** the invitation workflow + token, the directory/profile *queries*, the staff lifecycle
@@ -184,13 +199,11 @@ Per the canonical-first rule, code ships when `staff_users`/`staff_affiliations`
 5. **Verify** — build 0/0; full suite; throwaway-PG migration; a `staff_affiliations`/`staff_users` grep of
    the runtime returns nothing.
 
-## 10. Open decisions (for review before code)
-1. **Employment `Pending` vs `Draft`** for an unaccepted invite — `Pending` (awaiting the person) reads best;
-   confirm against EDD-009's intended semantics.
-2. **Membership on invite vs on accept** — create the Membership at invite time (Employment needs it) or only
-   on accept? Leaning **invite** (Employment references Membership), with Membership `pending` until accept.
-3. **Directory shape with multiple roles** — one row per Employment, or one row per person with nested roles?
-   (Affects the FE.) Leaning **one row per person, roles nested**.
-4. **Transfer** — model now (`MoveOrgUnit`) or defer until Organization Units exist? Leaning **defer**.
-5. **Owner** — is the school owner a Workforce Employment (Position=Owner) or purely an Organization concept?
-   (Ties to `school_owners` retirement; likely Organization owns it, Workforce lists it read-only.)
+## 10. Resolved decisions
+| # | Decision | Resolution |
+| --- | --- | --- |
+| 1 | Invite state | **`Pending`** — an invite is an organizational action (the school has decided to hire; the Employment exists; the person hasn't accepted). Not `Draft` (which implies indefinite editing). The token claims the pending Employment. |
+| 2 | Membership timing | **Create at invite-time** — an Employment belongs to a Membership, so if the Employment exists the Membership must too. Stable graph from the start; accept only links the Identity and flips Employment → `Active`. (Mirrors Admissions: create the relationship first, activate later.) |
+| 3 | Directory | **One person, Employments nested** — the canonical owner is the Identity; a person may be Teacher + ICT Coordinator + Club Adviser (three Employments, one human). The UI reflects the person; queries may still page by Employment internally. |
+| 4 | Transfers | **Defer** until Organization Units exist — don't invent OUs early. For V1 a transfer is *End Employment A → Create Employment B*; when the OU module lands, Workforce consumes `MoveOrgUnit`. |
+| 5 | Owner | **Organization concept, not an Employment** (decision E) — ownership is governance, not work; it stays on Organization, and an owner may *optionally* also hold an Employment. |

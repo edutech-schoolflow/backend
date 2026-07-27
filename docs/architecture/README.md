@@ -14,6 +14,7 @@ built **foundation-first** via a strangler migration off the legacy actor tables
 | EDD-008 | Position — the job catalog an organization employs into | ✅ |
 | EDD-009 | Employment — the working relationship (Membership × Organization) | ✅ |
 | EDD-017 | Identity Verification (KYC) — NIN/verification state owned by Identity; Compliance = the verification service | ✅ design complete (code deferred to retirement) |
+| EDD-018 | Workforce — staff directory/invite/employment lifecycle rebuilt on Identity→Membership→Employment→Position (2nd reference module, org-facing; retires `staff_users`/`staff_affiliations`) | 📐 design in progress |
 
 ### Organization Domain — *the organization and its structure*
 | EDD | Aggregate | Status |

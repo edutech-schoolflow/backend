@@ -84,7 +84,7 @@ actor-table retirements** (same "owns/coupled vs references" test as Workforce):
   `IdentityId ?? UserId` fallback): this **is** the `parents`-table retirement. (Parent NIN is *not* here —
   it belongs to Identity KYC above.)
 
-### Workforce is NOT in this list — it is a redesign, not a convergence
+### Workforce is NOT in this list — it is a redesign, not a convergence ([EDD-018](EDD-018-workforce.md))
 
 Investigation (Sprint 2 close) found **Workforce *owns* `staff_affiliations` + `staff_users`** — it doesn't
 FK-reference them, it *is* the legacy staff actor model. There is no column to repoint; canonicalizing

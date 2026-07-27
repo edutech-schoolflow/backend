@@ -15,7 +15,7 @@ built **foundation-first** via a strangler migration off the legacy actor tables
 | EDD-009 | Employment — the working relationship (Membership × Organization) | ✅ |
 | EDD-017 | Identity Verification (KYC) — NIN/verification state owned by Identity; Compliance = the verification service | ✅ design complete (code deferred to retirement) |
 | EDD-018 | Workforce — staff directory/invite/employment lifecycle rebuilt on Identity→Membership→Employment→Position (2nd reference module, org-facing; retires `staff_users`/`staff_affiliations`) | ✅ design complete (code deferred to retirement) |
-| EDD-019 | Students & Family — Guardian Relationship (Identity ↔ Child Profile) as the central family aggregate; retires `parents`, `child_profiles.parent_id`, the Fees payer | 📐 design in progress |
+| EDD-019 | Students & Family — Guardian Relationship (Identity ↔ Child Profile) as the central family aggregate; retires `parents`, `child_profiles.parent_id`, the Fees payer | ✅ design complete (code deferred to retirement) |
 
 ### Organization Domain — *the organization and its structure*
 | EDD | Aggregate | Status |

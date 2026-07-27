@@ -1,7 +1,8 @@
 # EDD-019 — Students & Family (the family-side canonical domain)
 
-**Status:** DESIGN (in progress — no code until complete, per the canonical-first rule). The **last** of the
-three canonical domains closing EDD-016; retiring it clears the way for the final legacy retirement.
+**Status:** DESIGN COMPLETE. All six open decisions are resolved (see *Resolved decisions*); code is deferred
+to the actor-table retirement, per the canonical-first rule. The **last** of the three canonical domains
+closing EDD-016; retiring it clears the way for the final legacy retirement.
 
 > The dig confirms the hypothesis: **"parent" is not an aggregate — it is a role a person plays toward a
 > child.** The center of this domain is the **Guardian Relationship** (Identity ↔ Child), not a `parents`
@@ -54,23 +55,34 @@ guardianship becomes a first-class, richer relationship; the payer stops being "
 
 ## 3. Domain model
 
-> **Core invariant — a Guardian Relationship is the *only* source of family authority over a Child.**
-> Family-workspace access, payment responsibility, consent, communication, pickup rights, emergency-contact
-> standing, and compliance visibility **all derive from it**. No other aggregate may independently assert
-> "this person is this child's parent." (The family-side twin of Workforce's "an Employment is the only
-> source of organizational work.")
+> **Core invariant 1 — a Guardian Relationship is the *only* source of family authority over a Child.**
+> Family-workspace access, payment responsibility, consent, communication, pickup rights, and compliance
+> visibility **all derive from it**. No other aggregate may independently assert "this person is this child's
+> parent." (The family-side twin of Workforce's "an Employment is the only source of organizational work.")
+>
+> **Core invariant 2 — a Child Profile exists independently of any Guardian Relationship.** Guardians change
+> (divorce, foster care, a new co-guardian); the child does not. Relationships and Students attach *around* a
+> Child Profile, never as ownership *of* it — removing a guardian never deletes the child, and
+> `StudentEnrolled` transforms `Child Profile → Student` regardless of who the guardians are. (Admissions
+> already points this way.)
 
 ### The aggregates
 - **Child Profile** — the child as a person (identity-less; a first-class member, EDD-007). Owns child-scoped
   facts (name, dob, gender, medical). **Drops** its single `parent_id` — ownership is `is_primary` on a
   relationship.
 - **Guardian Relationship** *(central)* — `Identity (guardian) × Child Profile`, carrying the **authority**:
-  `relationship_type`, `is_primary`, `has_custody`, `pickup_authorized`, `emergency_priority`,
-  `fee_responsible`, and consent flags. This is the family-side analog of **Employment**.
+  `relationship_type`, `is_primary` (default school contact), `has_custody` (legal authority — a *distinct*
+  concept from primary, decision 6), `pickup_authorized`, `fee_responsible`, and V1 **consent flags**
+  (aggregate-ready, decision 4). The family-side analog of **Employment**.
+- **Emergency Contact** — a light **per-child** entity, *not* tied to guardianship (decision 5): an optional
+  `identity_id` link *or* just `name`/`phone`/`relationship`. A **non-guardian** (aunt, neighbour, driver) can
+  be an emergency contact with **zero** family authority — no reports, no invoices, no communications, just
+  "call in an emergency."
 - **Student** — `Child Profile × School` (the school membership: class/arm, admission#, status). Largely
   canonical already (`students.child_profile_id`).
-- **Parent Profile** — a **thin** Identity-scoped projection for *guardian preferences* (`payment_pin`,
-  communication prefs), **not** a person and **not** required. A guardian without preferences has no row.
+- **Parent Profile** — a **thin** Identity-scoped projection for *parent-experience* prefs only (`payment_pin`,
+  notification/communication/dashboard prefs), **not** a person and **not** required. Payment methods,
+  beneficiaries, cards, and wallets belong to a future **Payments** module — never here (decision 2).
 - **Family Workspace** — a **view**, not a table: the transitive closure of a guardian's relationships →
   children → students. "Family" is the *projection*, so we don't invent a hard Family table that's really
   just the set of relationships.
@@ -116,18 +128,34 @@ capability-gated (`students.view`, etc.).
 -- Guardian Relationship grows real authority (was: relationship + is_primary only).
 ALTER TABLE parent_children RENAME TO guardian_relationships;         -- name follows the concept
 ALTER TABLE guardian_relationships ADD COLUMN guardian_identity_id UUID REFERENCES identities(id); -- was parent_id → parents
-ALTER TABLE guardian_relationships ADD COLUMN has_custody        BOOLEAN NOT NULL DEFAULT FALSE;
-ALTER TABLE guardian_relationships ADD COLUMN pickup_authorized  BOOLEAN NOT NULL DEFAULT FALSE;
-ALTER TABLE guardian_relationships ADD COLUMN emergency_priority SMALLINT;      -- NULL = not an emergency contact
-ALTER TABLE guardian_relationships ADD COLUMN fee_responsible    BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE guardian_relationships ADD COLUMN has_custody       BOOLEAN NOT NULL DEFAULT FALSE;  -- legal authority (≠ is_primary)
+ALTER TABLE guardian_relationships ADD COLUMN pickup_authorized BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE guardian_relationships ADD COLUMN fee_responsible   BOOLEAN NOT NULL DEFAULT FALSE;
+-- V1 consent = flags on the granting relationship (aggregate-ready, decision 4):
+ALTER TABLE guardian_relationships ADD COLUMN consent_photo   BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE guardian_relationships ADD COLUMN consent_trips   BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE guardian_relationships ADD COLUMN consent_medical BOOLEAN NOT NULL DEFAULT FALSE;
 -- (drop parent_id after cutover)
 
 ALTER TABLE child_profiles DROP COLUMN parent_id;                     -- redundant with the relationship
 
+-- Emergency contacts — per child; may be a NON-guardian (decision 5). Identity link optional.
+CREATE TABLE emergency_contacts (
+    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    child_profile_id UUID NOT NULL REFERENCES child_profiles(id) ON DELETE CASCADE,
+    identity_id      UUID REFERENCES identities(id),   -- NULL = a non-guardian contact (name/phone only)
+    name             VARCHAR(255) NOT NULL,
+    phone            VARCHAR(20)  NOT NULL,
+    relationship     VARCHAR(50),
+    priority         SMALLINT NOT NULL DEFAULT 1,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- Fees payer becomes canonical (the deferred EDD-016 item).
 ALTER TABLE payments ADD COLUMN payer_identity_id UUID REFERENCES identities(id);  -- was parent_id → parents
 
--- Optional thin Parent Profile for guardian preferences (only if a guardian sets any).
+-- Optional thin Parent Profile — parent-experience prefs ONLY (decision 2). Payment methods / beneficiaries
+-- belong to a future Payments module, not here.
 CREATE TABLE parent_profiles (
     identity_id      UUID PRIMARY KEY REFERENCES identities(id) ON DELETE CASCADE,
     payment_pin_hash TEXT,
@@ -135,6 +163,10 @@ CREATE TABLE parent_profiles (
     updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 ```
+> **Consent is aggregate-ready (decision 4).** V1 ships boolean flags on the granting relationship; the
+> design reserves a future first-class **`Consent`** aggregate (`granted_at · expires_at · granted_by ·
+> revoked_at · evidence`) that those flags migrate into with no domain redesign, once consent needs audit or
+> expiry. Implementation simple now, domain future-proof.
 **Retired by this module:** `parents` (person → Identity; pin/prefs → `parent_profiles`; NIN/KYC already
 Identity via EDD-017), `child_profiles.parent_id`, and the deferred `payments.parent_id` +
 `ParentFeeService`'s `IdentityId ?? UserId` fallback (payer resolves to the guardian **Identity**).
@@ -159,16 +191,12 @@ Identity via EDD-017), `child_profiles.parent_id`, and the deferred `payments.pa
 5. **Retire `parents`** — after the above; concept grep → 0.
 6. **Verify** — build 0/0; suite; throwaway-PG migration; grep of the runtime for `parents`/`parent_id` = 0.
 
-## 11. Open decisions (for review before code)
-1. **Aggregate root** — Child Profile + Guardian Relationship central, **Family = view** (my lean, §3), vs a
-   hard **Family** aggregate. Does anything need to be true per-household rather than per-relationship?
-2. **Parent Profile** — thin projection (pin/prefs only, my lean) vs a fuller aggregate (payment methods,
-   notification routing, saved beneficiaries)?
-3. **Fee responsibility placement** — on the **Guardian Relationship** (per child, my lean) vs a Family-level
-   payer? (Split custody often means "each parent pays for their child".)
-4. **Consent model** — booleans on the relationship (photo, trips, medical) now, or a first-class Consent
-   aggregate with audit/expiry? (Leaning simple flags for V1; grow later.)
-5. **Emergency contacts** — always a guardian (relationship flag, my lean) vs allowing **non-guardian**
-   emergency contacts (a grandparent who isn't a guardian) as their own light entity?
-6. **`is_primary` vs `has_custody`** — are these distinct (primary = default contact; custody = legal), or
-   collapse to one? (Leaning distinct.)
+## 11. Resolved decisions
+| # | Decision | Resolution |
+| --- | --- | --- |
+| 1 | Aggregate root | **Child Profile + Guardian Relationship; Family = projection.** A "family" isn't stable enough to be an aggregate (divorce, blended, grandparents, foster, separated guardians). The durable fact is *Person X has authority over Child Y*; the workspace is "every Child Profile for which this Identity has an active relationship." No Family table. |
+| 2 | Parent Profile | **Thin projection** — payment PIN + notification/communication/dashboard prefs only. Payment methods / beneficiaries / cards / wallets belong to a future **Payments** module. Identity already owns the person. |
+| 3 | Fee responsibility | **On the Guardian Relationship** — *this adult is responsible for this child*, not *this household pays*. Naturally supports one guardian paying for Child A, another for Child B, or split shares. |
+| 4 | Consent | **Flags now, aggregate-ready later** — V1 boolean flags; designed to migrate into a first-class `Consent` aggregate (`granted_at · expires_at · granted_by · revoked_at · evidence`) with no redesign. Simple implementation, future-proof domain. |
+| 5 | Emergency contacts | **Allow non-guardians** — a per-child `emergency_contacts` entity with an *optional* Identity link (else name/phone/relationship). An aunt/neighbour/driver may be a contact with no reports/invoices/communications. |
+| 6 | `is_primary` vs `has_custody` | **Separate** — primary = *who the school communicates with*; custody = *who has legal authority*. (Primary=Mother, Custody=Both; or Primary=Guardian, Custody=Foster Agency.) They don't collapse. |

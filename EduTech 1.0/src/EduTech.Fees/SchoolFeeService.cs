@@ -60,7 +60,7 @@ internal sealed class SchoolFeeService : ISchoolFeeService
         // Owner-created fees are approved immediately; staff-created fees wait for owner approval.
         bool ownerCreated = _context.IsSchoolOwner;
         FeeApprovalStatus status = ownerCreated ? FeeApprovalStatus.Approved : FeeApprovalStatus.PendingApproval;
-        Guid? approvedBy = ownerCreated && Guid.TryParse(_context.UserId, out Guid uid) ? uid : null;
+        Guid? approvedBy = ownerCreated && Guid.TryParse(_context.IdentityId, out Guid identityId) ? identityId : null;
 
         Guid id = await _repository.CreateFeeTypeAsync(name, request.Amount, request.TermId,
             SnakeCaseEnum.ToWire(category), SnakeCaseEnum.ToWire(status), ownerCreated, approvedBy, classIds, cancellationToken);
@@ -124,8 +124,8 @@ internal sealed class SchoolFeeService : ISchoolFeeService
             return MapFeeType((await _repository.GetFeeTypeAsync(feeTypeId, cancellationToken))!);   // idempotent
         }
 
-        Guid.TryParse(_context.UserId, out Guid uid);
-        if (await _repository.ApproveAsync(feeTypeId, uid, cancellationToken) == 0)
+        Guid.TryParse(_context.IdentityId, out Guid identityId);
+        if (await _repository.ApproveAsync(feeTypeId, identityId, cancellationToken) == 0)
         {
             throw new AppErrorException("Fee status changed, please retry.", 409, ErrorCodes.Conflict);
         }

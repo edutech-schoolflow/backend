@@ -62,11 +62,27 @@ canonical identity (the Attendance/Grades pattern). Bounded, independently shipp
 
 1. **Attendance** — ✅ DONE (Sprint 1). `submitted_by`/`class_teacher` → membership; `overridden_by` → identity.
 2. **Grades** — ✅ DONE (Sprint 2). `submitted_by` + the shared subject-teacher column → membership.
-3. **Fees** — payer/operator identities; mostly straightforward.
-4. **Compliance** — actor identities; audit-style.
-5. **Audit** — isolated + mechanical *by the time the pattern is established* (don't start here — it's the
-   least valuable even though it looks easiest).
-6. **Students** — whatever remains (parent-by-`parent_id` lookups).
+3. **Fees** — ✅ DONE (Sprint 3). `approved_by_user_id` → identity (the fee-type approver).
+4. **Audit** — ✅ Sprint 4. `audit_logs.actor_user_id` → `actor_identity_id` (a bare UUID written from
+   `_context`; no legacy-table coupling). **The last clean convergence.**
+
+Investigation retired the other two candidates from this list — **they are not FK repoints, they are
+actor-table retirements** (same "owns/coupled vs references" test as Workforce):
+
+- **Compliance is the *Identity verification* service, not a convergence.** NIN/KYC is a fact about the
+  **person**, not the staff/parent row — today wrongly duplicated as `staff_users.nin`/`kyc_status` +
+  `parents.nin`/`kyc_status` (a person who is both staff and parent verifies twice). Canonical home =
+  **`identities`** (`nin`, `kyc_status`, `verified_at`, `verified_by`, `verification_provider`, …): verify
+  a person **once**, every membership/role consumes it. **Ownership split:** *Identity* owns the NIN/KYC
+  state + verification metadata; *Compliance* owns the verification **workflow** (providers, approve/reject,
+  policies, its own history); *Auth* **consumes** `Identity.KycStatus` — the login gate's current
+  `staff_users.kyc_status` read collapses to one clean `identity.kyc_status` read (cleaner than today, one
+  fewer legacy dependency). Tracked as **Identity KYC canonicalization**; the *migration* is deferred (it
+  shares the `staff_users`/`parents` tables, so it lands with their retirement to reduce risk) but its
+  *ownership* is Identity + Compliance — **not** a Workforce or Family cleanup.
+- **Students/Family** — `parents`/`parent_children` + the deferred Fees payer (`payments.parent_id`, the
+  `IdentityId ?? UserId` fallback): this **is** the `parents`-table retirement. (Parent NIN is *not* here —
+  it belongs to Identity KYC above.)
 
 ### Workforce is NOT in this list — it is a redesign, not a convergence
 
@@ -255,3 +271,34 @@ Two parent-payer concerns remain and **both defer to the Students/Family sprint*
 retirement): `payments.parent_id`, and the one surviving `_context.UserId` read —
 `ParentFeeService.CurrentIdentityId` (`_context.IdentityId ?? _context.UserId`), the identity-session
 parent fallback that is load-bearing for parent logins. Build 0/0 · full suite green · `0062` on throwaway PG.
+
+---
+
+## Sprint 4 — Audit Canonicalization (the last clean convergence)
+
+**Status: DONE — commit `eb29898`.** `audit_logs.actor_user_id` is a **bare UUID** (no legacy-table FK),
+written from `_context.UserId` on insert and read back in the audit response — the textbook repoint.
+
+### Domain / scope
+- `audit_logs.actor_user_id → actor_identity_id`, written from `_context.IdentityId` (the person who acted).
+  `actor_type` (staff/school/system) stays — it's portal metadata, not a legacy actor id.
+- Out of scope: `platform_admin_audit_log` (0008) — a distinct platform-admin actor model, not part of the
+  school identity graph.
+
+### Physical model (migration 0063 — V1, direct cut)
+| Table | Drop | Add |
+| --- | --- | --- |
+| `audit_logs` | `actor_user_id` (bare UUID) | `actor_identity_id → identities(id)` (nullable = system actions) |
+
+### File map
+- `EduTech.Shared/Audit/AuditLogRepository.cs` — `InsertAsync` stamps `_context.IdentityId`; `ListAsync`
+  selects `actor_identity_id AS ActorIdentityId`.
+- `EduTech.Shared/Audit/IAuditLogRepository.cs` — `AuditLogEntry.ActorUserId → ActorIdentityId`
+  (**FE-affecting:** the audit-log response field renames; minor, pre-launch).
+
+### Exit
+The audit trail attributes actions to a canonical **identity**. Build 0/0 · full suite green · `0063` on
+throwaway PG. With Audit done, **the clean-convergence phase of EDD-016 is complete** — everything left is
+a redesign/retirement: **Identity KYC canonicalization** (NIN/KYC → `identities`; Compliance = verification
+service) · **Workforce** redesign · **Students/Family** (`parents` retirement) · then the final teardown
+(drop actor tables + `affiliation_id`/`user_id` claims + `reference_id`).

@@ -20,7 +20,6 @@ business module stop using legacy identities.
 | `attendance.submitted_by_affiliation_id`, `class_teacher_affiliation_id` | Attendance | Employment / Membership |
 | Grades teacher / `submitted_by` / `approved_by` | Grades | Employment / Membership |
 | `audit.actor_id` | Audit | Identity |
-| staff-invite `invited_by` | Workforce | Identity |
 | Fees payer / operator ids | Fees | Identity / Membership |
 | Compliance actor ids | Compliance | Identity |
 | Parent `parent_id` lookups | Students (Family) | Identity / Membership |
@@ -58,17 +57,36 @@ When **every** module is done: drop the `affiliation_id`/`user_id` claims from t
 
 ## Module order (value + proof first; mechanical last)
 
-1. **Attendance** — heavily exercised, `submitted_by_affiliation_id`/`class_teacher_affiliation_id` is
-   *exactly* the canonicalization to prove. Do it first to establish the pattern.
-2. **Grades** — same shape (teacher / submitted_by / approved_by). Second proof.
-3. **Workforce** — invites, employment/role changes. Lives next to Employment already.
-4. **Fees** — payer/operator identities; mostly straightforward.
-5. **Compliance** — actor identities; audit-style.
-6. **Audit** — isolated + mechanical *by the time the pattern is established* (don't start here — it's the
-   least valuable even though it looks easiest).
-7. **Students** — whatever remains (parent-by-`parent_id` lookups).
+These are **convergences** — a module *FK-references* actor ids, so the work is a column repoint onto
+canonical identity (the Attendance/Grades pattern). Bounded, independently shippable, no platform risk:
 
-Each is bounded, independently shippable, and free of platform risk.
+1. **Attendance** — ✅ DONE (Sprint 1). `submitted_by`/`class_teacher` → membership; `overridden_by` → identity.
+2. **Grades** — ✅ DONE (Sprint 2). `submitted_by` + the shared subject-teacher column → membership.
+3. **Fees** — payer/operator identities; mostly straightforward.
+4. **Compliance** — actor identities; audit-style.
+5. **Audit** — isolated + mechanical *by the time the pattern is established* (don't start here — it's the
+   least valuable even though it looks easiest).
+6. **Students** — whatever remains (parent-by-`parent_id` lookups).
+
+### Workforce is NOT in this list — it is a redesign, not a convergence
+
+Investigation (Sprint 2 close) found **Workforce *owns* `staff_affiliations` + `staff_users`** — it doesn't
+FK-reference them, it *is* the legacy staff actor model. There is no column to repoint; canonicalizing
+Workforce means answering "what is the authoritative staff directory / profile / invite / employment-change
+write model?" — a **redesign of the bounded context**, not a column migration.
+
+So Workforce is **promoted out of convergence** into its own **design-first, reference-quality module**
+(its own EDD; Product → Domain → Workflow → Plan → Code, exactly like Admissions). Admissions proved the
+platform from a *student-facing* workflow; **Workforce proves it from an *organization-facing* one** —
+employment lifecycle, hiring/invitations, position + permission-template assignment, staff directory,
+profile, activation/deactivation — built entirely on **Identity → Membership → Employment → Position**,
+with **no `staff_affiliations`/`staff_users` in the runtime model**.
+
+**Sequencing (agreed):** finish the convergences (Fees → Compliance → Audit → Students) → build **Workforce**
+as the last owner of the legacy model → then one deliberate **legacy retirement**: drop the actor tables,
+the `affiliation_id`/`user_id` compat claims, and `access_contexts.reference_id` together, with confidence
+because nothing else depends on them. This preserves the distinction between *module convergence* and
+*module redesign* that has served the project well.
 
 ---
 

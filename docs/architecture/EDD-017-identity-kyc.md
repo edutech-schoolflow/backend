@@ -1,8 +1,8 @@
 # EDD-017 — Identity Verification (KYC)
 
-**Status:** DESIGN COMPLETE. All four policy questions are resolved (see *Resolved decisions*);
-implementation is deferred to the actor-table retirement, per the canonical-first rule. The first of the
-three canonical domains that close EDD-016 (Identity KYC → Workforce → Family → retirement).
+**Status:** DESIGN COMPLETE · **IMPLEMENTATION UNDERWAY** (Slice 1 shipped). Built in additive-first slices
+so the canonical columns stay reader-less until Auth flips — there is never a dual-write window. The first
+of the three canonical domains that close EDD-016 (Identity KYC → Workforce → Family → retirement).
 
 > **The reframe.** KYC is not a Staff feature or a Parent feature. It is a fact about a **person** — an
 > **Identity**. Today that fact is wrongly duplicated as `staff_users.nin`/`kyc_status` and
@@ -202,22 +202,25 @@ status ones. The consumer that lifts read-only mode listens to **`IdentityVerifi
 
 ---
 
-## Implementation plan (design-first; code later, at the actor-table retirement)
+## Implementation plan — staged slices (Design → Implement → Verify → Flip → Retire)
 
-Per the canonical-first rule, **no code ships from this EDD until `staff_users`/`parents` retire** (so we
-never dual-write KYC across old + new). When it does, the order is:
+Refinement of an earlier "defer all code" note: the work ships in **additive-first slices**, so the
+canonical columns stay reader-less until Auth flips to them — **no dual-write window**.
 
-1. **Schema** — add the `identities` KYC columns + `identity_verifications`; `kyc_status` defaults `unverified`.
-2. **Compliance service** — re-key off `_context.IdentityId`; write `identities` + append history; drop
-   `ResolveActor()` (`UserType`/`UserId`). One code path for all actor types.
-3. **Auth consumes** — repoint the `staff_users.kyc_status` reads (`StaffUserRepository`, `ContextMinter`,
-   `UnifiedAuthService`, `StaffAuthService`) to `identities.kyc_status`. This is the one auth touch — a
-   *simplification* (one read, one source), reviewed as such.
-4. **Events** — publish the Identity verification events (Submitted / Succeeded / Failed / Rejected /
-   ReverificationRequired); wire notification + audit.
-5. **Retire** — drop `nin`/`kyc_status` from `staff_users` + `parents` (part of their table teardown).
-6. **Verify** — build 0/0; full suite; migration on throwaway PG; concept grep: no person `kyc_status`
-   read outside Compliance + the one Auth consumer.
+1. **Slice 1 — canonical data model** ✅ **DONE (migration `0064`).** Adds `identities.{nin, kyc_status,
+   nin_verified_at, reverification_required}` + `identity_verifications` + backfill from `staff_users`/`parents`
+   (best status wins, NIN coalesced; V1 has no data so it's a release no-op). **No runtime readers** → inert,
+   no dual-write. Verified on throwaway PG: schema, CHECK, and backfill precedence (`verified` beats `pending`).
+2. **Slice 2 — Compliance workflow on Identity.** Re-key off `_context.IdentityId`; `SubmitNin` writes
+   `identities` + appends an attempt; drop `ResolveActor()` (`UserType`/`UserId`). One path for all actor
+   types; publish the Identity verification events. **Still no Auth changes.**
+3. **Slice 3 — Auth reads canonical.** Repoint the `staff_users.kyc_status` reads (`StaffUserRepository`,
+   `ContextMinter`, `UnifiedAuthService`, `StaffAuthService`) to `identities.kyc_status` — one read, one
+   source (a *simplification*, reviewed as such). Keep legacy writes until cutover if needed.
+4. **Slice 4 — runtime cleanup.** Remove the duplicated legacy reads; `staff_users`/`parents` `kyc_status`
+   become compatibility-only.
+5. **Slice 5 — retirement.** With Workforce + Family, drop `nin`/`kyc_status` from `staff_users` + `parents`;
+   concept grep: no person `kyc_status`/`nin` outside Compliance + the one canonical column.
 
 ## Resolved decisions
 

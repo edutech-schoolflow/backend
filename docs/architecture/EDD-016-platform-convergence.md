@@ -150,3 +150,54 @@ migrated column together — never leave a dropped column with a stale reader in
 **FE contract that changed:** `SetClassTeacherRequest` / `ClassTeacherResponse` and the staff-directory
 picker now carry `membership_id` (was `affiliation_id`). Acceptable pre-launch; the frontend updates
 separately. This is the first convergence unit that touched an API contract, not just server internals.
+
+---
+
+## Sprint 2 — Grades Canonicalization
+
+**Status: DONE — commit `156dec8`.** Removes `affiliation_id` from the **Grades** module entirely.
+Scoped by column ownership (the Sprint 1 rule): two columns, and the shared one drags in Classes.
+
+### Product
+Teachers enter/submit scores for the classes and subjects they teach; the owner may enter any. Report
+cards render from grades. None of this changes — only the *identities* behind "who submitted this grade"
+and "who teaches this subject in this arm" become canonical.
+
+### Domain
+Grades' remaining actor-keys, and where each lives:
+| Column | Owner module | Read by | Canonical target |
+| --- | --- | --- | --- |
+| `grade_records.submitted_by_affiliation_id` | Grades | Grades only | `submitted_by_membership_id` (NULL = owner) |
+| `class_subject_teachers.teacher_affiliation_id` | **Classes** | Classes (assign/list) **+ Grades** (scoping) | `teacher_membership_id` |
+
+Same key choice as Sprint 1: **`membership_id`** (in-token 1:1 of `affiliation_id`, no employments
+lookup). Subject-teacher name resolves `memberships → identities` (retires the last `staff_users`
+name-JOIN in `ClassRepository`). "Active subject teacher" reuses `MembershipActiveAsync` (added in
+Sprint 1) — so `AffiliationActiveAsync` is **deleted** this sprint.
+
+### Physical model (migration 0061 — V1, direct cut)
+| Table | Drop | Add |
+| --- | --- | --- |
+| `grade_records` | `submitted_by_affiliation_id` | `submitted_by_membership_id → memberships` (NULL = owner) |
+| `class_subject_teachers` | `teacher_affiliation_id` (NOT NULL, in the UNIQUE) | `teacher_membership_id → memberships` (NOT NULL); re-add `UNIQUE(class_arm_id, teacher_membership_id, subject)` |
+
+### File map
+- **Grades** — `GradeRepository` (`submitted_by_membership_id` write; `IsSubjectTeacherAsync` +
+  `ListGradeableArms` subject branch → `teacher_membership_id`/`@Mem`; the `ArmGradingRow` class-teacher
+  field is already canonical from S1), `GradeService` (`submittedBy` → `CurrentMembership()`; subject-teacher
+  scoping → membership; **delete `CurrentAffiliation()`** — Grades then reads zero `_context.AffiliationId`).
+- **Classes** (shared column) — `ClassRepository` (`SubjectTeacherRow.TeacherMembershipId`; `AddSubjectTeacher`
+  INSERT + `ON CONFLICT (…, teacher_membership_id, …)`; `ListSubjectTeachers` name-JOIN → `memberships/identities`;
+  swap `AffiliationActiveAsync`→`MembershipActiveAsync`, then delete the former + the `staff_users` `TeacherNameSql`),
+  `ClassService` (subject-teacher validate/map → membership), `ClassDtos`
+  (**FE-affecting:** `SubjectTeacherResponse.TeacherMembershipId`, `AddSubjectTeacherRequest.TeacherMembershipId`).
+- Tests: GradeServiceTests (subject-teacher = membership now; owner path), any Classes subject-teacher tests.
+
+### Exit — achieved
+Grades + Classes hold **zero** `staff_affiliations` FKs and make **zero** `_context.AffiliationId` reads
+(concept grep → 0). The subject-teacher assignment is a `membership_id` contract (FE-affecting), same as
+class-teacher. Build 0/0 · 522 tests green · migration `0001→0061` verified on throwaway PG — the
+final-schema grep confirms **no `*_affiliation_id` column remains** in any of the six migrated tables
+(`attendance_records`, `classes`, `class_arms`, `staff_checkins`, `grade_records`, `class_subject_teachers`).
+With the shared `class_teacher`/subject-teacher columns both gone, **the entire Classes module is now
+affiliation-free** — there is no separate Classes convergence sprint to schedule.

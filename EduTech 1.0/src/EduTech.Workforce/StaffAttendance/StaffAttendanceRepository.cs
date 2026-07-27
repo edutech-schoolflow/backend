@@ -7,12 +7,12 @@ internal interface IStaffAttendanceRepository
     Task<SettingsRow?> GetSettingsAsync(Guid schoolId, CancellationToken cancellationToken);
     Task UpsertSettingsAsync(Guid schoolId, SettingsRow row, CancellationToken cancellationToken);
 
-    /// <summary>Insert-or-replace the day's check-in for an affiliation (re-check-in overwrites).</summary>
+    /// <summary>Insert-or-replace the day's check-in for a membership (re-check-in overwrites).</summary>
     Task<CheckInRow> UpsertCheckInAsync(CheckInRow row, CancellationToken cancellationToken);
 
-    Task<CheckInRow?> GetForAffiliationAsync(Guid affiliationId, DateOnly date, CancellationToken cancellationToken);
+    Task<CheckInRow?> GetForMembershipAsync(Guid membershipId, DateOnly date, CancellationToken cancellationToken);
     Task<IReadOnlyList<CheckInRow>> ListForSchoolAsync(Guid schoolId, DateOnly date, CancellationToken cancellationToken);
-    Task<IReadOnlyList<MonthlyRow>> MonthlySummaryAsync(Guid affiliationId, CancellationToken cancellationToken);
+    Task<IReadOnlyList<MonthlyRow>> MonthlySummaryAsync(Guid membershipId, CancellationToken cancellationToken);
 }
 
 internal sealed class SettingsRow
@@ -28,7 +28,7 @@ internal sealed class CheckInRow
 {
     public Guid Id { get; init; }
     public Guid SchoolId { get; init; }
-    public Guid AffiliationId { get; init; }
+    public Guid MembershipId { get; init; }
     public DateOnly Date { get; init; }
     public DateTime? CheckInAt { get; init; }
     public double? Lat { get; init; }
@@ -36,7 +36,7 @@ internal sealed class CheckInRow
     public int? DistanceM { get; init; }
     public string Status { get; init; } = string.Empty;
     public bool IsManualOverride { get; init; }
-    public Guid? OverriddenBy { get; init; }
+    public Guid? OverriddenByIdentityId { get; init; }
     public DateTime CreatedAt { get; init; }
 }
 
@@ -86,51 +86,51 @@ internal sealed class StaffAttendanceRepository : BaseRepository, IStaffAttendan
         return await QuerySingleOrDefaultAsync<CheckInRow>(
             """
             INSERT INTO staff_checkins
-                (school_id, affiliation_id, date, check_in_at, lat, lng, distance_m, status,
-                 is_manual_override, overridden_by)
-            VALUES (@SchoolId, @AffiliationId, @Date, @CheckInAt, @Lat, @Lng, @DistanceM, @Status,
-                 @IsManualOverride, @OverriddenBy)
-            ON CONFLICT (affiliation_id, date) DO UPDATE SET
+                (school_id, membership_id, date, check_in_at, lat, lng, distance_m, status,
+                 is_manual_override, overridden_by_identity_id)
+            VALUES (@SchoolId, @MembershipId, @Date, @CheckInAt, @Lat, @Lng, @DistanceM, @Status,
+                 @IsManualOverride, @OverriddenByIdentityId)
+            ON CONFLICT (membership_id, date) DO UPDATE SET
                 check_in_at = EXCLUDED.check_in_at, lat = EXCLUDED.lat, lng = EXCLUDED.lng,
                 distance_m = EXCLUDED.distance_m, status = EXCLUDED.status,
-                is_manual_override = EXCLUDED.is_manual_override, overridden_by = EXCLUDED.overridden_by
-            RETURNING id AS Id, school_id AS SchoolId, affiliation_id AS AffiliationId, date AS Date,
+                is_manual_override = EXCLUDED.is_manual_override, overridden_by_identity_id = EXCLUDED.overridden_by_identity_id
+            RETURNING id AS Id, school_id AS SchoolId, membership_id AS MembershipId, date AS Date,
                       check_in_at AS CheckInAt, lat AS Lat, lng AS Lng, distance_m AS DistanceM,
                       status AS Status, is_manual_override AS IsManualOverride,
-                      overridden_by AS OverriddenBy, created_at AS CreatedAt
+                      overridden_by_identity_id AS OverriddenByIdentityId, created_at AS CreatedAt
             """,
             row, cancellationToken) ?? throw new InvalidOperationException("check-in upsert returned no row");
     }
 
-    public Task<CheckInRow?> GetForAffiliationAsync(Guid affiliationId, DateOnly date, CancellationToken cancellationToken)
+    public Task<CheckInRow?> GetForMembershipAsync(Guid membershipId, DateOnly date, CancellationToken cancellationToken)
     {
         return QuerySingleOrDefaultAsync<CheckInRow>(
             """
-            SELECT id AS Id, school_id AS SchoolId, affiliation_id AS AffiliationId, date AS Date,
+            SELECT id AS Id, school_id AS SchoolId, membership_id AS MembershipId, date AS Date,
                    check_in_at AS CheckInAt, lat AS Lat, lng AS Lng, distance_m AS DistanceM,
                    status AS Status, is_manual_override AS IsManualOverride,
-                   overridden_by AS OverriddenBy, created_at AS CreatedAt
+                   overridden_by_identity_id AS OverriddenByIdentityId, created_at AS CreatedAt
             FROM staff_checkins
-            WHERE affiliation_id = @AffiliationId AND date = @Date
+            WHERE membership_id = @MembershipId AND date = @Date
             """,
-            new { AffiliationId = affiliationId, Date = date }, cancellationToken);
+            new { MembershipId = membershipId, Date = date }, cancellationToken);
     }
 
     public Task<IReadOnlyList<CheckInRow>> ListForSchoolAsync(Guid schoolId, DateOnly date, CancellationToken cancellationToken)
     {
         return QueryAsync<CheckInRow>(
             """
-            SELECT id AS Id, school_id AS SchoolId, affiliation_id AS AffiliationId, date AS Date,
+            SELECT id AS Id, school_id AS SchoolId, membership_id AS MembershipId, date AS Date,
                    check_in_at AS CheckInAt, lat AS Lat, lng AS Lng, distance_m AS DistanceM,
                    status AS Status, is_manual_override AS IsManualOverride,
-                   overridden_by AS OverriddenBy, created_at AS CreatedAt
+                   overridden_by_identity_id AS OverriddenByIdentityId, created_at AS CreatedAt
             FROM staff_checkins
             WHERE school_id = @SchoolId AND date = @Date
             """,
             new { SchoolId = schoolId, Date = date }, cancellationToken);
     }
 
-    public Task<IReadOnlyList<MonthlyRow>> MonthlySummaryAsync(Guid affiliationId, CancellationToken cancellationToken)
+    public Task<IReadOnlyList<MonthlyRow>> MonthlySummaryAsync(Guid membershipId, CancellationToken cancellationToken)
     {
         return QueryAsync<MonthlyRow>(
             """
@@ -139,10 +139,10 @@ internal sealed class StaffAttendanceRepository : BaseRepository, IStaffAttendan
                    COUNT(*) FILTER (WHERE status = 'late')    AS Late,
                    COUNT(*) FILTER (WHERE status = 'absent')  AS Absent
             FROM staff_checkins
-            WHERE affiliation_id = @AffiliationId
+            WHERE membership_id = @MembershipId
             GROUP BY to_char(date, 'YYYY-MM')
             ORDER BY Month DESC
             """,
-            new { AffiliationId = affiliationId }, cancellationToken);
+            new { MembershipId = membershipId }, cancellationToken);
     }
 }

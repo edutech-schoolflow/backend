@@ -29,7 +29,7 @@ internal sealed class GradeService : IGradeService
     public async Task<IReadOnlyList<GradeableArmResponse>> ListGradeableArmsAsync(CancellationToken cancellationToken)
     {
         IReadOnlyList<GradeableArmRow> rows =
-            await _repository.ListGradeableArmsAsync(CurrentAffiliation(), _context.IsSchoolOwner, cancellationToken);
+            await _repository.ListGradeableArmsAsync(CurrentMembership(), CurrentAffiliation(), _context.IsSchoolOwner, cancellationToken);
 
         return rows.Select(r => new GradeableArmResponse
         {
@@ -221,13 +221,16 @@ internal sealed class GradeService : IGradeService
             return (arm, subject);
         }
 
-        Guid? affiliation = CurrentAffiliation();
+        Guid? membership = CurrentMembership();
         ClassLevel level = SnakeCaseEnum.Parse<ClassLevel>(arm.Level);
         bool primaryTier = IsPrimaryTier(level);
 
-        bool allowed = affiliation is Guid aff && (primaryTier
-            ? arm.ClassTeacherAffiliationId == aff
-            : await _repository.IsSubjectTeacherAsync(armId, subject.Name, aff, cancellationToken));
+        // Primary tier: the class teacher grades (canonical membership). Secondary: the subject teacher
+        // grades (subject teachers stay affiliation-keyed until the Grades convergence sprint).
+        bool allowed = primaryTier
+            ? (membership is Guid mem && arm.ClassTeacherMembershipId == mem)
+            : (CurrentAffiliation() is Guid aff
+                 && await _repository.IsSubjectTeacherAsync(armId, subject.Name, aff, cancellationToken));
 
         if (!allowed)
         {
@@ -236,7 +239,7 @@ internal sealed class GradeService : IGradeService
                     ? "Only the class teacher of this arm can enter its grades."
                     : "You can only enter grades for a subject you teach in this arm.",
                 403, ErrorCodes.AccessDenied,
-                logReason: $"Affiliation {affiliation?.ToString() ?? "(none)"} attempted to grade arm {armId} " +
+                logReason: $"Membership {membership?.ToString() ?? "(none)"} attempted to grade arm {armId} " +
                            $"subject '{subject.Name}' (level {level}).");
         }
 
@@ -263,4 +266,7 @@ internal sealed class GradeService : IGradeService
 
     private Guid? CurrentAffiliation() =>
         Guid.TryParse(_context.AffiliationId, out Guid id) ? id : (Guid?)null;
+
+    private Guid? CurrentMembership() =>
+        Guid.TryParse(_context.MembershipId, out Guid id) ? id : (Guid?)null;
 }

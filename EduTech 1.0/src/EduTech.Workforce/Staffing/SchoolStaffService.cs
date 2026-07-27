@@ -123,6 +123,7 @@ internal sealed class SchoolStaffService : ISchoolStaffService
     private static StaffDirectoryItemResponse Map(StaffDirectoryRow r) => new StaffDirectoryItemResponse
     {
         Id = r.Id,
+        MembershipId = r.MembershipId,
         StaffUserId = r.StaffUserId,
         FirstName = r.FirstName,
         MiddleName = r.MiddleName,

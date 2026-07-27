@@ -11,7 +11,7 @@ internal interface IGradeRepository
     Task<bool> TermExistsAsync(Guid termId, CancellationToken cancellationToken);
     Task<bool> IsSubjectTeacherAsync(Guid armId, string subjectName, Guid affiliationId, CancellationToken cancellationToken);
 
-    Task<IReadOnlyList<GradeableArmRow>> ListGradeableArmsAsync(Guid? affiliationId, bool isOwner, CancellationToken cancellationToken);
+    Task<IReadOnlyList<GradeableArmRow>> ListGradeableArmsAsync(Guid? membershipId, Guid? affiliationId, bool isOwner, CancellationToken cancellationToken);
     Task<IReadOnlyList<Guid>> GetActiveStudentIdsAsync(Guid armId, CancellationToken cancellationToken);
 
     Task<GradeRecordHeaderRow?> GetRecordHeaderAsync(Guid armId, Guid subjectId, Guid termId,
@@ -60,7 +60,7 @@ internal sealed class ArmGradingRow
     public string ArmName { get; init; } = string.Empty;
     public Guid ClassId { get; init; }
     public string Level { get; init; } = string.Empty;
-    public Guid? ClassTeacherAffiliationId { get; init; }
+    public Guid? ClassTeacherMembershipId { get; init; }
 }
 
 internal sealed class SubjectInfoRow
@@ -123,7 +123,7 @@ internal sealed class GradeRepository : TenantRepository, IGradeRepository
         return QuerySingleOrDefaultAsync<ArmGradingRow>(
             $"""
             SELECT a.id, {ArmNameSql} AS ArmName, a.class_id AS ClassId, c.level AS Level,
-                   a.class_teacher_affiliation_id AS ClassTeacherAffiliationId
+                   a.class_teacher_membership_id AS ClassTeacherMembershipId
             FROM class_arms a
             JOIN classes c ON c.id = a.class_id
             WHERE a.id = @Id AND a.school_id = @SchoolId
@@ -160,9 +160,11 @@ internal sealed class GradeRepository : TenantRepository, IGradeRepository
             TenantParameters(new { ArmId = armId, Aff = affiliationId, Subject = subjectName }), cancellationToken) > 0;
     }
 
-    public Task<IReadOnlyList<GradeableArmRow>> ListGradeableArmsAsync(Guid? affiliationId, bool isOwner,
+    public Task<IReadOnlyList<GradeableArmRow>> ListGradeableArmsAsync(Guid? membershipId, Guid? affiliationId, bool isOwner,
         CancellationToken cancellationToken)
     {
+        // Primary tier scopes by the class teacher (canonical membership); secondary tier by the subject
+        // teacher (class_subject_teachers stays affiliation-keyed until the Grades convergence sprint).
         return QueryAsync<GradeableArmRow>(
             $"""
             SELECT a.id AS ArmId, {ArmNameSql} AS ArmName, c.id AS ClassId, c.name AS ClassName, c.level AS Level
@@ -170,14 +172,14 @@ internal sealed class GradeRepository : TenantRepository, IGradeRepository
             JOIN classes c ON c.id = a.class_id
             WHERE a.school_id = @SchoolId AND (
                   @IsOwner
-               OR (c.level IN ('pre_school','nursery','primary') AND a.class_teacher_affiliation_id = @Aff)
+               OR (c.level IN ('pre_school','nursery','primary') AND a.class_teacher_membership_id = @Mem)
                OR (c.level IN ('junior_secondary','senior_secondary') AND EXISTS (
                      SELECT 1 FROM class_subject_teachers st
                      WHERE st.class_arm_id = a.id AND st.teacher_affiliation_id = @Aff))
             )
             ORDER BY c.display_order, c.name, a.arm
             """,
-            TenantParameters(new { IsOwner = isOwner, Aff = affiliationId }), cancellationToken);
+            TenantParameters(new { IsOwner = isOwner, Mem = membershipId, Aff = affiliationId }), cancellationToken);
     }
 
     public Task<IReadOnlyList<Guid>> GetActiveStudentIdsAsync(Guid armId, CancellationToken cancellationToken)

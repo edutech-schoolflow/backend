@@ -130,6 +130,7 @@ internal sealed class StaffProfileService : IStaffProfileService
     private static StaffDirectoryItemResponse MapDirectory(StaffDirectoryRow r) => new()
     {
         Id = r.Id,
+        MembershipId = r.MembershipId,
         StaffUserId = r.StaffUserId,
         FirstName = r.FirstName,
         MiddleName = r.MiddleName,

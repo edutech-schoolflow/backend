@@ -27,15 +27,18 @@ public class GradeServiceTests
         _context.SetupGet(c => c.AffiliationId).Returns((string?)null);
     }
 
-    private void AsStaff(Guid affiliation)
+    private void AsStaff(Guid id)
     {
+        // Same id serves both claims: class-teacher scoping now reads MembershipId (canonical, this sprint);
+        // subject-teacher scoping still reads AffiliationId (migrates in the Grades convergence sprint).
         _context.SetupGet(c => c.IsSchoolOwner).Returns(false);
-        _context.SetupGet(c => c.AffiliationId).Returns(affiliation.ToString());
+        _context.SetupGet(c => c.MembershipId).Returns(id.ToString());
+        _context.SetupGet(c => c.AffiliationId).Returns(id.ToString());
     }
 
     private void Arm_Is(string level, Guid? classTeacher) =>
         _repo.Setup(r => r.GetArmAsync(Arm, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new ArmGradingRow { Id = Arm, ArmName = "JSS 1A", ClassId = ClassId, Level = level, ClassTeacherAffiliationId = classTeacher });
+            .ReturnsAsync(new ArmGradingRow { Id = Arm, ArmName = "JSS 1A", ClassId = ClassId, Level = level, ClassTeacherMembershipId = classTeacher });
 
     private void Subject_Is(Guid classId) =>
         _repo.Setup(r => r.GetSubjectAsync(Subject, It.IsAny<CancellationToken>()))

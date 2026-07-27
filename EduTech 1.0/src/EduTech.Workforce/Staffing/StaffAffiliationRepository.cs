@@ -77,6 +77,7 @@ internal sealed class StaffAffiliationRow
 internal sealed class StaffDirectoryRow
 {
     public Guid Id { get; init; }                 // affiliation id (the per-school record)
+    public Guid? MembershipId { get; init; }      // canonical staff identity at this school (EDD-016)
     public Guid StaffUserId { get; init; }
     public string FirstName { get; init; } = string.Empty;
     public string? MiddleName { get; init; }
@@ -218,10 +219,11 @@ internal sealed class StaffAffiliationRepository : BaseRepository, IStaffAffilia
     {
         return await QueryAsync<StaffDirectoryRow>(
             """
-            SELECT a.id, a.staff_user_id, u.first_name, u.middle_name, u.last_name, u.phone, u.email,
+            SELECT a.id, m.id AS membership_id, a.staff_user_id, u.first_name, u.middle_name, u.last_name, u.phone, u.email,
                    a.role, a.position, a.employment_type, a.status, a.joined_at, a.created_at
             FROM staff_affiliations a
             JOIN staff_users u ON u.id = a.staff_user_id
+            LEFT JOIN memberships m ON m.identity_id = a.identity_id AND m.school_id = a.school_id
             WHERE a.school_id = @SchoolId
             ORDER BY a.created_at DESC
             """,
@@ -245,10 +247,11 @@ internal sealed class StaffAffiliationRepository : BaseRepository, IStaffAffilia
     {
         return QuerySingleOrDefaultAsync<StaffDirectoryRow>(
             """
-            SELECT a.id, a.staff_user_id, u.first_name, u.middle_name, u.last_name, u.phone, u.email,
+            SELECT a.id, m.id AS membership_id, a.staff_user_id, u.first_name, u.middle_name, u.last_name, u.phone, u.email,
                    a.role, a.position, a.employment_type, a.status, a.joined_at, a.created_at
             FROM staff_affiliations a
             JOIN staff_users u ON u.id = a.staff_user_id
+            LEFT JOIN memberships m ON m.identity_id = a.identity_id AND m.school_id = a.school_id
             WHERE a.id = @Id AND a.school_id = @SchoolId
             """,
             new { Id = affiliationId, SchoolId = schoolId }, cancellationToken);

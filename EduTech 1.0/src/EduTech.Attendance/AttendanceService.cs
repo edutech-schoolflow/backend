@@ -26,7 +26,7 @@ internal sealed class AttendanceService : IAttendanceService
     public async Task<IReadOnlyList<MarkableArmResponse>> ListMarkableArmsAsync(CancellationToken cancellationToken)
     {
         IReadOnlyList<MarkableArmRow> rows =
-            await _repository.ListMarkableArmsAsync(CurrentAffiliation(), _context.IsSchoolOwner, cancellationToken);
+            await _repository.ListMarkableArmsAsync(CurrentMembership(), _context.IsSchoolOwner, cancellationToken);
 
         return rows.Select(r => new MarkableArmResponse
         {
@@ -122,7 +122,7 @@ internal sealed class AttendanceService : IAttendanceService
             termId = await _repository.GetCurrentTermIdAsync(cancellationToken);
         }
 
-        Guid? submittedBy = _context.IsSchoolOwner ? null : CurrentAffiliation();
+        Guid? submittedBy = _context.IsSchoolOwner ? null : CurrentMembership();
 
         (Guid id, DateTime submittedAt) = await _repository.UpsertRecordAsync(
             request.ClassId, request.ArmId, request.Date, termId, submittedBy, marks, cancellationToken);
@@ -194,21 +194,21 @@ internal sealed class AttendanceService : IAttendanceService
             return unit;
         }
 
-        Guid? affiliation = CurrentAffiliation();
-        if (affiliation is null || unit.ClassTeacherAffiliationId != affiliation)
+        Guid? membership = CurrentMembership();
+        if (membership is null || unit.ClassTeacherMembershipId != membership)
         {
             throw new AppErrorException(
                 "You can only mark attendance for classes where you are the class teacher.",
                 403, ErrorCodes.AccessDenied, logReason:
-                $"Affiliation {affiliation?.ToString() ?? "(none)"} attempted to mark unit class={classId} arm={armId?.ToString() ?? "(none)"} " +
-                $"whose class teacher is {unit.ClassTeacherAffiliationId?.ToString() ?? "(unassigned)"}.");
+                $"Membership {membership?.ToString() ?? "(none)"} attempted to mark unit class={classId} arm={armId?.ToString() ?? "(none)"} " +
+                $"whose class teacher is {unit.ClassTeacherMembershipId?.ToString() ?? "(unassigned)"}.");
         }
 
         return unit;
     }
 
-    private Guid? CurrentAffiliation() =>
-        Guid.TryParse(_context.AffiliationId, out Guid id) ? id : (Guid?)null;
+    private Guid? CurrentMembership() =>
+        Guid.TryParse(_context.MembershipId, out Guid id) ? id : (Guid?)null;
 
     // School days are West Africa Time (UTC+1, no DST) — plain UTC would make "today" roll over at
     // 1 a.m. WAT, defaulting rosters to yesterday and rejecting just-after-midnight marks as future.

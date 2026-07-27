@@ -65,7 +65,7 @@ internal sealed class StaffAttendanceService : IStaffAttendanceService
 
     public async Task<StaffCheckInResponse> CheckInAsync(CheckInRequest request, CancellationToken cancellationToken)
     {
-        Guid affiliationId = AffiliationId();
+        Guid membershipId = MembershipId();
         SettingsRow settings = await _repository.GetSettingsAsync(SchoolId(), cancellationToken) ?? new SettingsRow();
 
         int? distance = null;
@@ -87,7 +87,7 @@ internal sealed class StaffAttendanceService : IStaffAttendanceService
         CheckInRow saved = await _repository.UpsertCheckInAsync(new CheckInRow
         {
             SchoolId = SchoolId(),
-            AffiliationId = affiliationId,
+            MembershipId = membershipId,
             Date = DateOnly.FromDateTime(lagosNow),
             CheckInAt = DateTime.UtcNow,
             Lat = request.Lat,
@@ -95,7 +95,7 @@ internal sealed class StaffAttendanceService : IStaffAttendanceService
             DistanceM = distance,
             Status = status,
             IsManualOverride = false,
-            OverriddenBy = null
+            OverriddenByIdentityId = null
         }, cancellationToken);
 
         return Map(saved);
@@ -103,14 +103,14 @@ internal sealed class StaffAttendanceService : IStaffAttendanceService
 
     public async Task<StaffCheckInResponse?> GetMyTodayAsync(CancellationToken cancellationToken)
     {
-        CheckInRow? row = await _repository.GetForAffiliationAsync(AffiliationId(), TodayLagos(), cancellationToken);
+        CheckInRow? row = await _repository.GetForMembershipAsync(MembershipId(), TodayLagos(), cancellationToken);
         return row is null ? null : Map(row);
     }
 
     public async Task<IReadOnlyList<MonthlyStaffAttendanceSummaryResponse>> GetMySummaryAsync(
         CancellationToken cancellationToken)
     {
-        IReadOnlyList<MonthlyRow> rows = await _repository.MonthlySummaryAsync(AffiliationId(), cancellationToken);
+        IReadOnlyList<MonthlyRow> rows = await _repository.MonthlySummaryAsync(MembershipId(), cancellationToken);
         return rows.Select(r => new MonthlyStaffAttendanceSummaryResponse
         {
             Month = r.Month,
@@ -143,11 +143,11 @@ internal sealed class StaffAttendanceService : IStaffAttendanceService
             throw new AppErrorException("Status must be present, late or absent.", 400, ErrorCodes.ValidationError);
         }
 
-        CheckInRow? existing = await _repository.GetForAffiliationAsync(request.StaffId, request.Date, cancellationToken);
+        CheckInRow? existing = await _repository.GetForMembershipAsync(request.StaffId, request.Date, cancellationToken);
         CheckInRow saved = await _repository.UpsertCheckInAsync(new CheckInRow
         {
             SchoolId = SchoolId(),
-            AffiliationId = request.StaffId,
+            MembershipId = request.StaffId,
             Date = request.Date,
             CheckInAt = existing?.CheckInAt,
             Lat = existing?.Lat,
@@ -155,7 +155,7 @@ internal sealed class StaffAttendanceService : IStaffAttendanceService
             DistanceM = existing?.DistanceM,
             Status = request.Status,
             IsManualOverride = true,
-            OverriddenBy = Guid.TryParse(_context.UserId, out Guid actor) ? actor : null
+            OverriddenByIdentityId = Guid.TryParse(_context.IdentityId, out Guid actor) ? actor : null
         }, cancellationToken);
 
         return Map(saved);
@@ -168,11 +168,11 @@ internal sealed class StaffAttendanceService : IStaffAttendanceService
             ? id
             : throw new AppErrorException("Authentication required.", 401, ErrorCodes.Unauthorized);
 
-    private Guid AffiliationId() =>
-        Guid.TryParse(_context.AffiliationId, out Guid id)
+    private Guid MembershipId() =>
+        Guid.TryParse(_context.MembershipId, out Guid id)
             ? id
             : throw new AppErrorException("Only staff can check in.", 403, ErrorCodes.Forbidden,
-                logReason: "Check-in without an affiliation claim (owner or identity session).");
+                logReason: "Check-in without a membership claim (owner or identity session).");
 
     private static DateOnly TodayLagos() =>
         DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, Lagos));
@@ -193,7 +193,7 @@ internal sealed class StaffAttendanceService : IStaffAttendanceService
     private static StaffCheckInResponse Map(CheckInRow row) => new()
     {
         Id = row.Id,
-        StaffId = row.AffiliationId,
+        StaffId = row.MembershipId,
         Date = row.Date,
         CheckInTime = row.CheckInAt is DateTime at
             ? TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(at, DateTimeKind.Utc), Lagos).ToString("HH:mm")

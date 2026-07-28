@@ -37,19 +37,18 @@ query per staff; a 100-staff school = 100 round-trips). Now batched into a singl
 Build 0/0; 525 tests green. *(Follow-up: spot-check the Grades report-card loops —
 `ReportCardService`/`ReportCardRepository` iterate with per-iteration awaits — as part of one perf sweep.)*
 
-**P1-3 · Secrets: hardcoded DB password in `appsettings.json`.**
-`appsettings.json` ships `Password=admin123` in the default connection string (the app secrets AWS/Dojah keys
-are correctly `REPLACE_WITH_…` placeholders). If any environment reads `appsettings.json` without overriding
-`ConnectionStrings__Default`, that's a weak/known credential in prod. *Recommendation:* make the prod
-connection string env-only (no literal password committed); confirm the JWT signing keys are supplied from a
-secrets manager in prod (dev keys are correctly isolated in `appsettings.Development.json`).
+**P1-3 · Secrets: hardcoded DB password in `appsettings.json` — ✅ FIXED.**
+The base `appsettings.json` shipped `Password=admin123`. Replaced with a `REPLACE_WITH_DB_PASSWORD_VIA_ENV`
+placeholder + a `_comment` requiring prod to supply `ConnectionStrings__Default` via env/secrets manager. No
+real credential is committed; local dev remains self-contained in `appsettings.Development.json`. (JWT signing
+keys were already correctly absent from the base file — env-only in prod; dev keys isolated in Development.json.)
 
-**P1-4 · Auto-migrate on startup + horizontal scaling.**
-`DatabaseMigrator` runs pending migrations at app startup (transactional, tracked in `schema_migrations`,
-with a baseline). Correct for one instance — but **two API instances booting together race** on the same
-pending file; the loser errors on the `schema_migrations` insert / lock. *Recommendation:* gate migration on
-a Postgres advisory lock, or run migrations as a separate pre-deploy step (not in the request-serving app),
-before scaling past one instance.
+**P1-4 · Auto-migrate on startup + horizontal scaling — ✅ MITIGATED.**
+`DatabaseMigrator` runs pending migrations at startup (transactional, tracked, baseline-aware) and is gated by
+`Database:AutoMigrate` — **the recommended prod strategy remains: flip it OFF and run migrations as a pre-deploy
+CI/CD step.** As defense-in-depth if it's left on across instances, migration now acquires a Postgres session
+**advisory lock** (`pg_advisory_lock`) so concurrent migrators serialize — the first migrates, the others block
+then find the schema up to date; the lock auto-releases on connection close, even on failure.
 
 ### P2 — Soon after launch
 

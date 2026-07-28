@@ -5,8 +5,14 @@ namespace EduTech.Shared.Persistence;
 
 /// <summary>
 /// DEV convenience: applies the plain-SQL migrations in <c>Database/*.sql</c> at startup, each exactly
-/// once, tracked in a <c>schema_migrations</c> table. Gated by config <c>Database:AutoMigrate</c> — flip
-/// it OFF before launch and run migrations manually (the CardService pattern).
+/// once, tracked in a <c>schema_migrations</c> table. Gated by config <c>Database:AutoMigrate</c> — the
+/// recommended production strategy is to flip it OFF and run migrations as a pre-deploy CI/CD step
+/// (run → verify → deploy), not on app boot.
+///
+/// If auto-migrate IS left on across multiple instances, a Postgres session <b>advisory lock</b>
+/// serializes them: the first instance migrates while the others block, then find the schema up to date.
+/// The lock is a session lock, released automatically when the connection closes (including on failure),
+/// so a crash can never leave it held.
 ///
 /// Baseline: when auto-migrate is first switched on against an ALREADY-populated DB (one set up by
 /// hand), files up to <c>Database:BaselineThrough</c> are marked applied WITHOUT running (they were run
@@ -14,6 +20,9 @@ namespace EduTech.Shared.Persistence;
 /// </summary>
 public sealed class DatabaseMigrator
 {
+    // App-specific constant so concurrent migrators (multiple instances) serialize on the same lock.
+    private const long MigrationAdvisoryLockKey = 5477_2024_0001;
+
     private readonly string _connectionString;
     private readonly ILogger<DatabaseMigrator> _logger;
 
@@ -39,6 +48,10 @@ public sealed class DatabaseMigrator
 
         await using NpgsqlConnection connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
+
+        // Serialize concurrent migrators (multiple instances booting together). Session-level lock →
+        // released automatically when this connection closes, even if a migration throws below.
+        await ExecuteAsync(connection, $"SELECT pg_advisory_lock({MigrationAdvisoryLockKey})", cancellationToken);
 
         await ExecuteAsync(connection,
             "CREATE TABLE IF NOT EXISTS schema_migrations (filename TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW())",

@@ -65,11 +65,15 @@ Unchanged from today: exclusivity rules, the SMS invite + token, the permissions
 
 ## 3. Domain model
 
-> **Core invariant — an Employment is the *only* source of organizational work.** Permissions derive from
-> Employment → Position; the directory derives from Employment; invitations *create* an Employment;
-> activation activates it; resignation ends it. **No other aggregate may represent "working for the
-> organization."** (Ownership is *governance*, not work — decision E.) This one rule keeps future features
-> from reintroducing a parallel "staff" concept.
+> **Core invariant — an Employment is the *only* source of organizational work.**
+> **No runtime code may derive organizational state from Identity or Membership *directly*.** Every
+> organization-specific concern — permissions, activation, invitation, directory, employment status,
+> reporting relationships, workload, resignation — **must flow through an Employment.** The only legal path
+> is `Identity → Membership → Employment → Position`; deriving "works here" from `Identity → Membership`
+> alone (or from any parallel table) is forbidden. Permissions derive from Employment → Position; the
+> directory derives from Employment; invitations *create* an Employment; activation activates it;
+> resignation ends it. (Ownership is *governance*, not work — decision E.) This one rule keeps future
+> features from reintroducing a parallel "staff" concept.
 
 ### The graph (canonical, already present)
 ```
@@ -187,17 +191,25 @@ positions` (the `StaffDirectoryRow` already exposes `membership_id` from EDD-016
 - `GetMyProfile()` → the caller's employments at the school + resolved permissions (keyed on
   `_context.IdentityId`/`MembershipId`, **not** `AffiliationId`/`UserId`).
 
-## 9. Implementation plan (design-first; code at the actor-table retirement)
-Per the canonical-first rule, code ships when `staff_users`/`staff_affiliations` retire (no dual-write):
-1. **Read side first** — repoint directory + profile + permissions queries onto
-   `identities × memberships × employments × positions`; drop `staff_users`/`staff_affiliations` reads.
-2. **Invite/lifecycle write side** — find-or-create Identity, Membership, Employment(Pending); token →
-   `employment_id`; accept claims Identity + activates. Exclusivity as an Employment check.
-3. **Auth seam** — the last `_context.AffiliationId`/`UserId` readers in Workforce (`StaffProfileService`)
-   move to `IdentityId`/`MembershipId`; this is also where **EDD-017** repoints the login KYC read.
-4. **Drop** `staff_users` + `staff_affiliations` (+ `invited_by` on the old table); concept grep → 0.
-5. **Verify** — build 0/0; full suite; throwaway-PG migration; a `staff_affiliations`/`staff_users` grep of
-   the runtime returns nothing.
+## 9. Implementation plan — staged slices (Design → Implement → Verify → Flip → Retire)
+Built additive-first (the EDD-017 pattern): canonical columns/writes land reader-less, runtime flips to them,
+then legacy is deleted — never a dual-write window.
+
+1. **Slice 1 — canonical Workforce schema** ✅ **DONE (migration `0065`).** Adds `staff_invite_tokens.employment_id`
+   (the invite token re-keyed onto the Employment being accepted) + `employments.invited_by_identity_id` (invite
+   attribution as a canonical Identity), with backfills (affiliation→membership→employment; `invited_by`→identity
+   via staff_users). **No runtime readers** → additive, no dual-write. V1 has no data so the backfill is a
+   release no-op. Verified on throwaway PG: `0001→0065` clean + both backfills map correctly on a seeded graph.
+2. **Slice 2 — invitation workflow on Employment.** Invite = find-or-create Identity + ensure Membership +
+   create Employment(`Pending`) + token → `employment_id`; accept = claim Identity + Employment→`Active`.
+   Full-time exclusivity as an Employment check. Mirror legacy `staff_affiliations` writes until cutover.
+3. **Slice 3 — runtime reads.** Directory / profile / employment / role lookups read
+   `identities × memberships × employments × positions` (canonical becomes authoritative); the last
+   `_context.AffiliationId`/`UserId` readers (`StaffProfileService`) move to `IdentityId`/`MembershipId`.
+4. **Slice 4 — remove dead plumbing.** Delete the now-unused `staff_affiliations`/`staff_users` repo methods,
+   joins, DTO fields, adapters. No behavior change.
+5. **Slice 5 — retirement.** Drop `staff_users` + `staff_affiliations` (+ mirrors + compat code); concept grep
+   → 0. **EDD-017 Slice 5 happens here** — the staff KYC mirror disappears with `staff_users`.
 
 ## 10. Resolved decisions
 | # | Decision | Resolution |

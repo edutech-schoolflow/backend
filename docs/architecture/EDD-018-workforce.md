@@ -200,9 +200,18 @@ then legacy is deleted — never a dual-write window.
    attribution as a canonical Identity), with backfills (affiliation→membership→employment; `invited_by`→identity
    via staff_users). **No runtime readers** → additive, no dual-write. V1 has no data so the backfill is a
    release no-op. Verified on throwaway PG: `0001→0065` clean + both backfills map correctly on a seeded graph.
-2. **Slice 2 — invitation workflow on Employment.** Invite = find-or-create Identity + ensure Membership +
-   create Employment(`Pending`) + token → `employment_id`; accept = claim Identity + Employment→`Active`.
-   Full-time exclusivity as an Employment check. Mirror legacy `staff_affiliations` writes until cutover.
+2. **Slice 2 — invitation workflow on Employment.** *Dig finding: today the invite creates only a
+   `staff_user` (no `identity_id`) + an `affiliation`; there is **no** Identity/Membership/Employment until
+   **accept** — so this slice builds the canonical **onboarding path at invite**, not just a column wire.*
+   **Approach (mirrors the existing `GuardianLinked → EnsureIdentityOnGuardianLinked` handler, respecting
+   module boundaries — Workforce can't reference `EduTech.Identity` directly):** Workforce raises
+   **`StaffInvited`**; an Identity-context handler runs `IIdentityRepository.EnsurePendingAsync`(Identity) +
+   `IMembershipRepository.EnsureActiveAsync`(Membership, `staff`) + creates **Employment(`Pending`)** (a new
+   repo method — the current `EnsureFromAffiliationAsync` hardcodes `'active'`) + links `token.employment_id`.
+   **Accept** claims the Identity + `Employment(Pending)→Active` (the accept's `EnsureFromAffiliationAsync`
+   upsert already flips `ON CONFLICT DO UPDATE status='active'`). Full-time exclusivity becomes an Employment
+   check. **Risk is contained** — additive dual-write; the legacy onboarding path is unchanged (Slice 3 reads
+   are still legacy), so a canonical-side bug cannot break onboarding. Mirror legacy until cutover.
 3. **Slice 3 — runtime reads.** Directory / profile / employment / role lookups read
    `identities × memberships × employments × positions` (canonical becomes authoritative); the last
    `_context.AffiliationId`/`UserId` readers (`StaffProfileService`) move to `IdentityId`/`MembershipId`.

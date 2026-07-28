@@ -7,6 +7,9 @@ namespace EduTech.Shared.Identity;
 /// </summary>
 public interface IIdentityVerifier
 {
+    /// <summary>The provider name recorded on each verification attempt (EDD-017), e.g. "dojah" | "stub".</summary>
+    string ProviderName { get; }
+
     /// <summary>Verifies the NIN exists AND its registered name matches <paramref name="expectedName"/>.</summary>
     Task<IdentityVerificationResult> VerifyNinAsync(string nin, string expectedName,
         CancellationToken cancellationToken = default);

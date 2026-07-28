@@ -54,9 +54,10 @@ internal sealed class CanonicalCapabilityResolver : BaseRepository, ICapabilityR
 
     private async Task<CapabilitySet> ResolveAsync(Guid contextId, CancellationToken cancellationToken)
     {
+        // context_id is now access_contexts.id (EDD-012 B2d.1) — key on the PK, not the legacy reference_id.
         ContextRow? ctx = await QuerySingleOrDefaultAsync<ContextRow>(
             "SELECT type AS Type, membership_id AS MembershipId FROM access_contexts " +
-            "WHERE reference_id = @ContextId AND status = 'active' LIMIT 1",
+            "WHERE id = @ContextId AND status = 'active' LIMIT 1",
             new { ContextId = contextId }, cancellationToken);
 
         // owner → all; parent / unknown → ∅ (no reads needed) — same as legacy.

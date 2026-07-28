@@ -16,7 +16,7 @@ internal interface IAttendanceRepository
     /// Units the caller may mark: named arms (they class-teach, or all when owner) plus arm-less classes
     /// (they class-teach, or all when owner).
     /// </summary>
-    Task<IReadOnlyList<MarkableArmRow>> ListMarkableArmsAsync(Guid? affiliationId, bool isOwner,
+    Task<IReadOnlyList<MarkableArmRow>> ListMarkableArmsAsync(Guid? membershipId, bool isOwner,
         CancellationToken cancellationToken);
 
     /// <summary>Active students in the unit, each with their status for the date (null if not marked).</summary>
@@ -40,7 +40,7 @@ internal interface IAttendanceRepository
 
     /// <summary>Upsert the register for unit+date and REPLACE its marks. Returns the record id + submit time.</summary>
     Task<(Guid Id, DateTime SubmittedAt)> UpsertRecordAsync(Guid classId, Guid? armId, DateOnly date, Guid? termId,
-        Guid? submittedByAffiliationId, IReadOnlyList<(Guid StudentId, AttendanceStatus Status)> marks,
+        Guid? submittedByMembershipId, IReadOnlyList<(Guid StudentId, AttendanceStatus Status)> marks,
         CancellationToken cancellationToken);
 
     Task<IReadOnlyList<ArmStatRow>> GetOverviewArmStatsAsync(DateOnly date, CancellationToken cancellationToken);
@@ -52,7 +52,7 @@ internal sealed class UnitInfoRow
     public Guid ClassId { get; init; }
     public Guid? ArmId { get; init; }
     public string UnitName { get; init; } = string.Empty;
-    public Guid? ClassTeacherAffiliationId { get; init; }
+    public Guid? ClassTeacherMembershipId { get; init; }
 }
 
 internal sealed class MarkableArmRow
@@ -112,7 +112,7 @@ internal sealed class AttendanceRepository : TenantRepository, IAttendanceReposi
             return QuerySingleOrDefaultAsync<UnitInfoRow>(
                 $"""
                 SELECT a.class_id AS ClassId, a.id AS ArmId, {ArmNameSql} AS UnitName,
-                       a.class_teacher_affiliation_id AS ClassTeacherAffiliationId
+                       a.class_teacher_membership_id AS ClassTeacherMembershipId
                 FROM class_arms a
                 JOIN classes c ON c.id = a.class_id
                 WHERE a.id = @ArmId AND a.class_id = @ClassId AND a.school_id = @SchoolId
@@ -127,14 +127,14 @@ internal sealed class AttendanceRepository : TenantRepository, IAttendanceReposi
             SELECT c.id AS ClassId, NULL::uuid AS ArmId,
                    CASE WHEN EXISTS (SELECT 1 FROM class_arms a WHERE a.class_id = c.id)
                         THEN c.name || ' (no arm)' ELSE c.name END AS UnitName,
-                   c.class_teacher_affiliation_id AS ClassTeacherAffiliationId
+                   c.class_teacher_membership_id AS ClassTeacherMembershipId
             FROM classes c
             WHERE c.id = @ClassId AND c.school_id = @SchoolId
             """,
             TenantParameters(new { ClassId = classId }), cancellationToken);
     }
 
-    public Task<IReadOnlyList<MarkableArmRow>> ListMarkableArmsAsync(Guid? affiliationId, bool isOwner,
+    public Task<IReadOnlyList<MarkableArmRow>> ListMarkableArmsAsync(Guid? membershipId, bool isOwner,
         CancellationToken cancellationToken)
     {
         return QueryAsync<MarkableArmRow>(
@@ -145,7 +145,7 @@ internal sealed class AttendanceRepository : TenantRepository, IAttendanceReposi
             FROM class_arms a
             JOIN classes c ON c.id = a.class_id
             WHERE a.school_id = @SchoolId
-              AND (@IsOwner OR a.class_teacher_affiliation_id = @AffiliationId)
+              AND (@IsOwner OR a.class_teacher_membership_id = @MembershipId)
             UNION ALL
             SELECT NULL::uuid AS ArmId,
                    CASE WHEN EXISTS (SELECT 1 FROM class_arms a2 WHERE a2.class_id = c.id)
@@ -154,7 +154,7 @@ internal sealed class AttendanceRepository : TenantRepository, IAttendanceReposi
                    c.display_order AS SortOrder, '' AS SortArm
             FROM classes c
             WHERE c.school_id = @SchoolId
-              AND (@IsOwner OR c.class_teacher_affiliation_id = @AffiliationId)
+              AND (@IsOwner OR c.class_teacher_membership_id = @MembershipId)
               AND (
                     NOT EXISTS (SELECT 1 FROM class_arms a2 WHERE a2.class_id = c.id)
                  OR EXISTS (SELECT 1 FROM students s WHERE s.class_id = c.id
@@ -162,7 +162,7 @@ internal sealed class AttendanceRepository : TenantRepository, IAttendanceReposi
                   )
             ORDER BY SortOrder, ClassName, SortArm
             """,
-            TenantParameters(new { IsOwner = isOwner, AffiliationId = affiliationId }), cancellationToken);
+            TenantParameters(new { IsOwner = isOwner, MembershipId = membershipId }), cancellationToken);
     }
 
     // Roster/record filters: an arm unit matches students in that arm; the "no-arm" unit (armId null)
@@ -237,7 +237,7 @@ internal sealed class AttendanceRepository : TenantRepository, IAttendanceReposi
     }
 
     public async Task<(Guid Id, DateTime SubmittedAt)> UpsertRecordAsync(Guid classId, Guid? armId, DateOnly date,
-        Guid? termId, Guid? submittedByAffiliationId, IReadOnlyList<(Guid StudentId, AttendanceStatus Status)> marks,
+        Guid? termId, Guid? submittedByMembershipId, IReadOnlyList<(Guid StudentId, AttendanceStatus Status)> marks,
         CancellationToken cancellationToken)
     {
         await using DbTransactionScope transaction = await _connectionFactory.BeginTransactionAsync(cancellationToken);
@@ -255,12 +255,12 @@ internal sealed class AttendanceRepository : TenantRepository, IAttendanceReposi
             header = await QuerySingleOrDefaultAsync<RecordKeyRow>(
                 """
                 UPDATE attendance_records
-                   SET term_id = @TermId, submitted_by_affiliation_id = @SubmittedBy,
+                   SET term_id = @TermId, submitted_by_membership_id = @SubmittedBy,
                        submitted_at = NOW(), updated_at = NOW()
                  WHERE id = @Id AND school_id = @SchoolId
                 RETURNING id, submitted_at AS SubmittedAt
                 """,
-                TenantParameters(new { Id = recordId, TermId = termId, SubmittedBy = submittedByAffiliationId }),
+                TenantParameters(new { Id = recordId, TermId = termId, SubmittedBy = submittedByMembershipId }),
                 cancellationToken, tx)
                 ?? throw new InvalidOperationException("Attendance record update returned no row.");
         }
@@ -269,11 +269,11 @@ internal sealed class AttendanceRepository : TenantRepository, IAttendanceReposi
             header = await QuerySingleOrDefaultAsync<RecordKeyRow>(
                 """
                 INSERT INTO attendance_records
-                    (school_id, class_id, class_arm_id, term_id, attendance_date, submitted_by_affiliation_id, submitted_at)
+                    (school_id, class_id, class_arm_id, term_id, attendance_date, submitted_by_membership_id, submitted_at)
                 VALUES (@SchoolId, @ClassId, @ArmId, @TermId, @Date, @SubmittedBy, NOW())
                 RETURNING id, submitted_at AS SubmittedAt
                 """,
-                TenantParameters(new { ClassId = classId, ArmId = armId, TermId = termId, Date = date, SubmittedBy = submittedByAffiliationId }),
+                TenantParameters(new { ClassId = classId, ArmId = armId, TermId = termId, Date = date, SubmittedBy = submittedByMembershipId }),
                 cancellationToken, tx)
                 ?? throw new InvalidOperationException("Attendance record insert returned no row.");
         }

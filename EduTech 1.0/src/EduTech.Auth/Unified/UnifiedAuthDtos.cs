@@ -124,10 +124,13 @@ public sealed class FamilySummary
 /// </summary>
 public sealed class AuthContextItem
 {
+    /// <summary>THE context identifier = <c>access_contexts.id</c> (EDD-012 B2d.1). Everything public —
+    /// the login list, select-context, the JWT <c>context_id</c> claim, /me matching, recency — uses this.</summary>
     public required Guid Id { get; init; }
     public required string Type { get; init; }        // owner | staff | parent
-    /// <summary>access_contexts.id — the true context PK; refresh re-keys on it (EDD-012 B2c.3c).</summary>
-    public Guid AccessContextId { get; init; }
+    /// <summary>The legacy actor id (<c>reference_id</c>) — INTERNAL, used ONLY to fill the compatibility
+    /// claims (user_id / affiliation_id) until B.2 removes them. Never exposed as the context identifier.</summary>
+    public Guid ReferenceId { get; init; }
     public Guid? OrganizationId { get; init; }
     /// <summary>Canonical identity of the context — the Membership it belongs to (EDD-012 B2c.1).</summary>
     public Guid? MembershipId { get; init; }

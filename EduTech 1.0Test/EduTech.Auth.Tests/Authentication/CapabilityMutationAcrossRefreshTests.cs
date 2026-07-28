@@ -33,7 +33,7 @@ public class CapabilityMutationAcrossRefreshTests
         // authorization in it (the mint has no feature input since B2c.3d).
         string token = TokenVendor.VendStaffScopedToken(Key, "EduTech", "EduTechApp",
             Guid.NewGuid().ToString(), "+2348010000000", Guid.NewGuid().ToString(), Guid.NewGuid().ToString(),
-            StaffRoles.Teacher, "full_time", "approved",
+            StaffRoles.Teacher, "full_time",
             identityId: Guid.NewGuid().ToString(), contextId: Ctx.ToString(),
             membershipId: Guid.NewGuid().ToString(), organizationId: Guid.NewGuid().ToString());
 

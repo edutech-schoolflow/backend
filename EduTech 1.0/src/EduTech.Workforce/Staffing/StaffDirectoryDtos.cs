@@ -4,6 +4,7 @@ namespace EduTech.Workforce;
 public sealed class StaffDirectoryItemResponse
 {
     public required Guid Id { get; init; }            // affiliation id (the per-school record)
+    public Guid? MembershipId { get; init; }          // canonical staff identity at this school (EDD-016); the class-teacher picker sends this
     public required Guid StaffUserId { get; init; }
     public required string FirstName { get; init; }
     public string? MiddleName { get; init; }

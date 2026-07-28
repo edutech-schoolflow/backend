@@ -16,27 +16,27 @@ public class AttendanceServiceTests
     private static readonly Guid Cls = Guid.NewGuid();
     private static readonly Guid Arm = Guid.NewGuid();
     private static readonly Guid Term = Guid.NewGuid();
-    private static readonly Guid TeacherAffiliation = Guid.NewGuid();
+    private static readonly Guid TeacherMembership = Guid.NewGuid();
     private static readonly Guid StudentA = Guid.NewGuid();
     private static readonly Guid StudentB = Guid.NewGuid();
     private static readonly DateOnly Yesterday = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-1));
 
     private void AsOwner()
     {
-        _context.SetupGet(c => c.IsOwner).Returns(true);
-        _context.SetupGet(c => c.AffiliationId).Returns((string?)null);
+        _context.SetupGet(c => c.IsSchoolOwner).Returns(true);
+        _context.SetupGet(c => c.MembershipId).Returns((string?)null);
     }
 
-    private void AsClassTeacher(Guid affiliation)
+    private void AsClassTeacher(Guid membership)
     {
-        _context.SetupGet(c => c.IsOwner).Returns(false);
-        _context.SetupGet(c => c.AffiliationId).Returns(affiliation.ToString());
+        _context.SetupGet(c => c.IsSchoolOwner).Returns(false);
+        _context.SetupGet(c => c.MembershipId).Returns(membership.ToString());
     }
 
     // The register unit is a class with an optional arm; the class teacher of the unit may mark it.
     private void UnitExists(Guid? classTeacher) =>
         _repo.Setup(r => r.GetUnitAsync(Cls, Arm, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new UnitInfoRow { ClassId = Cls, ArmId = Arm, UnitName = "JSS 1A", ClassTeacherAffiliationId = classTeacher });
+            .ReturnsAsync(new UnitInfoRow { ClassId = Cls, ArmId = Arm, UnitName = "JSS 1A", ClassTeacherMembershipId = classTeacher });
 
     private static SubmitAttendanceRequest ValidSubmit() => new SubmitAttendanceRequest
     {
@@ -70,8 +70,8 @@ public class AttendanceServiceTests
     [Fact]
     public async Task Submit_NotClassTeacher_Throws403()
     {
-        AsClassTeacher(Guid.NewGuid());           // some other affiliation
-        UnitExists(TeacherAffiliation);           // unit owned by a different teacher
+        AsClassTeacher(Guid.NewGuid());           // some other membership
+        UnitExists(TeacherMembership);           // unit owned by a different teacher
 
         AppErrorException ex = await Assert.ThrowsAsync<AppErrorException>(
             () => CreateSut().SubmitAsync(ValidSubmit(), CancellationToken.None));
@@ -82,7 +82,7 @@ public class AttendanceServiceTests
     public async Task Submit_OwnerAnyUnit_Succeeds()
     {
         AsOwner();
-        UnitExists(TeacherAffiliation);           // owner doesn't need to be the class teacher
+        UnitExists(TeacherMembership);           // owner doesn't need to be the class teacher
         RosterHas(StudentA, StudentB);
         _repo.Setup(r => r.GetCurrentTermIdAsync(It.IsAny<CancellationToken>())).ReturnsAsync(Term);
         Guid recordId = Guid.NewGuid();
@@ -99,19 +99,19 @@ public class AttendanceServiceTests
     }
 
     [Fact]
-    public async Task Submit_ClassTeacherOfUnit_PassesOwnAffiliationAsSubmitter()
+    public async Task Submit_ClassTeacherOfUnit_PassesOwnMembershipAsSubmitter()
     {
-        AsClassTeacher(TeacherAffiliation);
-        UnitExists(TeacherAffiliation);
+        AsClassTeacher(TeacherMembership);
+        UnitExists(TeacherMembership);
         RosterHas(StudentA, StudentB);
         _repo.Setup(r => r.GetCurrentTermIdAsync(It.IsAny<CancellationToken>())).ReturnsAsync(Term);
-        _repo.Setup(r => r.UpsertRecordAsync(Cls, Arm, Yesterday, Term, TeacherAffiliation,
+        _repo.Setup(r => r.UpsertRecordAsync(Cls, Arm, Yesterday, Term, TeacherMembership,
                 It.IsAny<IReadOnlyList<(Guid, AttendanceStatus)>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((Guid.NewGuid(), DateTime.UtcNow));
 
         await CreateSut().SubmitAsync(ValidSubmit(), CancellationToken.None);
 
-        _repo.Verify(r => r.UpsertRecordAsync(Cls, Arm, Yesterday, Term, TeacherAffiliation,
+        _repo.Verify(r => r.UpsertRecordAsync(Cls, Arm, Yesterday, Term, TeacherMembership,
             It.IsAny<IReadOnlyList<(Guid, AttendanceStatus)>>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -124,7 +124,7 @@ public class AttendanceServiceTests
     [Fact]
     public async Task Submit_BackdatedIntoEarlierTerm_BooksToThatTerm()
     {
-        AsOwner(); UnitExists(TeacherAffiliation); RosterHas(StudentA, StudentB);
+        AsOwner(); UnitExists(TeacherMembership); RosterHas(StudentA, StudentB);
         Guid earlierTerm = Guid.NewGuid();
         _repo.Setup(r => r.GetTermIdForDateAsync(Yesterday, It.IsAny<CancellationToken>())).ReturnsAsync(earlierTerm);
         _repo.Setup(r => r.UpsertRecordAsync(Cls, Arm, Yesterday, earlierTerm, null,
@@ -141,7 +141,7 @@ public class AttendanceServiceTests
     [Fact]
     public async Task Submit_DateInHolidayGap_Throws400()
     {
-        AsOwner(); UnitExists(TeacherAffiliation); RosterHas(StudentA, StudentB);
+        AsOwner(); UnitExists(TeacherMembership); RosterHas(StudentA, StudentB);
         _repo.Setup(r => r.GetTermIdForDateAsync(Yesterday, It.IsAny<CancellationToken>())).ReturnsAsync((Guid?)null);
         _repo.Setup(r => r.HasDatedTermsAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
 
@@ -154,7 +154,7 @@ public class AttendanceServiceTests
     [Fact]
     public async Task Submit_NoDatedTerms_FallsBackToCurrentTerm()
     {
-        AsOwner(); UnitExists(TeacherAffiliation); RosterHas(StudentA, StudentB);
+        AsOwner(); UnitExists(TeacherMembership); RosterHas(StudentA, StudentB);
         _repo.Setup(r => r.GetTermIdForDateAsync(Yesterday, It.IsAny<CancellationToken>())).ReturnsAsync((Guid?)null);
         _repo.Setup(r => r.HasDatedTermsAsync(It.IsAny<CancellationToken>())).ReturnsAsync(false);
         _repo.Setup(r => r.GetCurrentTermIdAsync(It.IsAny<CancellationToken>())).ReturnsAsync(Term);
@@ -174,7 +174,7 @@ public class AttendanceServiceTests
     public async Task Submit_FutureDate_Throws400()
     {
         AsOwner();
-        UnitExists(TeacherAffiliation);
+        UnitExists(TeacherMembership);
         SubmitAttendanceRequest req = new SubmitAttendanceRequest
         {
             ClassId = Cls, ArmId = Arm, Date = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(1)), Marks = ValidSubmit().Marks
@@ -189,7 +189,7 @@ public class AttendanceServiceTests
     public async Task Submit_EmptyMarks_Throws400()
     {
         AsOwner();
-        UnitExists(TeacherAffiliation);
+        UnitExists(TeacherMembership);
 
         AppErrorException ex = await Assert.ThrowsAsync<AppErrorException>(
             () => CreateSut().SubmitAsync(new SubmitAttendanceRequest { ClassId = Cls, ArmId = Arm, Date = Yesterday }, CancellationToken.None));
@@ -201,7 +201,7 @@ public class AttendanceServiceTests
     {
         // Status omitted → null → service rejects (an invalid status is unrepresentable with the enum).
         AsOwner();
-        UnitExists(TeacherAffiliation);
+        UnitExists(TeacherMembership);
         RosterHas(StudentA);
         SubmitAttendanceRequest req = new SubmitAttendanceRequest
         {
@@ -218,7 +218,7 @@ public class AttendanceServiceTests
     public async Task Submit_StudentNotInUnit_Throws400()
     {
         AsOwner();
-        UnitExists(TeacherAffiliation);
+        UnitExists(TeacherMembership);
         RosterHas(StudentA);                      // StudentB is not in the unit
 
         AppErrorException ex = await Assert.ThrowsAsync<AppErrorException>(
@@ -230,7 +230,7 @@ public class AttendanceServiceTests
     public async Task Submit_DuplicateStudent_Throws400()
     {
         AsOwner();
-        UnitExists(TeacherAffiliation);
+        UnitExists(TeacherMembership);
         RosterHas(StudentA);
         SubmitAttendanceRequest req = new SubmitAttendanceRequest
         {
@@ -250,24 +250,24 @@ public class AttendanceServiceTests
     // ---- roster + units ----
 
     [Fact]
-    public async Task ListMarkableArms_ForwardsAffiliationAndOwnerFlag()
+    public async Task ListMarkableArms_ForwardsMembershipAndOwnerFlag()
     {
-        AsClassTeacher(TeacherAffiliation);
-        _repo.Setup(r => r.ListMarkableArmsAsync(TeacherAffiliation, false, It.IsAny<CancellationToken>()))
+        AsClassTeacher(TeacherMembership);
+        _repo.Setup(r => r.ListMarkableArmsAsync(TeacherMembership, false, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new[] { new MarkableArmRow { ArmId = Arm, ArmName = "JSS 1A", ClassId = Cls, ClassName = "JSS 1", Level = "junior_secondary" } });
 
         IReadOnlyList<MarkableArmResponse> arms = await CreateSut().ListMarkableArmsAsync(CancellationToken.None);
 
         Assert.Single(arms);
         Assert.Equal("JSS 1A", arms[0].ArmName);
-        _repo.Verify(r => r.ListMarkableArmsAsync(TeacherAffiliation, false, It.IsAny<CancellationToken>()), Times.Once);
+        _repo.Verify(r => r.ListMarkableArmsAsync(TeacherMembership, false, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
     public async Task Roster_SetsSubmittedFromRecordExists()
     {
         AsOwner();
-        UnitExists(TeacherAffiliation);
+        UnitExists(TeacherMembership);
         _repo.Setup(r => r.GetRosterAsync(Cls, Arm, Yesterday, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new[] { new RosterStudentRow { StudentId = StudentA, StudentName = "Tolu Adebayo", Status = "present" } });
         _repo.Setup(r => r.RecordExistsAsync(Cls, Arm, Yesterday, It.IsAny<CancellationToken>())).ReturnsAsync(true);

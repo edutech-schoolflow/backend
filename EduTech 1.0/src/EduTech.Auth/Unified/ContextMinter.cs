@@ -1,7 +1,7 @@
 using EduTech.Auth.Tokens;
 using EduTech.Shared.Constants;
 using EduTech.Shared.Exceptions;
-using EduTech.Workforce;
+using EduTech.Shared.Persistence;
 
 namespace EduTech.Auth.Unified;
 
@@ -20,76 +20,79 @@ internal interface IContextMinter
 }
 
 /// <summary>
-/// LEGACY context minter — mints from the legacy actor tables: owner details via
-/// <c>ListOwnerContextsAsync</c> (school_owners), staff role/details via <c>ListStaffContextsAsync</c> +
-/// <c>GetActiveForSwitchAsync</c> (staff_affiliations) + <c>GetTokenClaimsAsync</c> (staff_users). Extracted
-/// verbatim from <c>UnifiedAuthService.MintContextAccessAsync</c> so a <c>CanonicalContextMinter</c> can be
-/// built beside it and proven claim-equivalent before the DI flip. Behavior-identical to the prior mint.
+/// CANONICAL context minter (EDD-012 / EDD-015 B2d) — mints from the canonical graph, honouring the mint
+/// invariant: <b>no canonical claim originates from a legacy actor table.</b>
+/// <list type="bullet">
+///   <item><b>owner</b> — owner_id = <c>context.Id</c>, school = <c>context.OrganizationId</c>; no
+///     <c>school_owners</c> read (status/kyc/subdomain were retired in B2c.3d).</item>
+///   <item><b>staff</b> — role from active <c>Employment → Position.slug</c> (no <c>staff_affiliations</c>);
+///     <c>user_id</c> = <c>staff_users.id</c> by identity — a COMPATIBILITY lookup (no longer an authority),
+///     retiring with the <c>user_id</c> claim.</item>
+///   <item><b>parent</b> — unchanged (never read a legacy table).</item>
+/// </list>
+/// The sole context-token minter (the legacy minter was proven claim-equivalent, then deleted in B2d V1).
+/// Regression-covered by MintCanonicalGateTests. No legacy actor authority.
 /// </summary>
-internal sealed class LegacyContextMinter : IContextMinter
+internal sealed class CanonicalContextMinter : BaseRepository, IContextMinter
 {
-    private readonly IAuthContextRepository _contexts;
-    private readonly IStaffAffiliationRepository _affiliations;
-    private readonly IStaffUserRepository _staffUsers;
     private readonly IAccessTokenIssuer _accessTokenIssuer;
 
-    public LegacyContextMinter(IAuthContextRepository contexts, IStaffAffiliationRepository affiliations,
-        IStaffUserRepository staffUsers, IAccessTokenIssuer accessTokenIssuer)
+    public CanonicalContextMinter(IDbConnectionFactory connectionFactory, IAccessTokenIssuer accessTokenIssuer)
+        : base(connectionFactory)
     {
-        _contexts = contexts;
-        _affiliations = affiliations;
-        _staffUsers = staffUsers;
         _accessTokenIssuer = accessTokenIssuer;
     }
 
     public async Task<ContextMint> MintAsync(EduTech.Identity.Domain.Identity identity, AuthContextItem context,
         CancellationToken cancellationToken)
     {
-        Guid actorId = context.Id;
+        Guid referenceId = context.ReferenceId;             // legacy actor id — fills the compat claims only
+        Guid contextId = context.Id;                        // = access_contexts.id — the canonical context_id
+        Guid organizationId = context.OrganizationId ?? Guid.Empty;
 
         switch (context.Type)
         {
             case "owner":
             {
-                IReadOnlyList<OwnerContextRow> owners =
-                    await _contexts.ListOwnerContextsAsync(identity.Id, cancellationToken);
-                OwnerContextRow owner = owners.First(o => o.OwnerId == actorId);
-                AccessToken access = _accessTokenIssuer.IssueSchoolOwner(owner.OwnerId, owner.SchoolId,
-                    identity.Phone, owner.Status, owner.KycStatus, owner.Subdomain,
-                    identityId: identity.Id, contextId: owner.OwnerId,
+                // owner_id (user_id/compat) and school both come from the context — school_owners is not read.
+                AccessToken access = _accessTokenIssuer.IssueSchoolOwner(referenceId, organizationId,
+                    identity.Phone, schoolStatus: string.Empty, kycStatus: string.Empty, subdomain: null,
+                    identityId: identity.Id, contextId: contextId,
                     membershipId: context.MembershipId, organizationId: context.OrganizationId);
-                return new ContextMint(access, AuthActorTypes.SchoolOwner, owner.OwnerId);
+                return new ContextMint(access, AuthActorTypes.SchoolOwner, referenceId);
             }
 
             case "staff":
             {
-                IReadOnlyList<StaffContextRow> staffContexts =
-                    await _contexts.ListStaffContextsAsync(identity.Id, cancellationToken);
-                StaffContextRow staffContext = staffContexts.First(s => s.AffiliationId == actorId);
+                // user_id: the staff_user for this identity — a compatibility lookup, not an authority.
+                Guid staffUserId = await QuerySingleOrDefaultAsync<Guid>(
+                    "SELECT id FROM staff_users WHERE identity_id = @Id", new { Id = identity.Id }, cancellationToken);
 
-                StaffSwitchRow affiliation = await _affiliations.GetActiveForSwitchAsync(
-                        staffContext.StaffUserId, staffContext.SchoolId, cancellationToken)
-                    ?? throw new AppErrorException("You don't have an active role at this school.",
-                        403, ErrorCodes.Forbidden);
-                StaffUserTokenRow staff = await _staffUsers.GetTokenClaimsAsync(staffContext.StaffUserId, cancellationToken)
-                    ?? throw new AppErrorException("Account not found.", 404, ErrorCodes.NotFound);
+                // role: the active Employment's Position slug — canonical, no staff_affiliations.
+                string? role = context.MembershipId is Guid membershipId
+                    ? await QuerySingleOrDefaultAsync<string>(
+                        """
+                        SELECT p.slug FROM employments e JOIN positions p ON p.id = e.position_id
+                        WHERE e.membership_id = @MembershipId AND e.status = 'active'
+                        ORDER BY e.started_at NULLS LAST, e.created_at
+                        LIMIT 1
+                        """,
+                        new { MembershipId = membershipId }, cancellationToken)
+                    : null;
 
-                AccessToken access = _accessTokenIssuer.IssueStaffScoped(staffContext.StaffUserId,
-                    staffContext.SchoolId, affiliation.AffiliationId, identity.Phone,
-                    affiliation.Role, affiliation.EmploymentType, staff.KycStatus,
-                    identityId: identity.Id, contextId: affiliation.AffiliationId,
+                AccessToken access = _accessTokenIssuer.IssueStaffScoped(staffUserId, organizationId, referenceId,
+                    identity.Phone, role ?? string.Empty, employmentType: string.Empty,
+                    identityId: identity.Id, contextId: contextId,
                     membershipId: context.MembershipId, organizationId: context.OrganizationId);
-                return new ContextMint(access, AuthActorTypes.Staff, staffContext.StaffUserId);
+                return new ContextMint(access, AuthActorTypes.Staff, staffUserId);
             }
 
             case "parent":
             {
-                // Org-scoped parent context (EDD-002 revision): the token carries the school so parent
-                // data binds @SchoolId + @ParentId. A legacy NULL-org context stays school-agnostic.
-                AccessToken access = _accessTokenIssuer.IssueParent(actorId, identity.Phone,
-                    identityId: identity.Id, contextId: actorId, schoolId: context.OrganizationId,
+                AccessToken access = _accessTokenIssuer.IssueParent(referenceId, identity.Phone,
+                    identityId: identity.Id, contextId: contextId, schoolId: context.OrganizationId,
                     membershipId: context.MembershipId, organizationId: context.OrganizationId);
-                return new ContextMint(access, AuthActorTypes.Parent, actorId);
+                return new ContextMint(access, AuthActorTypes.Parent, referenceId);
             }
 
             default:

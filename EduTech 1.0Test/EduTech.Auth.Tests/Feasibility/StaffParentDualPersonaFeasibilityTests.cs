@@ -73,7 +73,7 @@ public class StaffParentDualPersonaFeasibilityTests
 
         JwtSecurityToken staff = Decode(issuer.IssueStaffScoped(
             staffUserId, schoolAWhereHeWorks, affiliationId, SharedPhone,
-            StaffRoles.Teacher, EmploymentTypes.PartTime, "verified").Token);
+            StaffRoles.Teacher, EmploymentTypes.PartTime).Token);
 
         JwtSecurityToken parent = Decode(issuer.IssueParent(parentId, SharedPhone).Token);
 
@@ -103,7 +103,7 @@ public class StaffParentDualPersonaFeasibilityTests
         Guid parentId = Guid.NewGuid();
 
         JwtSecurityToken staff = Decode(
-            issuer.IssueStaffIdentity(staffUserId, SharedPhone, "verified").Token);
+            issuer.IssueStaffIdentity(staffUserId, SharedPhone).Token);
         JwtSecurityToken parent = Decode(issuer.IssueParent(parentId, SharedPhone).Token);
 
         string? staffUserClaim = ClaimValue(staff, "user_id");
@@ -125,7 +125,7 @@ public class StaffParentDualPersonaFeasibilityTests
     public void StaffToken_IsRejected_ByTheParentSigningKey()
     {
         AccessTokenIssuer issuer = CreateIssuer();
-        string staffToken = issuer.IssueStaffIdentity(Guid.NewGuid(), SharedPhone, "verified").Token;
+        string staffToken = issuer.IssueStaffIdentity(Guid.NewGuid(), SharedPhone).Token;
 
         JwtSecurityTokenHandler handler = new();
 
@@ -181,8 +181,8 @@ public class StaffParentDualPersonaFeasibilityTests
             .ReturnsAsync(new[]
             {
                 new EduTech.Auth.Unified.AccessContextRow
-                    { ReferenceId = affiliationId, Type = "staff", OrganizationId = schoolId, OrganizationName = "Divine Wisdom", Role = "teacher" },
-                new EduTech.Auth.Unified.AccessContextRow { ReferenceId = parentId, Type = "parent" }
+                    { AccessContextId = affiliationId, ReferenceId = affiliationId, Type = "staff", OrganizationId = schoolId, OrganizationName = "Divine Wisdom", Role = "teacher" },
+                new EduTech.Auth.Unified.AccessContextRow { AccessContextId = parentId, ReferenceId = parentId, Type = "parent" }
             });
         contexts.Setup(c => c.ListStaffContextsAsync(identity.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new[] { new EduTech.Auth.Unified.StaffContextRow
@@ -191,11 +191,11 @@ public class StaffParentDualPersonaFeasibilityTests
         affiliations.Setup(a => a.GetActiveForSwitchAsync(staffUserId, schoolId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new StaffSwitchRow { AffiliationId = affiliationId, Role = "teacher", EmploymentType = "full_time" });
         staffUsers.Setup(su => su.GetTokenClaimsAsync(staffUserId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new StaffUserTokenRow { Phone = SharedPhone, KycStatus = "approved" });
+            .ReturnsAsync(new StaffUserTokenRow { Phone = SharedPhone });
         overrides.Setup(o => o.GetForAffiliationAsync(affiliationId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Dictionary<string, bool>());
         access.Setup(a => a.IssueStaffScoped(staffUserId, schoolId, affiliationId, SharedPhone, "teacher",
-                "full_time", "approved",
+                "full_time",
                 It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>()))
             .Returns(new AccessToken { Token = "staff-token", ExpiresAt = DateTime.UtcNow.AddMinutes(30) });
         access.Setup(a => a.IssueParent(parentId, SharedPhone, It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(),
@@ -205,10 +205,23 @@ public class StaffParentDualPersonaFeasibilityTests
             .ReturnsAsync(new EduTech.Auth.RefreshTokens.RefreshTokenIssue
                 { Token = "r", FamilyId = Guid.NewGuid(), ExpiresAt = DateTime.UtcNow.AddHours(12) });
 
+        // The mint is a collaborator (its own gate tests cover it); here we mock it per persona.
+        var minter = new Mock<EduTech.Auth.Unified.IContextMinter>();
+        minter.Setup(m => m.MintAsync(It.IsAny<EduTech.Identity.Domain.Identity>(),
+                It.Is<EduTech.Auth.Unified.AuthContextItem>(c => c.Id == affiliationId), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new EduTech.Auth.Unified.ContextMint(
+                new EduTech.Auth.Tokens.AccessToken { Token = "staff-token", ExpiresAt = DateTime.UtcNow.AddMinutes(30) },
+                EduTech.Auth.AuthActorTypes.Staff, staffUserId));
+        minter.Setup(m => m.MintAsync(It.IsAny<EduTech.Identity.Domain.Identity>(),
+                It.Is<EduTech.Auth.Unified.AuthContextItem>(c => c.Id == parentId), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new EduTech.Auth.Unified.ContextMint(
+                new EduTech.Auth.Tokens.AccessToken { Token = "parent-token", ExpiresAt = DateTime.UtcNow.AddMinutes(30) },
+                EduTech.Auth.AuthActorTypes.Parent, parentId));
+
         var sut = new EduTech.Auth.Unified.UnifiedAuthService(identities.Object, contexts.Object,
             parents.Object, hasher.Object, otp.Object, sms.Object, access.Object, refresh.Object,
             staffUsers.Object,
-            new EduTech.Auth.Unified.LegacyContextMinter(contexts.Object, affiliations.Object, staffUsers.Object, access.Object),
+            minter.Object,
             new Mock<EduTech.Auth.SchoolOwner.ISchoolRepository>().Object,
             new Mock<EduTech.Auth.SchoolOwner.ISchoolOwnerRepository>().Object,
             new Mock<EduTech.Membership.IMembershipRepository>().Object,

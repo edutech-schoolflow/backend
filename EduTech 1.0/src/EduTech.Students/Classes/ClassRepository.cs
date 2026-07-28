@@ -8,11 +8,11 @@ internal interface IClassRepository
 {
     Task<IReadOnlyList<SchoolClassRow>> ListClassesAsync(CancellationToken cancellationToken);
     Task<Guid> CreateClassWithArmsAsync(string name, ClassLevel level, int order,
-        IReadOnlyList<(string Arm, Guid? TeacherAffiliationId)> arms, CancellationToken cancellationToken);
+        IReadOnlyList<(string Arm, Guid? TeacherMembershipId)> arms, CancellationToken cancellationToken);
     Task<bool> ClassExistsAsync(Guid classId, CancellationToken cancellationToken);
     Task<bool> ClassNameExistsAsync(string name, CancellationToken cancellationToken);
     Task<SchoolClassRow?> GetClassAsync(Guid classId, CancellationToken cancellationToken);
-    Task SetClassLevelTeacherAsync(Guid classId, Guid? teacherAffiliationId, CancellationToken cancellationToken);
+    Task SetClassLevelTeacherAsync(Guid classId, Guid? teacherMembershipId, CancellationToken cancellationToken);
     Task<ClassDependentsRow> GetDependentsAsync(Guid classId, CancellationToken cancellationToken);
     Task DeleteClassAsync(Guid classId, CancellationToken cancellationToken);
 
@@ -21,13 +21,13 @@ internal interface IClassRepository
 
     Task<bool> ArmExistsAsync(Guid armId, CancellationToken cancellationToken);
     Task<bool> ArmNameExistsAsync(Guid classId, string arm, CancellationToken cancellationToken);
-    Task<Guid> AddArmAsync(Guid classId, string arm, Guid? teacherAffiliationId, CancellationToken cancellationToken);
-    Task SetClassTeacherAsync(Guid armId, Guid? teacherAffiliationId, CancellationToken cancellationToken);
-    Task<Guid> AddSubjectTeacherAsync(Guid armId, Guid teacherAffiliationId, string subject, CancellationToken cancellationToken);
+    Task<Guid> AddArmAsync(Guid classId, string arm, Guid? teacherMembershipId, CancellationToken cancellationToken);
+    Task SetClassTeacherAsync(Guid armId, Guid? teacherMembershipId, CancellationToken cancellationToken);
+    Task<Guid> AddSubjectTeacherAsync(Guid armId, Guid teacherMembershipId, string subject, CancellationToken cancellationToken);
     Task RemoveSubjectTeacherAsync(Guid subjectTeacherId, CancellationToken cancellationToken);
 
-    /// <summary>True if the affiliation is an active staff member at the current school.</summary>
-    Task<bool> AffiliationActiveAsync(Guid affiliationId, CancellationToken cancellationToken);
+    /// <summary>True if the membership is an active staff member (active employment) at the current school.</summary>
+    Task<bool> MembershipActiveAsync(Guid membershipId, CancellationToken cancellationToken);
 }
 
 internal sealed class SchoolClassRow
@@ -39,7 +39,7 @@ internal sealed class SchoolClassRow
     public int ArmsCount { get; init; }
     public int StudentsCount { get; init; }
     public string? TeacherNames { get; init; }   // comma-joined; split in the service
-    public Guid? ClassTeacherAffiliationId { get; init; }   // the class's own teacher (arm-less classes)
+    public Guid? ClassTeacherMembershipId { get; init; }   // the class's own teacher (arm-less classes)
     public string? ClassTeacherName { get; init; }
 }
 
@@ -63,7 +63,7 @@ internal sealed class ClassArmRow
     public Guid ClassId { get; init; }
     public string ClassName { get; init; } = string.Empty;
     public string Arm { get; init; } = string.Empty;
-    public Guid? ClassTeacherAffiliationId { get; init; }
+    public Guid? ClassTeacherMembershipId { get; init; }
     public string? ClassTeacherName { get; init; }
     public int StudentsCount { get; init; }
 }
@@ -72,16 +72,16 @@ internal sealed class SubjectTeacherRow
 {
     public Guid Id { get; init; }
     public Guid ClassArmId { get; init; }
-    public Guid TeacherAffiliationId { get; init; }
+    public Guid TeacherMembershipId { get; init; }
     public string Subject { get; init; } = string.Empty;
     public string TeacherName { get; init; } = string.Empty;
 }
 
 internal sealed class ClassRepository : TenantRepository, IClassRepository
 {
-    // Composed teacher name from the affiliation -> staff_users.
+    // Teacher name, canonical (EDD-016): membership -> identity. Used for class + subject teachers.
     private const string TeacherNameSql =
-        "concat_ws(' ', su.first_name, su.middle_name, su.last_name)";
+        "concat_ws(' ', i.first_name, i.middle_name, i.last_name)";
 
     private readonly IDbConnectionFactory _connectionFactory;
 
@@ -98,25 +98,25 @@ internal sealed class ClassRepository : TenantRepository, IClassRepository
         c.id, c.name, c.level, c.display_order AS "Order",
         (SELECT COUNT(*) FROM class_arms a WHERE a.class_id = c.id) AS ArmsCount,
         (SELECT COUNT(*) FROM students s WHERE s.class_id = c.id AND s.status = 'active') AS StudentsCount,
-        c.class_teacher_affiliation_id AS ClassTeacherAffiliationId,
-        concat_ws(' ', csu.first_name, csu.middle_name, csu.last_name) AS ClassTeacherName,
+        c.class_teacher_membership_id AS ClassTeacherMembershipId,
+        concat_ws(' ', ci.first_name, ci.middle_name, ci.last_name) AS ClassTeacherName,
         (SELECT string_agg(name, ',') FROM (
-            SELECT concat_ws(' ', su.first_name, su.middle_name, su.last_name) AS name
+            SELECT concat_ws(' ', i.first_name, i.middle_name, i.last_name) AS name
             FROM class_arms a
-            JOIN staff_affiliations aff ON aff.id = a.class_teacher_affiliation_id
-            JOIN staff_users su ON su.id = aff.staff_user_id
+            JOIN memberships m ON m.id = a.class_teacher_membership_id
+            JOIN identities i ON i.id = m.identity_id
             WHERE a.class_id = c.id
             UNION
-            SELECT concat_ws(' ', csu.first_name, csu.middle_name, csu.last_name)
-            WHERE c.class_teacher_affiliation_id IS NOT NULL
+            SELECT concat_ws(' ', ci.first_name, ci.middle_name, ci.last_name)
+            WHERE c.class_teacher_membership_id IS NOT NULL
         ) t) AS TeacherNames
         """;
 
     private const string ClassFromSql =
         """
         FROM classes c
-        LEFT JOIN staff_affiliations caff ON caff.id = c.class_teacher_affiliation_id
-        LEFT JOIN staff_users csu ON csu.id = caff.staff_user_id
+        LEFT JOIN memberships cm ON cm.id = c.class_teacher_membership_id
+        LEFT JOIN identities ci ON ci.id = cm.identity_id
         """;
 
     public Task<IReadOnlyList<SchoolClassRow>> ListClassesAsync(CancellationToken cancellationToken)
@@ -138,15 +138,15 @@ internal sealed class ClassRepository : TenantRepository, IClassRepository
             TenantParameters(new { Id = classId }), cancellationToken);
     }
 
-    public Task SetClassLevelTeacherAsync(Guid classId, Guid? teacherAffiliationId, CancellationToken cancellationToken)
+    public Task SetClassLevelTeacherAsync(Guid classId, Guid? teacherMembershipId, CancellationToken cancellationToken)
     {
         return ExecuteAsync(
-            "UPDATE classes SET class_teacher_affiliation_id = @Teacher, updated_at = NOW() WHERE id = @Id AND school_id = @SchoolId",
-            TenantParameters(new { Id = classId, Teacher = teacherAffiliationId }), cancellationToken);
+            "UPDATE classes SET class_teacher_membership_id = @Teacher, updated_at = NOW() WHERE id = @Id AND school_id = @SchoolId",
+            TenantParameters(new { Id = classId, Teacher = teacherMembershipId }), cancellationToken);
     }
 
     public async Task<Guid> CreateClassWithArmsAsync(string name, ClassLevel level, int order,
-        IReadOnlyList<(string Arm, Guid? TeacherAffiliationId)> arms, CancellationToken cancellationToken)
+        IReadOnlyList<(string Arm, Guid? TeacherMembershipId)> arms, CancellationToken cancellationToken)
     {
         await using DbTransactionScope transaction = await _connectionFactory.BeginTransactionAsync(cancellationToken);
 
@@ -158,7 +158,7 @@ internal sealed class ClassRepository : TenantRepository, IClassRepository
         {
             await ExecuteAsync(
                 """
-                INSERT INTO class_arms (school_id, class_id, arm, class_teacher_affiliation_id)
+                INSERT INTO class_arms (school_id, class_id, arm, class_teacher_membership_id)
                 VALUES (@SchoolId, @ClassId, @Arm, @Teacher)
                 """,
                 TenantParameters(new { ClassId = classId, Arm = arm, Teacher = teacher }),
@@ -217,13 +217,13 @@ internal sealed class ClassRepository : TenantRepository, IClassRepository
         return QueryAsync<ClassArmRow>(
             $"""
             SELECT a.id, a.class_id AS ClassId, c.name AS ClassName, a.arm,
-                   a.class_teacher_affiliation_id AS ClassTeacherAffiliationId,
+                   a.class_teacher_membership_id AS ClassTeacherMembershipId,
                    {TeacherNameSql} AS ClassTeacherName,
                    (SELECT COUNT(*) FROM students s WHERE s.class_arm_id = a.id AND s.status = 'active') AS StudentsCount
             FROM class_arms a
             JOIN classes c ON c.id = a.class_id
-            LEFT JOIN staff_affiliations aff ON aff.id = a.class_teacher_affiliation_id
-            LEFT JOIN staff_users su ON su.id = aff.staff_user_id
+            LEFT JOIN memberships m ON m.id = a.class_teacher_membership_id
+            LEFT JOIN identities i ON i.id = m.identity_id
             WHERE a.school_id = @SchoolId AND a.class_id = @ClassId
             ORDER BY a.arm
             """,
@@ -235,12 +235,12 @@ internal sealed class ClassRepository : TenantRepository, IClassRepository
     {
         return QueryAsync<SubjectTeacherRow>(
             $"""
-            SELECT st.id, st.class_arm_id AS ClassArmId, st.teacher_affiliation_id AS TeacherAffiliationId,
+            SELECT st.id, st.class_arm_id AS ClassArmId, st.teacher_membership_id AS TeacherMembershipId,
                    st.subject, {TeacherNameSql} AS TeacherName
             FROM class_subject_teachers st
             JOIN class_arms a ON a.id = st.class_arm_id
-            JOIN staff_affiliations aff ON aff.id = st.teacher_affiliation_id
-            JOIN staff_users su ON su.id = aff.staff_user_id
+            JOIN memberships m ON m.id = st.teacher_membership_id
+            JOIN identities i ON i.id = m.identity_id
             WHERE st.school_id = @SchoolId AND a.class_id = @ClassId
             ORDER BY st.subject
             """,
@@ -264,37 +264,37 @@ internal sealed class ClassRepository : TenantRepository, IClassRepository
             TenantParameters(new { ClassId = classId, Arm = arm }), cancellationToken) > 0;
     }
 
-    public Task<Guid> AddArmAsync(Guid classId, string arm, Guid? teacherAffiliationId,
+    public Task<Guid> AddArmAsync(Guid classId, string arm, Guid? teacherMembershipId,
         CancellationToken cancellationToken)
     {
         return ExecuteScalarAsync<Guid>(
             """
-            INSERT INTO class_arms (school_id, class_id, arm, class_teacher_affiliation_id)
+            INSERT INTO class_arms (school_id, class_id, arm, class_teacher_membership_id)
             VALUES (@SchoolId, @ClassId, @Arm, @Teacher)
             RETURNING id
             """,
-            TenantParameters(new { ClassId = classId, Arm = arm, Teacher = teacherAffiliationId }),
+            TenantParameters(new { ClassId = classId, Arm = arm, Teacher = teacherMembershipId }),
             cancellationToken);
     }
 
-    public Task SetClassTeacherAsync(Guid armId, Guid? teacherAffiliationId, CancellationToken cancellationToken)
+    public Task SetClassTeacherAsync(Guid armId, Guid? teacherMembershipId, CancellationToken cancellationToken)
     {
         return ExecuteAsync(
-            "UPDATE class_arms SET class_teacher_affiliation_id = @Teacher, updated_at = NOW() WHERE id = @Id AND school_id = @SchoolId",
-            TenantParameters(new { Id = armId, Teacher = teacherAffiliationId }), cancellationToken);
+            "UPDATE class_arms SET class_teacher_membership_id = @Teacher, updated_at = NOW() WHERE id = @Id AND school_id = @SchoolId",
+            TenantParameters(new { Id = armId, Teacher = teacherMembershipId }), cancellationToken);
     }
 
-    public Task<Guid> AddSubjectTeacherAsync(Guid armId, Guid teacherAffiliationId, string subject,
+    public Task<Guid> AddSubjectTeacherAsync(Guid armId, Guid teacherMembershipId, string subject,
         CancellationToken cancellationToken)
     {
         return ExecuteScalarAsync<Guid>(
             """
-            INSERT INTO class_subject_teachers (school_id, class_arm_id, teacher_affiliation_id, subject)
+            INSERT INTO class_subject_teachers (school_id, class_arm_id, teacher_membership_id, subject)
             VALUES (@SchoolId, @ArmId, @Teacher, @Subject)
-            ON CONFLICT (class_arm_id, teacher_affiliation_id, subject) DO UPDATE SET subject = EXCLUDED.subject
+            ON CONFLICT (class_arm_id, teacher_membership_id, subject) DO UPDATE SET subject = EXCLUDED.subject
             RETURNING id
             """,
-            TenantParameters(new { ArmId = armId, Teacher = teacherAffiliationId, Subject = subject }),
+            TenantParameters(new { ArmId = armId, Teacher = teacherMembershipId, Subject = subject }),
             cancellationToken);
     }
 
@@ -305,10 +305,16 @@ internal sealed class ClassRepository : TenantRepository, IClassRepository
             TenantParameters(new { Id = subjectTeacherId }), cancellationToken);
     }
 
-    public async Task<bool> AffiliationActiveAsync(Guid affiliationId, CancellationToken cancellationToken)
+    // Canonical "active staff at this school": a membership at the school with an active employment
+    // (the same shape the access-context projector uses to recognise a staff person).
+    public async Task<bool> MembershipActiveAsync(Guid membershipId, CancellationToken cancellationToken)
     {
         return await ExecuteScalarAsync<int>(
-            "SELECT COUNT(1) FROM staff_affiliations WHERE id = @Id AND school_id = @SchoolId AND status = 'active'",
-            TenantParameters(new { Id = affiliationId }), cancellationToken) > 0;
+            """
+            SELECT COUNT(1) FROM memberships m
+            WHERE m.id = @Id AND m.school_id = @SchoolId
+              AND EXISTS (SELECT 1 FROM employments e WHERE e.membership_id = m.id AND e.status = 'active')
+            """,
+            TenantParameters(new { Id = membershipId }), cancellationToken) > 0;
     }
 }

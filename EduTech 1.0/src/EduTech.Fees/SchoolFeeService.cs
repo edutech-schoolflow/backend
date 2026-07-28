@@ -58,9 +58,9 @@ internal sealed class SchoolFeeService : ISchoolFeeService
         FeeCategory category = request.Category ?? FeeCategory.Compulsory;
 
         // Owner-created fees are approved immediately; staff-created fees wait for owner approval.
-        bool ownerCreated = _context.IsOwner;
+        bool ownerCreated = _context.IsSchoolOwner;
         FeeApprovalStatus status = ownerCreated ? FeeApprovalStatus.Approved : FeeApprovalStatus.PendingApproval;
-        Guid? approvedBy = ownerCreated && Guid.TryParse(_context.UserId, out Guid uid) ? uid : null;
+        Guid? approvedBy = ownerCreated && Guid.TryParse(_context.IdentityId, out Guid identityId) ? identityId : null;
 
         Guid id = await _repository.CreateFeeTypeAsync(name, request.Amount, request.TermId,
             SnakeCaseEnum.ToWire(category), SnakeCaseEnum.ToWire(status), ownerCreated, approvedBy, classIds, cancellationToken);
@@ -124,8 +124,8 @@ internal sealed class SchoolFeeService : ISchoolFeeService
             return MapFeeType((await _repository.GetFeeTypeAsync(feeTypeId, cancellationToken))!);   // idempotent
         }
 
-        Guid.TryParse(_context.UserId, out Guid uid);
-        if (await _repository.ApproveAsync(feeTypeId, uid, cancellationToken) == 0)
+        Guid.TryParse(_context.IdentityId, out Guid identityId);
+        if (await _repository.ApproveAsync(feeTypeId, identityId, cancellationToken) == 0)
         {
             throw new AppErrorException("Fee status changed, please retry.", 409, ErrorCodes.Conflict);
         }
@@ -150,7 +150,7 @@ internal sealed class SchoolFeeService : ISchoolFeeService
     private async Task<FeeApprovalStatus> RequireOwnerAndGetStatusAsync(Guid feeTypeId, FeeApprovalStatus target,
         CancellationToken cancellationToken)
     {
-        if (!_context.IsOwner)
+        if (!_context.IsSchoolOwner)
         {
             throw new AppErrorException("Only the school owner can approve or reject fees.", 403, ErrorCodes.AccessDenied);
         }

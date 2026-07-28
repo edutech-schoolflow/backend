@@ -27,6 +27,8 @@ public sealed class DojahIdentityVerifier : IIdentityVerifier
         _apiKey = configuration["Dojah:ApiKey"] ?? string.Empty;
     }
 
+    public string ProviderName => "dojah";
+
     public Task<IdentityVerificationResult> VerifyNinAsync(string nin, string expectedName,
         CancellationToken cancellationToken = default)
         => LookupAsync($"/api/v1/kyc/nin?nin={Uri.EscapeDataString(nin)}", "NIN", expectedName, cancellationToken);

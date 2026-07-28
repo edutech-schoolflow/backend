@@ -40,7 +40,7 @@ public static class TokenVendor
     /// </summary>
     public static string VendStaffScopedToken(string signingKey, string issuer, string audience,
         string userId, string phone, string schoolId, string affiliationId, string role,
-        string employmentType, string kycStatus,
+        string employmentType,
         int expiryMinutes = 30,
         string? identityId = null, string? contextId = null,
         string? membershipId = null, string? organizationId = null)
@@ -49,17 +49,16 @@ public static class TokenVendor
         {
             new Claim("user_id", userId),
             new Claim("user_type", UserTypes.Staff),
-            new Claim("is_owner", "false"),
             new Claim("school_id", schoolId),
             new Claim("affiliation_id", affiliationId),
             new Claim("role", role),
             new Claim("phone", phone)
         };
         // EDD-012 B2c.3d (JWT Simplification): the transitional claims active_school_id / employment_type /
-        // kyc_status are retired (0 readers, Appendix B). The 13 permission flags left in B2c.2; there is
-        // no mint-time feature resolution any more. employmentType/kycStatus remain as parameters (dead
-        // plumbing) until B2d retires the mint signatures with the legacy actor pipeline.
-        _ = (employmentType, kycStatus);
+        // kyc_status are retired (0 readers, Appendix B). The kyc_status dead param was removed in EDD-017
+        // Slice 4; employment_type remains as dead plumbing until B2d retires the mint signatures with the
+        // legacy actor pipeline.
+        _ = employmentType;
 
         if (identityId is not null) claims.Add(new Claim("identity_id", identityId));
         if (contextId is not null) claims.Add(new Claim("context_id", contextId));
@@ -73,19 +72,17 @@ public static class TokenVendor
 
     /// <summary>
     /// Issues an IDENTITY-ONLY staff token — for a standalone staff member with no active school
-    /// affiliation. No active_school_id, role, or feature claims; just the global identity + platform
-    /// KYC status. (A school-scoped token is issued separately when an affiliation is selected.)
+    /// affiliation. No active_school_id, role, or feature claims; just the global identity (user_id,
+    /// user_type, phone). (A school-scoped token is issued separately when an affiliation is selected.)
     /// 30-minute access token. Signing key: Jwt:StaffSigningKey.
     /// </summary>
     public static string VendStaffIdentityToken(string signingKey, string issuer, string audience,
-        string userId, string phone, string kycStatus, int expiryMinutes = 30)
+        string userId, string phone, int expiryMinutes = 30)
     {
-        _ = kycStatus;  // B2c.3d: kyc_status claim retired (0 readers); parameter kept until B2d.
         List<Claim> claims = new List<Claim>
         {
             new Claim("user_id", userId),
             new Claim("user_type", UserTypes.Staff),
-            new Claim("is_owner", "false"),
             new Claim("phone", phone)
         };
 
@@ -113,7 +110,6 @@ public static class TokenVendor
             new Claim("user_id", userId),
             new Claim("user_type", UserTypes.School),
             new Claim("school_id", schoolId),
-            new Claim("is_owner", "true"),
             new Claim("role", "owner"),
             new Claim("phone", phone)
         };
@@ -144,7 +140,6 @@ public static class TokenVendor
         {
             new Claim("user_id", identityId),
             new Claim("user_type", "identity"),
-            new Claim("is_owner", "false"),
             new Claim("role", "identity"),
             new Claim("phone", phone)
         };
@@ -161,7 +156,6 @@ public static class TokenVendor
         {
             new Claim("user_id", userId),
             new Claim("user_type", UserTypes.Parent),
-            new Claim("is_owner", "false"),
             new Claim("role", UserTypes.Parent),
             new Claim("phone", phone)
         };
@@ -192,7 +186,6 @@ public static class TokenVendor
         {
             new Claim("user_id", adminId),
             new Claim("user_type", UserTypes.PlatformAdmin),
-            new Claim("is_owner", "false"),
             new Claim("role", role),
             new Claim("email", email)
         };

@@ -29,7 +29,7 @@ internal sealed class GradeService : IGradeService
     public async Task<IReadOnlyList<GradeableArmResponse>> ListGradeableArmsAsync(CancellationToken cancellationToken)
     {
         IReadOnlyList<GradeableArmRow> rows =
-            await _repository.ListGradeableArmsAsync(CurrentAffiliation(), _context.IsOwner, cancellationToken);
+            await _repository.ListGradeableArmsAsync(CurrentMembership(), _context.IsSchoolOwner, cancellationToken);
 
         return rows.Select(r => new GradeableArmResponse
         {
@@ -118,7 +118,7 @@ internal sealed class GradeService : IGradeService
             entries.Add((entry.StudentId, score));
         }
 
-        Guid? submittedBy = _context.IsOwner ? null : CurrentAffiliation();
+        Guid? submittedBy = _context.IsSchoolOwner ? null : CurrentMembership();
         (Guid id, DateTime submittedAt) = await _repository.UpsertRecordAsync(
                 request.ArmId, request.SubjectId, request.TermId, assessment, maxScore, submittedBy, entries, cancellationToken)
             ?? throw new AppErrorException("These grades are published and can't be edited.", 409, ErrorCodes.Conflict,
@@ -216,18 +216,19 @@ internal sealed class GradeService : IGradeService
             throw new AppErrorException("That subject doesn't belong to this class.", 400, ErrorCodes.ValidationError);
         }
 
-        if (_context.IsOwner)
+        if (_context.IsSchoolOwner)
         {
             return (arm, subject);
         }
 
-        Guid? affiliation = CurrentAffiliation();
+        Guid? membership = CurrentMembership();
         ClassLevel level = SnakeCaseEnum.Parse<ClassLevel>(arm.Level);
         bool primaryTier = IsPrimaryTier(level);
 
-        bool allowed = affiliation is Guid aff && (primaryTier
-            ? arm.ClassTeacherAffiliationId == aff
-            : await _repository.IsSubjectTeacherAsync(armId, subject.Name, aff, cancellationToken));
+        // Both tiers scope by canonical membership: primary = the class teacher, secondary = the subject teacher.
+        bool allowed = membership is Guid mem && (primaryTier
+            ? arm.ClassTeacherMembershipId == mem
+            : await _repository.IsSubjectTeacherAsync(armId, subject.Name, mem, cancellationToken));
 
         if (!allowed)
         {
@@ -236,7 +237,7 @@ internal sealed class GradeService : IGradeService
                     ? "Only the class teacher of this arm can enter its grades."
                     : "You can only enter grades for a subject you teach in this arm.",
                 403, ErrorCodes.AccessDenied,
-                logReason: $"Affiliation {affiliation?.ToString() ?? "(none)"} attempted to grade arm {armId} " +
+                logReason: $"Membership {membership?.ToString() ?? "(none)"} attempted to grade arm {armId} " +
                            $"subject '{subject.Name}' (level {level}).");
         }
 
@@ -261,6 +262,6 @@ internal sealed class GradeService : IGradeService
     private static int MaxFor(AssessmentType assessment, SubjectInfoRow subject) =>
         assessment == AssessmentType.Exam ? subject.MaxExam : subject.MaxCa;
 
-    private Guid? CurrentAffiliation() =>
-        Guid.TryParse(_context.AffiliationId, out Guid id) ? id : (Guid?)null;
+    private Guid? CurrentMembership() =>
+        Guid.TryParse(_context.MembershipId, out Guid id) ? id : (Guid?)null;
 }

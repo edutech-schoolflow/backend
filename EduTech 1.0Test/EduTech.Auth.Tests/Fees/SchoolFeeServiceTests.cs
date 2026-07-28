@@ -17,7 +17,7 @@ public class SchoolFeeServiceTests
 
     private SchoolFeeService CreateSut(bool isOwner = true)
     {
-        _context.SetupGet(c => c.IsOwner).Returns(isOwner);
+        _context.SetupGet(c => c.IsSchoolOwner).Returns(isOwner);
         _context.SetupGet(c => c.UserId).Returns(Guid.NewGuid().ToString());
         return new SchoolFeeService(_repo.Object, _context.Object);
     }

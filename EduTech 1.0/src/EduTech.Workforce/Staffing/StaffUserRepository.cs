@@ -56,7 +56,6 @@ internal sealed class StaffAccountState
     public string Phone { get; init; } = string.Empty;
     public string FirstName { get; init; } = string.Empty;
     public string LastName { get; init; } = string.Empty;
-    public string KycStatus { get; init; } = string.Empty;
     public bool HasPassword { get; init; }
     public bool PhoneVerified { get; init; }
     public bool IsActive { get; init; }
@@ -79,7 +78,6 @@ internal sealed class StaffUserLoginRow
     public string? PasswordHash { get; init; }   // null until the account sets a password
     public bool PhoneVerified { get; init; }
     public bool IsActive { get; init; }
-    public string KycStatus { get; init; } = string.Empty;
     public int FailedLoginCount { get; init; }
     public DateTime? LockedUntil { get; init; }
 }
@@ -88,7 +86,6 @@ internal sealed class StaffUserLoginRow
 internal sealed class StaffUserTokenRow
 {
     public string Phone { get; init; } = string.Empty;
-    public string KycStatus { get; init; } = string.Empty;
     public bool IsActive { get; init; }
 }
 
@@ -153,7 +150,7 @@ internal sealed class StaffUserRepository : BaseRepository, IStaffUserRepository
     {
         return QuerySingleOrDefaultAsync<StaffUserLoginRow>(
             """
-            SELECT id, password_hash, phone_verified, is_active, kyc_status, failed_login_count, locked_until
+            SELECT id, password_hash, phone_verified, is_active, failed_login_count, locked_until
             FROM staff_users
             WHERE phone = @Phone
             """,
@@ -182,7 +179,7 @@ internal sealed class StaffUserRepository : BaseRepository, IStaffUserRepository
     public Task<StaffUserTokenRow?> GetTokenClaimsAsync(Guid staffUserId, CancellationToken cancellationToken)
     {
         return QuerySingleOrDefaultAsync<StaffUserTokenRow>(
-            "SELECT phone, kyc_status, is_active FROM staff_users WHERE id = @Id",
+            "SELECT phone, is_active FROM staff_users WHERE id = @Id",
             new { Id = staffUserId }, cancellationToken);
     }
 
@@ -190,7 +187,7 @@ internal sealed class StaffUserRepository : BaseRepository, IStaffUserRepository
     {
         return QuerySingleOrDefaultAsync<StaffAccountState>(
             """
-            SELECT phone, first_name, last_name, kyc_status,
+            SELECT phone, first_name, last_name,
                    (password_hash IS NOT NULL) AS has_password, phone_verified, is_active
             FROM staff_users
             WHERE id = @Id
@@ -220,7 +217,7 @@ internal sealed class StaffUserRepository : BaseRepository, IStaffUserRepository
     public Task<StaffProfileRow?> GetProfileAsync(Guid staffUserId, CancellationToken cancellationToken)
     {
         return QuerySingleOrDefaultAsync<StaffProfileRow>(
-            "SELECT concat_ws(' ', first_name, middle_name, last_name) AS full_name, phone, email, phone_verified, kyc_status FROM staff_users WHERE id = @Id",
+            "SELECT concat_ws(' ', s.first_name, s.middle_name, s.last_name) AS full_name, s.phone, s.email, s.phone_verified, COALESCE(i.kyc_status, 'unverified') AS kyc_status FROM staff_users s LEFT JOIN identities i ON i.id = s.identity_id WHERE s.id = @Id",
             new { Id = staffUserId }, cancellationToken);
     }
 }

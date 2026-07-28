@@ -13,6 +13,9 @@ built **foundation-first** via a strangler migration off the legacy actor tables
 | EDD-007 | Membership — the belonging edge (Identity **or** Child Profile ↔ Organization) | ✅ |
 | EDD-008 | Position — the job catalog an organization employs into | ✅ |
 | EDD-009 | Employment — the working relationship (Membership × Organization) | ✅ |
+| EDD-017 | Identity Verification (KYC) — NIN/verification state owned by Identity; Compliance = the verification service | ✅ design complete (code deferred to retirement) |
+| EDD-018 | Workforce — staff directory/invite/employment lifecycle rebuilt on Identity→Membership→Employment→Position (2nd reference module, org-facing; retires `staff_users`/`staff_affiliations`) | ✅ design complete (code deferred to retirement) |
+| EDD-019 | Students & Family — Guardian Relationship (Identity ↔ Child Profile) as the central family aggregate; retires `parents`, `child_profiles.parent_id`, the Fees payer | ✅ design complete (code deferred to retirement) |
 
 ### Organization Domain — *the organization and its structure*
 | EDD | Aggregate | Status |
@@ -65,6 +68,14 @@ never leak platform concerns back into the foundation.
   Identity / Membership / Employment / Organization / Position / Authentication. Bug fixes and
   refinements: yes. Redesigns: no. The foundation is done.
 - **No authentication rewrites while the foundation is still changing** (satisfied — foundation is complete).
+- **Authentication is closed** (EDD-012 §B2): canonical Identity/Membership/Employment/Organization/Access
+  Context, server-side authorization, slim JWT (`context_id = access_contexts.id`), identity+context
+  refresh. Changes here are maintenance, not architecture — a change to the auth foundation triggers an
+  architectural review, not a routine edit. The remaining legacy-identity work is **domain migration**
+  ([EDD-016 — Platform Convergence](EDD-016-platform-convergence.md)), not auth.
+- **No new dependency on `affiliation_id`, `user_id`, or `reference_id`** (EDD-016): no new actor-keyed
+  columns, no new reads of the compatibility claims — canonical identities only (`identity_id` /
+  `membership_id` / `employment_id`). The proactive form of the retirement concept grep.
 - **Authentication must never resolve permissions** (EDD-012): auth ends at *issue token → context_id*;
   everything after is Authorization.
 - **Platform-maturity test (the real next milestone):** *can a brand-new module be built without
@@ -73,6 +84,13 @@ never leak platform concerns back into the foundation.
 - **Design sequence (every module):** **Product → Domain → Physical Model → Commands/Queries →
   Implementation Plan → Code.** Never Product → Code. Each stage is written down (in the module's EDD)
   and reviewed before the next begins.
+- **A legacy table is never migrated directly** (canonical-first): first define the canonical **bounded
+  context** in an EDD — ownership, aggregates, workflows, events, contracts — and only *then* migrate the
+  data and retire the legacy implementation. The legacy deletion is the *consequence* of finishing a
+  canonical module, never a standalone task. This is what kept B2 (and EDD-016) from degenerating into a
+  series of ad-hoc migrations; it forces each area to become a coherent product + domain model first.
+  (Corollary — the EDD-016 finding: a module that *FK-references* an actor id is a **convergence**, a
+  column repoint; a module that *owns/embeds* the actor table is a **redesign** with its own EDD.)
 - **Platform Validation Rule:** **Admissions** is the first module built entirely on the finished
   platform — its **reference implementation** (identity-first, membership creation, event-driven
   workflow, capability authorization, workspace, notifications, audit, clean aggregates). *Admissions

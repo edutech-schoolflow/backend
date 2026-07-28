@@ -59,14 +59,14 @@ public class ClassServiceTests
     [Fact]
     public async Task CreateClass_TeacherPerArmNotActive_Throws400()
     {
-        Guid affiliation = Guid.NewGuid();
-        _repo.Setup(r => r.AffiliationActiveAsync(affiliation, It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        Guid membership = Guid.NewGuid();
+        _repo.Setup(r => r.MembershipActiveAsync(membership, It.IsAny<CancellationToken>())).ReturnsAsync(false);
 
         AppErrorException ex = await Assert.ThrowsAsync<AppErrorException>(() => CreateSut().CreateClassAsync(
             new CreateClassRequest
             {
                 Name = "JSS 1", Level = ClassLevel.JuniorSecondary, Arms = new() { "A" },
-                TeacherPerArm = new() { ["A"] = affiliation }
+                TeacherPerArm = new() { ["A"] = membership }
             },
             CancellationToken.None));
 
@@ -118,7 +118,7 @@ public class ClassServiceTests
         _repo.Setup(r => r.ArmExistsAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync(false);
 
         AppErrorException ex = await Assert.ThrowsAsync<AppErrorException>(() => CreateSut().AddSubjectTeacherAsync(
-            Guid.NewGuid(), new AddSubjectTeacherRequest { TeacherAffiliationId = Guid.NewGuid(), Subject = "Maths" },
+            Guid.NewGuid(), new AddSubjectTeacherRequest { TeacherMembershipId = Guid.NewGuid(), Subject = "Maths" },
             CancellationToken.None));
 
         Assert.Equal(404, ex.StatusCode);

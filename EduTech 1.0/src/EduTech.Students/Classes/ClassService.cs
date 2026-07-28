@@ -49,8 +49,8 @@ internal sealed class ClassService : IClassService
         ArmsCount = r.ArmsCount,
         StudentsCount = r.StudentsCount,
         TeacherNames = SplitNames(r.TeacherNames),
-        ClassTeacher = r.ClassTeacherAffiliationId is Guid tid
-            ? new ClassTeacherResponse { AffiliationId = tid, Name = r.ClassTeacherName ?? string.Empty }
+        ClassTeacher = r.ClassTeacherMembershipId is Guid tid
+            ? new ClassTeacherResponse { MembershipId = tid, Name = r.ClassTeacherName ?? string.Empty }
             : null
     };
 
@@ -87,18 +87,18 @@ internal sealed class ClassService : IClassService
 
         // Arms are optional — a class can have none. Students enrol into the class directly; add named
         // streams (A/B/C) only when the school splits the class.
-        List<(string Arm, Guid? TeacherAffiliationId)> armSpecs = new List<(string, Guid?)>();
+        List<(string Arm, Guid? TeacherMembershipId)> armSpecs = new List<(string, Guid?)>();
         foreach (string arm in arms)
         {
             Guid? teacher = null;
-            if (request.TeacherPerArm is not null && request.TeacherPerArm.TryGetValue(arm, out Guid affiliationId))
+            if (request.TeacherPerArm is not null && request.TeacherPerArm.TryGetValue(arm, out Guid membershipId))
             {
-                if (!await _repository.AffiliationActiveAsync(affiliationId, cancellationToken))
+                if (!await _repository.MembershipActiveAsync(membershipId, cancellationToken))
                 {
                     throw new AppErrorException($"The teacher assigned to arm {arm} isn't an active staff member.",
                         400, ErrorCodes.ValidationError);
                 }
-                teacher = affiliationId;
+                teacher = membershipId;
             }
             armSpecs.Add((arm, teacher));
         }
@@ -159,8 +159,8 @@ internal sealed class ClassService : IClassService
             ClassName = a.ClassName,
             Arm = a.Arm,
             FullName = a.ClassName + a.Arm,
-            ClassTeacher = a.ClassTeacherAffiliationId is Guid tid
-                ? new ClassTeacherResponse { AffiliationId = tid, Name = a.ClassTeacherName ?? string.Empty }
+            ClassTeacher = a.ClassTeacherMembershipId is Guid tid
+                ? new ClassTeacherResponse { MembershipId = tid, Name = a.ClassTeacherName ?? string.Empty }
                 : null,
             StudentsCount = a.StudentsCount,
             SubjectTeachers = subjects
@@ -168,7 +168,7 @@ internal sealed class ClassService : IClassService
                 .Select(s => new SubjectTeacherResponse
                 {
                     Id = s.Id, Subject = s.Subject,
-                    TeacherAffiliationId = s.TeacherAffiliationId, TeacherName = s.TeacherName
+                    TeacherMembershipId = s.TeacherMembershipId, TeacherName = s.TeacherName
                 })
                 .ToList()
         }).ToList();
@@ -193,14 +193,14 @@ internal sealed class ClassService : IClassService
             throw new AppErrorException($"Arm {arm} already exists in this class.", 409, ErrorCodes.Conflict);
         }
 
-        if (request.TeacherAffiliationId is Guid affiliationId
-            && !await _repository.AffiliationActiveAsync(affiliationId, cancellationToken))
+        if (request.TeacherMembershipId is Guid membershipId
+            && !await _repository.MembershipActiveAsync(membershipId, cancellationToken))
         {
             throw new AppErrorException("That teacher isn't an active staff member at this school.",
                 400, ErrorCodes.ValidationError);
         }
 
-        Guid armId = await _repository.AddArmAsync(classId, arm, request.TeacherAffiliationId, cancellationToken);
+        Guid armId = await _repository.AddArmAsync(classId, arm, request.TeacherMembershipId, cancellationToken);
 
         ClassArmRow row = (await _repository.ListArmsAsync(classId, cancellationToken)).First(a => a.Id == armId);
         return new ClassArmResponse
@@ -210,8 +210,8 @@ internal sealed class ClassService : IClassService
             ClassName = row.ClassName,
             Arm = row.Arm,
             FullName = row.ClassName + row.Arm,
-            ClassTeacher = row.ClassTeacherAffiliationId is Guid tid
-                ? new ClassTeacherResponse { AffiliationId = tid, Name = row.ClassTeacherName ?? string.Empty }
+            ClassTeacher = row.ClassTeacherMembershipId is Guid tid
+                ? new ClassTeacherResponse { MembershipId = tid, Name = row.ClassTeacherName ?? string.Empty }
                 : null,
             StudentsCount = row.StudentsCount,
             SubjectTeachers = Array.Empty<SubjectTeacherResponse>()
@@ -225,14 +225,14 @@ internal sealed class ClassService : IClassService
             throw new AppErrorException("Class not found.", 404, ErrorCodes.NotFound);
         }
 
-        if (request.TeacherAffiliationId is Guid affiliationId
-            && !await _repository.AffiliationActiveAsync(affiliationId, cancellationToken))
+        if (request.TeacherMembershipId is Guid membershipId
+            && !await _repository.MembershipActiveAsync(membershipId, cancellationToken))
         {
             throw new AppErrorException("That teacher isn't an active staff member at this school.",
                 400, ErrorCodes.ValidationError);
         }
 
-        await _repository.SetClassLevelTeacherAsync(classId, request.TeacherAffiliationId, cancellationToken);
+        await _repository.SetClassLevelTeacherAsync(classId, request.TeacherMembershipId, cancellationToken);
     }
 
     public async Task SetClassTeacherAsync(Guid armId, SetClassTeacherRequest request, CancellationToken cancellationToken)
@@ -242,14 +242,14 @@ internal sealed class ClassService : IClassService
             throw new AppErrorException("Class arm not found.", 404, ErrorCodes.NotFound);
         }
 
-        if (request.TeacherAffiliationId is Guid affiliationId
-            && !await _repository.AffiliationActiveAsync(affiliationId, cancellationToken))
+        if (request.TeacherMembershipId is Guid membershipId
+            && !await _repository.MembershipActiveAsync(membershipId, cancellationToken))
         {
             throw new AppErrorException("That teacher isn't an active staff member at this school.",
                 400, ErrorCodes.ValidationError);
         }
 
-        await _repository.SetClassTeacherAsync(armId, request.TeacherAffiliationId, cancellationToken);
+        await _repository.SetClassTeacherAsync(armId, request.TeacherMembershipId, cancellationToken);
     }
 
     public async Task<SubjectTeacherResponse> AddSubjectTeacherAsync(Guid armId, AddSubjectTeacherRequest request,
@@ -266,17 +266,17 @@ internal sealed class ClassService : IClassService
             throw new AppErrorException("Class arm not found.", 404, ErrorCodes.NotFound);
         }
 
-        if (!await _repository.AffiliationActiveAsync(request.TeacherAffiliationId, cancellationToken))
+        if (!await _repository.MembershipActiveAsync(request.TeacherMembershipId, cancellationToken))
         {
             throw new AppErrorException("That teacher isn't an active staff member at this school.",
                 400, ErrorCodes.ValidationError);
         }
 
-        Guid id = await _repository.AddSubjectTeacherAsync(armId, request.TeacherAffiliationId, subject, cancellationToken);
+        Guid id = await _repository.AddSubjectTeacherAsync(armId, request.TeacherMembershipId, subject, cancellationToken);
 
         return new SubjectTeacherResponse
         {
-            Id = id, Subject = subject, TeacherAffiliationId = request.TeacherAffiliationId, TeacherName = string.Empty
+            Id = id, Subject = subject, TeacherMembershipId = request.TeacherMembershipId, TeacherName = string.Empty
         };
     }
 

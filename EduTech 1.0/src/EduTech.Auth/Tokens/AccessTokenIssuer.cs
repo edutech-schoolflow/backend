@@ -50,11 +50,11 @@ internal sealed class AccessTokenIssuer : IAccessTokenIssuer
         };
     }
 
-    public AccessToken IssueStaffIdentity(Guid staffUserId, string phone, string kycStatus)
+    public AccessToken IssueStaffIdentity(Guid staffUserId, string phone)
     {
         string token = TokenVendor.VendStaffIdentityToken(
             _signingKey, _issuer, _audience,
-            staffUserId.ToString(), phone, kycStatus, StaffAccessMinutes);
+            staffUserId.ToString(), phone, StaffAccessMinutes);
 
         return new AccessToken
         {
@@ -64,14 +64,14 @@ internal sealed class AccessTokenIssuer : IAccessTokenIssuer
     }
 
     public AccessToken IssueStaffScoped(Guid staffUserId, Guid schoolId, Guid affiliationId, string phone,
-        string role, string employmentType, string kycStatus,
+        string role, string employmentType,
         Guid? identityId = null, Guid? contextId = null,
         Guid? membershipId = null, Guid? organizationId = null)
     {
         string token = TokenVendor.VendStaffScopedToken(
             _signingKey, _issuer, _audience,
             staffUserId.ToString(), phone, schoolId.ToString(), affiliationId.ToString(),
-            role, employmentType, kycStatus, StaffAccessMinutes,
+            role, employmentType, StaffAccessMinutes,
             identityId?.ToString(), contextId?.ToString(),
             membershipId?.ToString(), organizationId?.ToString());
 

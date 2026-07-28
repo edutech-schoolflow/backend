@@ -12,15 +12,15 @@ public class StaffAttendanceServiceTests
     private readonly Mock<IEduTechRequestContext> _context = new();
 
     private static readonly Guid School = Guid.NewGuid();
-    private static readonly Guid Affiliation = Guid.NewGuid();
+    private static readonly Guid Membership = Guid.NewGuid();
 
     private StaffAttendanceService CreateSut() => new(_repo.Object, _context.Object);
 
     private void StaffSession()
     {
         _context.SetupGet(c => c.SchoolId).Returns(School.ToString());
-        _context.SetupGet(c => c.AffiliationId).Returns(Affiliation.ToString());
-        _context.SetupGet(c => c.IsOwner).Returns(false);
+        _context.SetupGet(c => c.MembershipId).Returns(Membership.ToString());
+        _context.SetupGet(c => c.IsSchoolOwner).Returns(false);
     }
 
     [Fact]
@@ -92,7 +92,7 @@ public class StaffAttendanceServiceTests
         AppErrorException ex = await Assert.ThrowsAsync<AppErrorException>(() =>
             CreateSut().OverrideAsync(new OverrideStaffAttendanceRequest
             {
-                StaffId = Affiliation, Date = new DateOnly(2026, 7, 15), Status = "absent"
+                StaffId = Membership, Date = new DateOnly(2026, 7, 15), Status = "absent"
             }, CancellationToken.None));
 
         Assert.Equal(403, ex.StatusCode);
@@ -102,12 +102,12 @@ public class StaffAttendanceServiceTests
     public async Task Override_InvalidStatus_Throws400()
     {
         _context.SetupGet(c => c.SchoolId).Returns(School.ToString());
-        _context.SetupGet(c => c.IsOwner).Returns(true);
+        _context.SetupGet(c => c.IsSchoolOwner).Returns(true);
 
         AppErrorException ex = await Assert.ThrowsAsync<AppErrorException>(() =>
             CreateSut().OverrideAsync(new OverrideStaffAttendanceRequest
             {
-                StaffId = Affiliation, Date = new DateOnly(2026, 7, 15), Status = "vacation"
+                StaffId = Membership, Date = new DateOnly(2026, 7, 15), Status = "vacation"
             }, CancellationToken.None));
 
         Assert.Equal(400, ex.StatusCode);

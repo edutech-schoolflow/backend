@@ -7,7 +7,7 @@ internal interface ISchoolFeeRepository
 {
     Task<bool> TermExistsAsync(Guid termId, CancellationToken cancellationToken);
     Task<Guid> CreateFeeTypeAsync(string name, decimal amount, Guid termId, string category, string approvalStatus,
-        bool submittedByIsOwner, Guid? approvedByUserId, IReadOnlyList<Guid> classIds, CancellationToken cancellationToken);
+        bool submittedByIsOwner, Guid? approvedByIdentityId, IReadOnlyList<Guid> classIds, CancellationToken cancellationToken);
     Task<IReadOnlyList<FeeTypeRow>> ListFeeTypesAsync(Guid? termId, string? approvalStatus, string? category, CancellationToken cancellationToken);
 
     Task<FeeTypeRow?> GetFeeTypeAsync(Guid feeTypeId, CancellationToken cancellationToken);
@@ -21,7 +21,7 @@ internal interface ISchoolFeeRepository
     Task ArchiveFeeTypeAsync(Guid feeTypeId, CancellationToken cancellationToken);
 
     /// <summary>Owner approve: only flips a pending fee. Returns rows affected (0 = not pending).</summary>
-    Task<int> ApproveAsync(Guid feeTypeId, Guid approvedByUserId, CancellationToken cancellationToken);
+    Task<int> ApproveAsync(Guid feeTypeId, Guid approvedByIdentityId, CancellationToken cancellationToken);
     Task<int> RejectAsync(Guid feeTypeId, string? reason, CancellationToken cancellationToken);
 
     /// <summary>Per approved fee type for a term: applicable headcount + amount collected (payment-based).</summary>
@@ -70,7 +70,7 @@ internal sealed class SchoolFeeRepository : TenantRepository, ISchoolFeeReposito
     }
 
     public async Task<Guid> CreateFeeTypeAsync(string name, decimal amount, Guid termId, string category,
-        string approvalStatus, bool submittedByIsOwner, Guid? approvedByUserId, IReadOnlyList<Guid> classIds,
+        string approvalStatus, bool submittedByIsOwner, Guid? approvedByIdentityId, IReadOnlyList<Guid> classIds,
         CancellationToken cancellationToken)
     {
         await using DbTransactionScope transaction = await _connectionFactory.BeginTransactionAsync(cancellationToken);
@@ -78,7 +78,7 @@ internal sealed class SchoolFeeRepository : TenantRepository, ISchoolFeeReposito
         Guid id = await ExecuteScalarAsync<Guid>(
             """
             INSERT INTO fee_types (school_id, term_id, name, amount, category, approval_status,
-                                   submitted_by_is_owner, approved_by_user_id, approved_at)
+                                   submitted_by_is_owner, approved_by_identity_id, approved_at)
             VALUES (@SchoolId, @TermId, @Name, @Amount, @Category, @ApprovalStatus, @SubmittedByIsOwner,
                     @ApprovedBy, CASE WHEN @ApprovalStatus = 'approved' THEN NOW() ELSE NULL END)
             RETURNING id
@@ -86,7 +86,7 @@ internal sealed class SchoolFeeRepository : TenantRepository, ISchoolFeeReposito
             TenantParameters(new
             {
                 TermId = termId, Name = name, Amount = amount, Category = category, ApprovalStatus = approvalStatus,
-                SubmittedByIsOwner = submittedByIsOwner, ApprovedBy = approvedByUserId
+                SubmittedByIsOwner = submittedByIsOwner, ApprovedBy = approvedByIdentityId
             }),
             cancellationToken, transaction.Transaction);
 
@@ -156,7 +156,7 @@ internal sealed class SchoolFeeRepository : TenantRepository, ISchoolFeeReposito
             UPDATE fee_types
                SET name = @Name, amount = @Amount, category = @Category,
                    approval_status = 'pending_approval', rejection_reason = NULL,
-                   approved_by_user_id = NULL, approved_at = NULL, updated_at = NOW()
+                   approved_by_identity_id = NULL, approved_at = NULL, updated_at = NOW()
              WHERE id = @Id AND school_id = @SchoolId
             """,
             TenantParameters(new { Id = feeTypeId, Name = name, Amount = amount, Category = category }), cancellationToken, tx);
@@ -185,16 +185,16 @@ internal sealed class SchoolFeeRepository : TenantRepository, ISchoolFeeReposito
             TenantParameters(new { Id = feeTypeId }), cancellationToken);
     }
 
-    public Task<int> ApproveAsync(Guid feeTypeId, Guid approvedByUserId, CancellationToken cancellationToken)
+    public Task<int> ApproveAsync(Guid feeTypeId, Guid approvedByIdentityId, CancellationToken cancellationToken)
     {
         return ExecuteAsync(
             """
             UPDATE fee_types
-               SET approval_status = 'approved', approved_by_user_id = @ApprovedBy, approved_at = NOW(),
+               SET approval_status = 'approved', approved_by_identity_id = @ApprovedBy, approved_at = NOW(),
                    rejection_reason = NULL, updated_at = NOW()
              WHERE id = @Id AND school_id = @SchoolId AND approval_status = 'pending_approval'
             """,
-            TenantParameters(new { Id = feeTypeId, ApprovedBy = approvedByUserId }), cancellationToken);
+            TenantParameters(new { Id = feeTypeId, ApprovedBy = approvedByIdentityId }), cancellationToken);
     }
 
     public Task<int> RejectAsync(Guid feeTypeId, string? reason, CancellationToken cancellationToken)

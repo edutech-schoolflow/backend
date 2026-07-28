@@ -45,11 +45,6 @@ public interface IEduTechRequestContext
     /// <summary>The organization (organizations.id, today == school_id) this context operates in.</summary>
     string? OrganizationId { get; }
 
-    /// <summary>
-    /// True only for the school account owner (registered the school).
-    /// Bypasses all feature flag and role checks.
-    /// </summary>
-    bool IsOwner { get; }
 
     bool IsStaff { get; }
     bool IsSchoolOwner { get; }

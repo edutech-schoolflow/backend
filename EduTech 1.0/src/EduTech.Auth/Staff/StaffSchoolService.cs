@@ -74,8 +74,7 @@ internal sealed class StaffSchoolService : IStaffSchoolService
 
         // No mint-time feature resolution (B2c.3d): authorization is resolved per request from context_id.
         AccessToken access = _accessTokenIssuer.IssueStaffScoped(staffUserId, schoolId,
-            affiliation.AffiliationId, staff.Phone, affiliation.Role, affiliation.EmploymentType,
-            staff.KycStatus);
+            affiliation.AffiliationId, staff.Phone, affiliation.Role, affiliation.EmploymentType);
 
         return new StaffSwitchResult
         {

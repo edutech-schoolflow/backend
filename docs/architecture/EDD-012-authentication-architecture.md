@@ -269,9 +269,17 @@ projections derived from them, but **never** legacy actor tables. When no login 
       > `membership_id`, `context_id`, `organization_id`, `role` are canonical-sourced; only the `user_id`
       > claim keeps a `staff_users` lookup — `staff_users` is no longer an authority, just a compatibility
       > lookup — until `user_id` retires (Appendix B).
-  - **Phase 2 — Coexistence window.** Leave `refresh_tokens.actor_type/actor_id` alive as fallback-only
-    until in-flight actor-only refresh tokens expire (≤14d). No code prefers them.
-  - **Phase 3 — Physical deletion.** Only after 1–2: drop `access_contexts.reference_id`, the refresh
+  - **Phase 2 — Coexistence window.** ~~Leave `refresh_tokens.actor_type/actor_id` alive as fallback-only
+    until in-flight actor-only refresh tokens expire (≤14d).~~ **N/A for V1.**
+
+    > **V1 reframe (the platform has never been deployed — no users, no production refresh tokens, no
+    > integrations, first public release):** coexistence protects *existing production state*, of which
+    > there is none. So there is **no coexistence window** and V1 ships **canonical-only** — carrying a
+    > parallel legacy model into V1 would be shipping migration debt before the first customer. The one
+    > condition on deletion is unchanged: **delete because the canonical path is *proven* (equivalence
+    > gates green), never because we're tired of it.** The gates are green; the legacy implementations have
+    > served their purpose.
+  - **Phase 3 — Physical deletion (now, for V1).** After the gates pass one final time: drop `access_contexts.reference_id`, the refresh
     actor columns, `GetIdentityIdForActorAsync`, the legacy actor mint paths, the retained scalar mint
     params, and the compatibility DTO fields. The closing grep is ceremonial: `school_owner` → none;
     `staff_affiliation` (outside Workforce) → none; `reference_id` → none; `GetIdentityIdForActor` → none.
@@ -299,8 +307,25 @@ projections derived from them, but **never** legacy actor tables. When no login 
   □ grep "reference_id" in Auth/Authz → 0
   □ grep "actor_type" → 0     □ grep "actor_id" → 0
   ```
+  **Final concept grep (stronger than "tests pass" — the codebase itself must reflect the architecture).**
+  These legacy *concepts* must have **zero runtime hits** — acceptable hits only in migrations, historical
+  docs, and compatibility/deletion notes (until those are removed too):
+  ```
+  reference_id · actor_type · actor_id · staff_affiliations · school_owners ·
+  LegacyContextMinter · LegacyCapabilityResolver · GetIdentityIdForActorAsync · ParentAuthService
+  ```
 
-After B2, Authentication is "finished" — future work is product capability, not architectural rewrite.
+> **V1 acceptance criterion (the strongest form): every runtime authentication and authorization decision
+> must be explainable by the canonical graph alone** — `Identity → Membership → Access Context → Employment
+> → Position → Permission Template → Employment Overrides → Capabilities`. If any runtime path still needs to
+> ask "what's the staff affiliation?", "who's the owner record?", or "what's the actor id?", V1 is not yet
+> fully canonical. (Compatibility claims served over the token are allowed *only* where a business reader
+> hasn't migrated yet, and each is tracked for retirement in Appendix B.)
+
+After B2, authentication **and** authorization are **closed** — maintenance, not architecture. A future
+change to Identity / Membership / Access Context / Employment / Position / Auth triggers an **architectural
+review**: it signals either a foundation defect or a genuinely-new cross-cutting platform capability.
+Ordinary module work stays entirely above the platform layer (the platform-maturity rule Admissions proved).
 ```
 FOUNDATION ✅ → PLATFORM INTEGRATION (B2a→B2d) → PLATFORM STABILIZATION → BUSINESS MODULES
 ```
@@ -406,7 +431,7 @@ Each has a documented reader set, a retirement sprint, and a replacement mechani
 
 | Claim | Remaining readers | Retires | Replacement |
 | --- | --- | --- | --- |
-| `is_owner` | 13 business sites via `IEduTechRequestContext.IsOwner` (Attendance, Grades, Fees, StaffAttendance, StaffProfile, SchoolBranding) | capability-model work (post-B2c) | owner context → capabilities (owner Position grants all) / an explicit ownership policy |
+| ~~`is_owner`~~ | **RETIRED (B2d.2)** — all readers migrated to `IEduTechRequestContext.IsSchoolOwner` (= `user_type == School`, a canonical claim); the `IsOwner` property + the claim emission + the `[RequireRole]` owner-bypass are gone | done | `user_type == School` |
 | `affiliation_id` | `AttendanceService`, `GradeService`, `StaffProfileService` (`CurrentAffiliation()` — scope staff actions to their own arm/records) | when staff scoping re-sources off the legacy actor | `membership_id` / active Employment |
 | `user_id` | `IEduTechRequestContext.UserId` (the legacy actor id — staff_user / owner / parent id — used widely as "the current actor") | **B2d** (legacy actor retirement) | `identity_id` + `membership_id` |
 

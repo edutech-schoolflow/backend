@@ -16,6 +16,8 @@ public interface IStaffProfileService
 
 internal sealed class StaffProfileService : IStaffProfileService
 {
+    private static readonly IReadOnlyDictionary<string, bool> EmptyOverrides = new Dictionary<string, bool>();
+
     private readonly IEduTechRequestContext _context;
     private readonly IStaffAffiliationRepository _affiliations;
     private readonly IPermissionTemplateRepository _templates;
@@ -84,8 +86,14 @@ internal sealed class StaffProfileService : IStaffProfileService
             templateCache[templateId] = await _templates.GetFeaturesAsync(templateId, cancellationToken);
         }
 
+        List<StaffDirectoryRow> active = directory.Where(r => r.Status == "active").ToList();
+
+        // Overrides for every active member fetched in ONE query, not per person.
+        IReadOnlyDictionary<Guid, IReadOnlyDictionary<string, bool>> overridesById =
+            await _overrides.GetForAffiliationsAsync(active.Select(r => r.Id).ToList(), cancellationToken);
+
         List<StaffWithPermissionsResponse> result = new();
-        foreach (StaffDirectoryRow row in directory.Where(r => r.Status == "active"))
+        foreach (StaffDirectoryRow row in active)
         {
             IReadOnlyDictionary<string, bool>? template =
                 metaById.TryGetValue(row.Id, out AffiliationPermissionMetaRow? m)
@@ -93,7 +101,7 @@ internal sealed class StaffProfileService : IStaffProfileService
                     ? templateCache.GetValueOrDefault(tid)
                     : null;
             IReadOnlyDictionary<string, bool> overrides =
-                await _overrides.GetForAffiliationAsync(row.Id, cancellationToken);
+                overridesById.GetValueOrDefault(row.Id) ?? EmptyOverrides;
 
             result.Add(new StaffWithPermissionsResponse
             {

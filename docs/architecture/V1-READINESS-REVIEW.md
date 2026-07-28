@@ -34,8 +34,11 @@ because "schools can onboard staff/families," not to "delete `staff_users`." Cer
 `StaffProfileService` (permissions view) fetched overrides **per active staff member** in a `foreach` (one
 query per staff; a 100-staff school = 100 round-trips). Now batched into a single
 `GetForAffiliationsAsync` (`WHERE affiliation_id = ANY(@Ids)`), mirroring the existing template cache.
-Build 0/0; 525 tests green. *(Follow-up: spot-check the Grades report-card loops —
-`ReportCardService`/`ReportCardRepository` iterate with per-iteration awaits — as part of one perf sweep.)*
+Build 0/0; 525 tests green. *(Follow-up investigated & clear: the Grades report-card path is **already
+batched** — `NotifyGuardiansAsync` reads targets in one query and only the SMS *dispatch* loops (inherently
+per-recipient); the `grade_entries`/behavioral inserts are bounded write loops in a single transaction.
+Optimizing those to multi-row `unnest` inserts is a P3 nice-to-have, not a launch issue. The scoping index
+(P2-3) is marginal — `class_arms` is already narrowed by the indexed `school_id`. No further P1 perf debt.)*
 
 **P1-3 · Secrets: hardcoded DB password in `appsettings.json` — ✅ FIXED.**
 The base `appsettings.json` shipped `Password=admin123`. Replaced with a `REPLACE_WITH_DB_PASSWORD_VIA_ENV`

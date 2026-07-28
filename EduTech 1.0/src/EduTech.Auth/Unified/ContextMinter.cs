@@ -81,7 +81,7 @@ internal sealed class CanonicalContextMinter : BaseRepository, IContextMinter
                     : null;
 
                 AccessToken access = _accessTokenIssuer.IssueStaffScoped(staffUserId, organizationId, referenceId,
-                    identity.Phone, role ?? string.Empty, employmentType: string.Empty, kycStatus: string.Empty,
+                    identity.Phone, role ?? string.Empty, employmentType: string.Empty,
                     identityId: identity.Id, contextId: contextId,
                     membershipId: context.MembershipId, organizationId: context.OrganizationId);
                 return new ContextMint(access, AuthActorTypes.Staff, staffUserId);

@@ -73,7 +73,7 @@ public class StaffParentDualPersonaFeasibilityTests
 
         JwtSecurityToken staff = Decode(issuer.IssueStaffScoped(
             staffUserId, schoolAWhereHeWorks, affiliationId, SharedPhone,
-            StaffRoles.Teacher, EmploymentTypes.PartTime, "verified").Token);
+            StaffRoles.Teacher, EmploymentTypes.PartTime).Token);
 
         JwtSecurityToken parent = Decode(issuer.IssueParent(parentId, SharedPhone).Token);
 
@@ -103,7 +103,7 @@ public class StaffParentDualPersonaFeasibilityTests
         Guid parentId = Guid.NewGuid();
 
         JwtSecurityToken staff = Decode(
-            issuer.IssueStaffIdentity(staffUserId, SharedPhone, "verified").Token);
+            issuer.IssueStaffIdentity(staffUserId, SharedPhone).Token);
         JwtSecurityToken parent = Decode(issuer.IssueParent(parentId, SharedPhone).Token);
 
         string? staffUserClaim = ClaimValue(staff, "user_id");
@@ -125,7 +125,7 @@ public class StaffParentDualPersonaFeasibilityTests
     public void StaffToken_IsRejected_ByTheParentSigningKey()
     {
         AccessTokenIssuer issuer = CreateIssuer();
-        string staffToken = issuer.IssueStaffIdentity(Guid.NewGuid(), SharedPhone, "verified").Token;
+        string staffToken = issuer.IssueStaffIdentity(Guid.NewGuid(), SharedPhone).Token;
 
         JwtSecurityTokenHandler handler = new();
 
@@ -191,11 +191,11 @@ public class StaffParentDualPersonaFeasibilityTests
         affiliations.Setup(a => a.GetActiveForSwitchAsync(staffUserId, schoolId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new StaffSwitchRow { AffiliationId = affiliationId, Role = "teacher", EmploymentType = "full_time" });
         staffUsers.Setup(su => su.GetTokenClaimsAsync(staffUserId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new StaffUserTokenRow { Phone = SharedPhone, KycStatus = "approved" });
+            .ReturnsAsync(new StaffUserTokenRow { Phone = SharedPhone });
         overrides.Setup(o => o.GetForAffiliationAsync(affiliationId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Dictionary<string, bool>());
         access.Setup(a => a.IssueStaffScoped(staffUserId, schoolId, affiliationId, SharedPhone, "teacher",
-                "full_time", "approved",
+                "full_time",
                 It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>()))
             .Returns(new AccessToken { Token = "staff-token", ExpiresAt = DateTime.UtcNow.AddMinutes(30) });
         access.Setup(a => a.IssueParent(parentId, SharedPhone, It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(),

@@ -40,7 +40,7 @@ public static class TokenVendor
     /// </summary>
     public static string VendStaffScopedToken(string signingKey, string issuer, string audience,
         string userId, string phone, string schoolId, string affiliationId, string role,
-        string employmentType, string kycStatus,
+        string employmentType,
         int expiryMinutes = 30,
         string? identityId = null, string? contextId = null,
         string? membershipId = null, string? organizationId = null)
@@ -55,10 +55,10 @@ public static class TokenVendor
             new Claim("phone", phone)
         };
         // EDD-012 B2c.3d (JWT Simplification): the transitional claims active_school_id / employment_type /
-        // kyc_status are retired (0 readers, Appendix B). The 13 permission flags left in B2c.2; there is
-        // no mint-time feature resolution any more. employmentType/kycStatus remain as parameters (dead
-        // plumbing) until B2d retires the mint signatures with the legacy actor pipeline.
-        _ = (employmentType, kycStatus);
+        // kyc_status are retired (0 readers, Appendix B). The kyc_status dead param was removed in EDD-017
+        // Slice 4; employment_type remains as dead plumbing until B2d retires the mint signatures with the
+        // legacy actor pipeline.
+        _ = employmentType;
 
         if (identityId is not null) claims.Add(new Claim("identity_id", identityId));
         if (contextId is not null) claims.Add(new Claim("context_id", contextId));
@@ -72,14 +72,13 @@ public static class TokenVendor
 
     /// <summary>
     /// Issues an IDENTITY-ONLY staff token — for a standalone staff member with no active school
-    /// affiliation. No active_school_id, role, or feature claims; just the global identity + platform
-    /// KYC status. (A school-scoped token is issued separately when an affiliation is selected.)
+    /// affiliation. No active_school_id, role, or feature claims; just the global identity (user_id,
+    /// user_type, phone). (A school-scoped token is issued separately when an affiliation is selected.)
     /// 30-minute access token. Signing key: Jwt:StaffSigningKey.
     /// </summary>
     public static string VendStaffIdentityToken(string signingKey, string issuer, string audience,
-        string userId, string phone, string kycStatus, int expiryMinutes = 30)
+        string userId, string phone, int expiryMinutes = 30)
     {
-        _ = kycStatus;  // B2c.3d: kyc_status claim retired (0 readers); parameter kept until B2d.
         List<Claim> claims = new List<Claim>
         {
             new Claim("user_id", userId),

@@ -62,8 +62,7 @@ public class StaffAuthServiceTests
             Id = Guid.NewGuid(),
             PasswordHash = "stored-hash",
             PhoneVerified = false,
-            IsActive = true,
-            KycStatus = "not_submitted"
+            IsActive = true
         };
         _staff.Setup(s => s.GetByPhoneForLoginAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(staff);

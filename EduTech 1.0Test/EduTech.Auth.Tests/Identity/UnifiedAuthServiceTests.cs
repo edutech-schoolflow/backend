@@ -552,8 +552,8 @@ public class UnifiedAuthServiceTests
         _refresh.Setup(r => r.RotateAsync("raw", null, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Rotation(AuthActorTypes.Staff, staffId));
         _staffUsers.Setup(su => su.GetTokenClaimsAsync(staffId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new StaffUserTokenRow { Phone = Phone, KycStatus = "approved", IsActive = true });
-        _access.Setup(a => a.IssueStaffIdentity(staffId, Phone, "approved"))
+            .ReturnsAsync(new StaffUserTokenRow { Phone = Phone, IsActive = true });
+        _access.Setup(a => a.IssueStaffIdentity(staffId, Phone))
             .Returns(new AccessToken { Token = "staff-access", ExpiresAt = DateTime.UtcNow.AddMinutes(30) });
 
         UnifiedTokens tokens = await CreateSut().RefreshSessionAsync("raw", null, null, CancellationToken.None);

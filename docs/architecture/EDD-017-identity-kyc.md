@@ -231,8 +231,15 @@ canonical columns stay reader-less until Auth flips to them — **no dual-write 
    **Invariant established: Identity is the single runtime source of truth for KYC.** Verified: build 0/0; 525
    tests; static grep (no auth KYC decision); PG proof — with the legacy column deliberately stale the read
    returns Identity's value (legacy ignored).
-4. **Slice 4 — runtime cleanup.** Remove the duplicated legacy reads; `staff_users`/`parents` `kyc_status`
-   become compatibility-only.
+4. **Slice 4 — runtime cleanup** ✅ **DONE.** Pure subtraction of the dead KYC mint plumbing: removed the
+   `kycStatus` param from **both** staff mints (`IssueStaffIdentity` + `IssueStaffScoped`) and their
+   `VendStaff*Token` vendors (the claim died in B2c.3d — `_ = kycStatus` gone), the `IssueTokensAsync` thread,
+   and the three row fields that existed only to feed it (`StaffUserLoginRow`/`StaffUserTokenRow`/`StaffAccountState`.KycStatus —
+   their Slice-3 joins reverted, since nothing reads them now). **Kept**: `StaffProfileRow.KycStatus` → `/me`
+   (canonical via Slice 3), `identities.kyc_status` (the source), `staff_users`/`parents.kyc_status` (the
+   Slice 2 mirror). *(`employment_type`'s parallel dead param stays — a separate Appendix-B cleanup, not KYC.)*
+   Verified: build 0/0; 525 tests; **final grep — no runtime mint path threads person KYC; every remaining
+   occurrence is canonical impl, the Slice 2 mirror, a comment, or school KYC (a different aggregate).**
 5. **Slice 5 — retirement.** With Workforce + Family, drop `nin`/`kyc_status` from `staff_users` + `parents`;
    concept grep: no person `kyc_status`/`nin` outside Compliance + the one canonical column.
 

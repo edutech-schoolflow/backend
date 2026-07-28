@@ -200,7 +200,7 @@ internal sealed class StaffAuthService : IStaffAuthService
 
         await _staffRepository.ClearLoginFailuresAsync(staff.Id, cancellationToken);
 
-        return await IssueTokensAsync(staff.Id, phone, staff.KycStatus, ipAddress, userAgent, cancellationToken);
+        return await IssueTokensAsync(staff.Id, phone, ipAddress, userAgent, cancellationToken);
     }
 
     public async Task<StaffTokensResult> RefreshAsync(string refreshToken, string? ipAddress,
@@ -231,7 +231,7 @@ internal sealed class StaffAuthService : IStaffAuthService
         }
 
         // RotateAsync already issued the replacement refresh token; reuse it for the response.
-        AccessToken access = _accessTokenIssuer.IssueStaffIdentity(rotation.ActorId, staff.Phone, staff.KycStatus);
+        AccessToken access = _accessTokenIssuer.IssueStaffIdentity(rotation.ActorId, staff.Phone);
 
         return new StaffTokensResult
         {
@@ -344,10 +344,10 @@ internal sealed class StaffAuthService : IStaffAuthService
         };
     }
 
-    private async Task<StaffTokensResult> IssueTokensAsync(Guid staffUserId, string phone, string kycStatus,
+    private async Task<StaffTokensResult> IssueTokensAsync(Guid staffUserId, string phone,
         string? ipAddress, string? userAgent, CancellationToken cancellationToken)
     {
-        AccessToken access = _accessTokenIssuer.IssueStaffIdentity(staffUserId, phone, kycStatus);
+        AccessToken access = _accessTokenIssuer.IssueStaffIdentity(staffUserId, phone);
 
         RefreshTokenIssue refresh = await _refreshTokenService.IssueAsync(
             AuthActorTypes.Staff, staffUserId, identityId: null, contextId: null, ipAddress, userAgent, cancellationToken);

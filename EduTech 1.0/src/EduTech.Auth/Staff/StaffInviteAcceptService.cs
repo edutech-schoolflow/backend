@@ -175,7 +175,7 @@ internal sealed class StaffInviteAcceptService : IStaffInviteAcceptService
         await _events.PublishAsync(new EmploymentActivated(affiliation.Id, affiliation.SchoolId,
             staffUserId, affiliation.Role, link.Name), cancellationToken);
 
-        return await IssueTokensAsync(staffUserId, state.Phone, state.KycStatus, ipAddress, userAgent,
+        return await IssueTokensAsync(staffUserId, state.Phone, ipAddress, userAgent,
             cancellationToken);
     }
 
@@ -257,10 +257,10 @@ internal sealed class StaffInviteAcceptService : IStaffInviteAcceptService
         return (invite, affiliation);
     }
 
-    private async Task<StaffTokensResult> IssueTokensAsync(Guid staffUserId, string phone, string kycStatus,
+    private async Task<StaffTokensResult> IssueTokensAsync(Guid staffUserId, string phone,
         string? ipAddress, string? userAgent, CancellationToken cancellationToken)
     {
-        AccessToken access = _accessTokenIssuer.IssueStaffIdentity(staffUserId, phone, kycStatus);
+        AccessToken access = _accessTokenIssuer.IssueStaffIdentity(staffUserId, phone);
 
         RefreshTokenIssue refresh = await _refreshTokenService.IssueAsync(
             AuthActorTypes.Staff, staffUserId, identityId: null, contextId: null, ipAddress, userAgent, cancellationToken);

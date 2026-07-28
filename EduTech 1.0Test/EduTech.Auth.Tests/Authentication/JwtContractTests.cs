@@ -38,7 +38,6 @@ public class JwtContractTests
         string token = TokenVendor.VendStaffScopedToken(Key, Iss, Aud,
             userId: Guid.NewGuid().ToString(), phone: "+2348010000001", schoolId: Organization.ToString(),
             affiliationId: Guid.NewGuid().ToString(), role: StaffRoles.Principal, employmentType: "full_time",
-            kycStatus: "approved",
             identityId: Identity.ToString(), contextId: Context.ToString(),
             membershipId: Membership.ToString(), organizationId: Organization.ToString());
 
@@ -144,7 +143,7 @@ public class JwtContractTests
         string owner = issuer.IssueSchoolOwner(Guid.NewGuid(), Organization, "+2348010000001",
             "active", "approved", "divine", Identity, Context, Membership, Organization).Token;
         string staff = issuer.IssueStaffScoped(Guid.NewGuid(), Organization, Guid.NewGuid(), "+2348010000002",
-            StaffRoles.Teacher, "full_time", "approved",
+            StaffRoles.Teacher, "full_time",
             Identity, Context, Membership, Organization).Token;
         string parent = issuer.IssueParent(Guid.NewGuid(), "+2348010000003", Identity, Context,
             Organization, Membership, Organization).Token;

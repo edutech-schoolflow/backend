@@ -822,7 +822,7 @@ internal sealed class UnifiedAuthService : IUnifiedAuthService
 
         // School-less staff token (same as the legacy staff refresh) — the workspace re-enters
         // its affiliation context via select-context when it needs the scoped token.
-        return _accessTokenIssuer.IssueStaffIdentity(rotation.ActorId, staff!.Phone, staff.KycStatus);
+        return _accessTokenIssuer.IssueStaffIdentity(rotation.ActorId, staff!.Phone);
     }
 
     private async Task<AccessToken> MintOwnerAccessAsync(RefreshRotationResult rotation,

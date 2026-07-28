@@ -14,14 +14,14 @@ internal interface IAccessTokenIssuer
         Guid? membershipId = null, Guid? organizationId = null);
 
   
-    AccessToken IssueStaffIdentity(Guid staffUserId, string phone, string kycStatus);
+    AccessToken IssueStaffIdentity(Guid staffUserId, string phone);
 
     /// <summary>
     /// School-scoped staff token for the active affiliation — carries identity, context, membership,
     /// organization, role. Authorization is resolved server-side from context_id (no flags in the token).
     /// </summary>
     AccessToken IssueStaffScoped(Guid staffUserId, Guid schoolId, Guid affiliationId, string phone,
-        string role, string employmentType, string kycStatus,
+        string role, string employmentType,
         Guid? identityId = null, Guid? contextId = null,
         Guid? membershipId = null, Guid? organizationId = null);
 

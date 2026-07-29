@@ -16,6 +16,20 @@ built **foundation-first** via a strangler migration off the legacy actor tables
 > ([V1-READINESS-REVIEW.md](V1-READINESS-REVIEW.md)) — no P0 defects; operational hardening (N+1, secrets,
 > migration safety, indexes, DB health check) closed. The remaining legacy-table retirement is now a
 > **consequence** of building product modules (Workforce → Family), not an end in itself.
+>
+> **How Phase 2 operates:**
+> - **The freeze-guard test.** If a feature seems to need a foundation change, first ask: *"Can this be built
+>   **on top of** the foundation instead?"* If yes, don't touch the foundation. Foundation edits are exceptional.
+> - **Measure product, not plumbing.** Success is *"can an admin invite staff, who activate and appear in the
+>   directory with the right permissions?"* — not *"claims retired"* or *"tables deleted."* Progress = workflows
+>   completed. Legacy deletion is a by-product of finishing a canonical module.
+> - **Keep the cadence** that made the auth migration succeed: Design (EDD) → Investigate → small slice →
+>   verify → commit → **stop**. Additive-first; flip a whole vertical only at end-to-end parity.
+> - **Triage, don't chase perfection:** *platform debt* (threatens correctness/maintainability) → fix;
+>   *product work* (delivers value) → do; *nice-to-have refinements* → backlog. Post-freeze, tilt heavily to product.
+>
+> **Git checkpoint:** tag `v1-foundation-freeze` — the stable point to return to. Reference modules:
+> **Admissions** (student-facing) + **Workforce/EDD-018** (organization-facing, next).
 
 ## Platform domains
 

@@ -37,8 +37,8 @@ query per staff; a 100-staff school = 100 round-trips). Now batched into a singl
 Build 0/0; 525 tests green. *(Follow-up investigated & clear: the Grades report-card path is **already
 batched** — `NotifyGuardiansAsync` reads targets in one query and only the SMS *dispatch* loops (inherently
 per-recipient); the `grade_entries`/behavioral inserts are bounded write loops in a single transaction.
-Optimizing those to multi-row `unnest` inserts is a P3 nice-to-have, not a launch issue. The scoping index
-(P2-3) is marginal — `class_arms` is already narrowed by the indexed `school_id`. No further P1 perf debt.)*
+Optimizing those to multi-row `unnest` inserts is a P3 nice-to-have, not a launch issue. The scoping indexes
+were added anyway (P2-3, migration `0066`). No further P1 perf debt.)*
 
 **P1-3 · Secrets: hardcoded DB password in `appsettings.json` — ✅ FIXED.**
 The base `appsettings.json` shipped `Password=admin123`. Replaced with a `REPLACE_WITH_DB_PASSWORD_VIA_ENV`
@@ -66,10 +66,12 @@ surprises* — `reference_id` (6 files), `staff_affiliations` (10), and the `aff
 claims (8 in `TokenVendor`) are **all** documented transitional couplings on the EDD-018/019 → final-retirement
 path. Nothing unexpected leaked in. This is debt-by-design; the risk is only *schedule*, not correctness.
 
-**P2-3 · Missing index on the teacher-scoping column.** `class_arms.class_teacher_membership_id` /
-`classes.class_teacher_membership_id` are filtered in per-request scoping (`WHERE … = @Mem`) with no index.
-**Not a regression** (the old `class_teacher_affiliation_id` was never indexed either) and tolerable at
-arms-per-school scale, but add a partial index if class counts grow.
+**P2-3 · Missing index on the teacher-scoping column — ✅ DONE (migration `0066`).** The Attendance
+markable-arms and Grades gradeable-arms queries filter `class_arms`/`classes.class_teacher_membership_id`
+(`WHERE … = @Mem`). Added **partial** indexes (`… WHERE class_teacher_membership_id IS NOT NULL`) so they
+stay small (most rows are NULL / owner-taught). The subject-teacher and staff-checkin membership lookups were
+already covered by their `UNIQUE` constraints; the other 0060–0065 canonical columns aren't filtered.
+Verified: `0001→0066` applies cleanly, both indexes present with the correct definition.
 
 ### Accepted tradeoff (documented, **not** a launch blocker)
 

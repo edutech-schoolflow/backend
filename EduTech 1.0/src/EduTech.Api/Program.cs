@@ -159,6 +159,8 @@ builder.Services.AddRateLimiter(options =>
 
 // ─── Health checks ────────────────────────────────────────────────────────────
 IHealthChecksBuilder healthChecks = builder.Services.AddHealthChecks();
+// The database is the mandatory dependency — always probed so readiness fails when Postgres is unreachable.
+healthChecks.AddCheck<PostgresHealthCheck>("postgres", tags: new[] { "db" });
 if (redis is not null)
 {
     healthChecks.AddCheck<RedisHealthCheck>("redis", tags: new[] { "cache" });

@@ -139,6 +139,20 @@ performance items are the N+1 (P1-2) and the scoping index (P2-3).
 
 ---
 
+### 8. Observability & operations — **strong** (one gap, fixed)
+Deeper pass on the areas the first review under-covered:
+- **Background jobs — production-grade.** **Hangfire** runs recurring jobs (`Cron.Daily(3)`
+  `identity-reconciliation`, calendar roll-forward) and a queued `SendSmsJob` (`[Queue("notifications")]`) —
+  scheduling, retries, and persistence come with it, so SMS never blocks a request and jobs survive restarts.
+- **Error handling + alerting — well-designed.** `GlobalExceptionMiddleware` separates expected
+  `AppErrorException` (business 4xx) from genuine 500s and **Slack-alerts only the real 500s**
+  (`HttpSlackNotifier` when `Slack:WebhookUrl` is set, else `LoggingSlackNotifier` — graceful degradation).
+- **Logging** — `RequestResponseLoggingMiddleware` with **secret redaction** (password/otp/token/nin/bvn/…).
+- **The gap (now ✅ FIXED): `/health` didn't probe Postgres** — only Redis (and only when configured). A
+  readiness probe that ignores the DB would route traffic to an instance that can't serve requests. Added
+  `PostgresHealthCheck` (`SELECT 1`, always registered, tagged `db`) alongside the Redis check. Build 0/0;
+  525 tests. *(Optional next: tag Redis/DB checks `ready` vs a lightweight `live` probe so liveness ≠ readiness.)*
+
 ## Bottom line
 
 Ship-readiness is **operational, not architectural.** The pre-launch list is short and now shorter: ✅ N+1

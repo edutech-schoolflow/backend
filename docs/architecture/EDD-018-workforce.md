@@ -195,6 +195,11 @@ positions` (the `StaffDirectoryRow` already exposes `membership_id` from EDD-016
 Built additive-first (the EDD-017 pattern): canonical columns/writes land reader-less, runtime flips to them,
 then legacy is deleted — never a dual-write window.
 
+> **Slice invariant (Workforce): every slice must leave the legacy onboarding path *fully operational* until
+> the canonical path has end-to-end parity.** Never partially switch invite creation, acceptance, or directory
+> reads — each *vertical* flips only when the whole thing works end to end. (The discipline that made the auth
+> migration succeed.)
+
 1. **Slice 1 — canonical Workforce schema** ✅ **DONE (migration `0065`).** Adds `staff_invite_tokens.employment_id`
    (the invite token re-keyed onto the Employment being accepted) + `employments.invited_by_identity_id` (invite
    attribution as a canonical Identity), with backfills (affiliation→membership→employment; `invited_by`→identity
@@ -228,3 +233,43 @@ then legacy is deleted — never a dual-write window.
 | 3 | Directory | **One person, Employments nested** — the canonical owner is the Identity; a person may be Teacher + ICT Coordinator + Club Adviser (three Employments, one human). The UI reflects the person; queries may still page by Employment internally. |
 | 4 | Transfers | **Defer** until Organization Units exist — don't invent OUs early. For V1 a transfer is *End Employment A → Create Employment B*; when the OU module lands, Workforce consumes `MoveOrgUnit`. |
 | 5 | Owner | **Organization concept, not an Employment** (decision E) — ownership is governance, not work; it stays on Organization, and an owner may *optionally* also hold an Employment. |
+
+## 11. Slice 2 — the first *feature* (spec for the next build)
+
+This is Phase 2's opening move: **building the product**, not migration work. Frame success from the **user's**
+perspective, not the architecture's.
+
+### Acceptance criteria (write the tests to *these*)
+1. A school administrator can **invite** a staff member (name, phone, role, employment type).
+2. The invite **creates the canonical onboarding graph** — Identity (pending) + Membership (staff) +
+   Employment(`Pending`) — and links `token.employment_id`.
+3. The staff member **accepts** the invitation (sets a password / OTP).
+4. On acceptance the Employment flips to **`Active`** and they **appear in the staff directory**.
+5. They can **log in**.
+6. They receive the **permissions defined by their Position** (Position → template → capabilities).
+7. **No legacy runtime behavior changes** — the existing onboarding path stays fully operational (per the
+   Slice invariant: flip a whole vertical only at end-to-end parity; here Slice 2 *adds* the canonical graph
+   alongside the legacy path, it does not switch reads — that's Slice 3).
+
+### Build order
+1. Raise **`StaffInvited`** from `StaffInviteService.InviteAsync` (after the legacy affiliation + token write).
+2. Build the **Identity-side handler** (mirror `EnsureIdentityOnGuardianLinked`): ensure Identity + Membership.
+3. Create **`Employment(Pending)`** — a new `IEmploymentRepository` method (`EnsurePendingFromAffiliationAsync`
+   or similar; the current `EnsureFromAffiliationAsync` hardcodes `'active'`).
+4. Attach **`employment_id`** to the invite token.
+5. **Activate** the Employment on acceptance (the accept upsert already flips `Pending → Active`).
+6. Add the **end-to-end integration tests** below — the permanent Workforce safety net.
+
+### The test net (permanent regression safety)
+- invite (creates the full canonical graph + token link)
+- accept (Employment → Active; appears in directory; can log in; Position permissions resolve)
+- duplicate invite (same-school active/invited → rejected)
+- expired token (accept fails)
+- full-time exclusivity (a full-time person elsewhere can't be added / added full-time)
+- re-invite after resignation (reuses the resigned slot; Employment re-activates)
+
+### Building blocks that already exist
+`IIdentityRepository.EnsurePendingAsync`, `IMembershipRepository.EnsureActiveAsync`, the accept-side
+`EnsureFromAffiliationAsync` upsert, and Slice 1's `staff_invite_tokens.employment_id` /
+`employments.invited_by_identity_id` columns (migration `0065`). The `StaffInvited` event + the handler +
+the pending-Employment repo method are the net-new pieces.

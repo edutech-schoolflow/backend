@@ -4,6 +4,19 @@ Engineering Design Documents, grouped by the platform domain they belong to. The
 built **foundation-first** via a strangler migration off the legacy actor tables (`school_owners`,
 `staff_users`, `parents`): every sprint makes those smaller and adds no new dependency on them.
 
+> ## 🧊 Platform Foundation Freeze — Version 1
+>
+> **The platform foundation is frozen.** Changes to **Identity · Authentication · Authorization ·
+> Membership · Access Context · Employment · Position · and shared infrastructure** now require an
+> **architectural review** — they are no longer routine edits. Product development proceeds *on top of*
+> this foundation.
+>
+> This marks the project's lifecycle transition: **Phase 1 — Platform Foundation (complete)** →
+> **Phase 2 — Product Modules.** The foundation passed a code-grounded pre-launch review
+> ([V1-READINESS-REVIEW.md](V1-READINESS-REVIEW.md)) — no P0 defects; operational hardening (N+1, secrets,
+> migration safety, indexes, DB health check) closed. The remaining legacy-table retirement is now a
+> **consequence** of building product modules (Workforce → Family), not an end in itself.
+
 ## Platform domains
 
 ### People Domain — *who, and how they relate to an organization*

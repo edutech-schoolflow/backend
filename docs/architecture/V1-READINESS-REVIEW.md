@@ -153,6 +153,16 @@ Deeper pass on the areas the first review under-covered:
   `PostgresHealthCheck` (`SELECT 1`, always registered, tagged `db`) alongside the Redis check. Build 0/0;
   525 tests. *(Optional next: tag Redis/DB checks `ready` vs a lightweight `live` probe so liveness ≠ readiness.)*
 
+### 9. Edge / network — good, one deploy-time item
+- **CORS — restricted** by `Cors:AllowedOrigins` config + `AllowCredentials` (not `AllowAnyOrigin`).
+- **Rate limiting — strong**: Redis-backed ASP.NET rate limiter (`AddRateLimiter` + `[EnableRateLimiting]`
+  policies) **and** account lockout (`failed_login_count`/`locked_until`).
+- **Request body size** — Kestrel default (~30 MB); sane for KYC uploads (tighten per-endpoint later if wanted).
+- **⚠️ `UseForwardedHeaders` not configured — DEPLOY-TIME ITEM.** Behind a proxy/ALB the app sees the proxy's
+  IP, undermining IP-keyed rate limiting and logging the wrong client for audit/lockout. Fix at deploy: add
+  `UseForwardedHeaders` **with the platform's `KnownNetworks`/`KnownProxies`** (a naive add trusts a spoofable
+  `X-Forwarded-For`, so it needs the real proxy CIDRs — not a blind code change).
+
 ## Bottom line
 
 Ship-readiness is **operational, not architectural.** The pre-launch list is short and now shorter: ✅ N+1
